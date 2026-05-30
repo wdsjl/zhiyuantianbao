@@ -165,7 +165,7 @@ def user_selector(user_id: int | None) -> str:
         </label>
         <label>
           或输入用户 ID
-          <input name="custom_user_id" value="{escape(str(user_id or ''))}" placeholder="例如 1" />
+          <input name="custom_user_id" value="" placeholder="例如 1" />
         </label>
         <button type="submit">刷新预览</button>
         <a class="button" href="/admin/payments">去后台处理申请/订单</a>
