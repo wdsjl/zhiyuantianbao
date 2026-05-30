@@ -1,0 +1,42 @@
+<view class="container">
+  <view class="card user-card">
+    <view>
+      <view class="user-name">{{profile.name || '未完善信息'}}</view>
+      <view class="sub-text">{{profile.role || '未选择身份'}} · {{profile.province || '未填写省份'}} · {{profile.className || '未绑定班级'}}</view>
+    </view>
+    <button class="secondary-btn edit-btn" bindtap="goProfile">编辑</button>
+  </view>
+
+  <view class="card">
+    <view class="menu-item" bindtap="goProfile">
+      <text>身份切换 / 绑定学生</text>
+      <text>›</text>
+    </view>
+    <view class="menu-item" bindtap="goMembership">
+      <text>会员中心</text>
+      <text>{{planName}}{{expiresAt ? ' · ' + expiresAt : ''}}</text>
+    </view>
+    <view class="menu-item" bindtap="goDrafts">
+      <text>我的志愿草稿</text>
+      <text>{{draftCount}} 个</text>
+    </view>
+    <view class="menu-item" bindtap="goCompare">
+      <text>方案对比</text>
+      <text>›</text>
+    </view>
+    <view class="menu-item">
+      <text>导出记录</text>
+      <text>{{exportCount}} 条</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">使用说明</view>
+    <view class="sub-text">请先完善学生身份、分数、位次、选科和批次信息，再进入志愿填报页生成方案。家长账号需绑定学生后使用完整功能。</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">免责声明</view>
+    <view class="warn-box">本系统基于历年录取数据、招生计划及用户输入信息进行智能分析，结果仅供参考。最终录取结果以各省教育考试院及高校官方公布为准。</view>
+  </view>
+</view>

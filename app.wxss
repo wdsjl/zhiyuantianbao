@@ -1,0 +1,117 @@
+page {
+  background: #f5f7fb;
+  color: #17233d;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 28rpx;
+}
+
+.container {
+  min-height: 100vh;
+  padding: 28rpx;
+  box-sizing: border-box;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 24rpx;
+  padding: 28rpx;
+  box-shadow: 0 12rpx 32rpx rgba(22, 119, 255, 0.08);
+  margin-bottom: 24rpx;
+}
+
+.section-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #101828;
+  margin-bottom: 20rpx;
+}
+
+.sub-text {
+  color: #667085;
+  line-height: 1.7;
+}
+
+.primary-btn,
+.secondary-btn,
+.danger-btn {
+  border-radius: 999rpx;
+  font-size: 30rpx;
+  margin: 0;
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, #1677ff, #3aa0ff);
+  color: #ffffff;
+}
+
+.secondary-btn {
+  background: #eef5ff;
+  color: #1677ff;
+}
+
+.danger-btn {
+  background: #fff1f0;
+  color: #f04438;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.tag {
+  padding: 10rpx 20rpx;
+  border-radius: 999rpx;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 24rpx;
+}
+
+.tag.active {
+  background: #e8f2ff;
+  color: #1677ff;
+  font-weight: 600;
+}
+
+.form-item {
+  margin-bottom: 24rpx;
+}
+
+.label {
+  display: block;
+  color: #344054;
+  font-size: 26rpx;
+  margin-bottom: 12rpx;
+}
+
+.input,
+.picker {
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 16rpx;
+  background: #f7f9fc;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  color: #101828;
+}
+
+.warn-box {
+  background: #fff7e6;
+  color: #b54708;
+  border-radius: 18rpx;
+  padding: 20rpx;
+  line-height: 1.6;
+}
+
+.risk-low {
+  color: #12b76a;
+}
+
+.risk-mid {
+  color: #f79009;
+}
+
+.risk-high {
+  color: #f04438;
+}

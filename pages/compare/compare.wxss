@@ -1,0 +1,29 @@
+.draft-name {
+  font-size: 32rpx;
+  font-weight: 800;
+  margin-bottom: 18rpx;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16rpx;
+}
+
+.compare-grid view {
+  background: #f7f9fc;
+  border-radius: 16rpx;
+  padding: 18rpx;
+}
+
+.compare-grid text {
+  display: block;
+  color: #667085;
+  font-size: 24rpx;
+  margin-bottom: 8rpx;
+}
+
+.compare-grid strong {
+  color: #101828;
+  font-size: 28rpx;
+}

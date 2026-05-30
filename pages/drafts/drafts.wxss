@@ -1,0 +1,36 @@
+.empty-card button {
+  margin-top: 24rpx;
+}
+
+.draft-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
+}
+
+.draft-name {
+  font-size: 32rpx;
+  font-weight: 800;
+  margin-bottom: 8rpx;
+}
+
+.gradient-stat {
+  display: flex;
+  justify-content: space-between;
+  color: #475467;
+  background: #f7f9fc;
+  border-radius: 16rpx;
+  padding: 18rpx;
+  margin-bottom: 18rpx;
+}
+
+.draft-actions {
+  display: flex;
+  gap: 14rpx;
+}
+
+.draft-actions button {
+  flex: 1;
+  font-size: 26rpx;
+}

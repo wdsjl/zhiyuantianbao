@@ -1,0 +1,22 @@
+<view class="container">
+  <view class="card">
+    <view class="section-title">方案对比</view>
+    <view class="sub-text">可对比院校数量、冲稳保垫比例、城市分布、公办民办、双一流数量和风险等级。</view>
+  </view>
+
+  <view wx:if="{{!drafts.length}}" class="card">
+    <view class="sub-text">暂无可对比方案，请先保存草稿。</view>
+  </view>
+
+  <view wx:for="{{drafts}}" wx:key="id" class="card compare-card">
+    <view class="draft-name">{{item.name}}</view>
+    <view class="compare-grid">
+      <view><text>志愿数量</text><strong>{{item.plan.length}}</strong></view>
+      <view><text>风险等级</text><strong>{{item.risk.level}}</strong></view>
+      <view><text>冲/稳/保/垫</text><strong>{{item.risk.chong}}/{{item.risk.wen}}/{{item.risk.bao}}/{{item.risk.dian}}</strong></view>
+      <view><text>服从调剂</text><strong>{{item.adjustCount}} 个</strong></view>
+      <view><text>双一流</text><strong>{{item.doubleFirstCount}} 所</strong></view>
+      <view><text>城市分布</text><strong>{{item.cities}}</strong></view>
+    </view>
+  </view>
+</view>

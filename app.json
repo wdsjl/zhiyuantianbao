@@ -1,0 +1,45 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/schools/schools",
+    "pages/personality/personality",
+    "pages/volunteer/volunteer",
+    "pages/mine/mine",
+    "pages/profile/profile",
+    "pages/drafts/drafts",
+    "pages/membership/membership",
+    "pages/compare/compare"
+  ],
+  "window": {
+    "navigationBarTitleText": "智愿填报",
+    "navigationBarBackgroundColor": "#1677ff",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f7fb"
+  },
+  "tabBar": {
+    "color": "#7a8499",
+    "selectedColor": "#1677ff",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/schools/schools",
+        "text": "院校库"
+      },
+      {
+        "pagePath": "pages/volunteer/volunteer",
+        "text": "志愿填报"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

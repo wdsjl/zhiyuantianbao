@@ -1,0 +1,135 @@
+.button-row,
+.bottom-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.button-row button,
+.bottom-actions button {
+  flex: 1;
+}
+
+.risk-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 16rpx;
+}
+
+.gradient-stat {
+  display: flex;
+  justify-content: space-between;
+  color: #475467;
+  margin-bottom: 18rpx;
+}
+
+.warning-item {
+  margin-bottom: 12rpx;
+}
+
+.personality-match-card {
+  border: 2rpx solid #d6e8ff;
+}
+
+.personality-tags {
+  margin: 18rpx 0;
+}
+
+.ai-explain-card {
+  border: 2rpx solid #d7f5e8;
+}
+
+.ai-explain-text {
+  white-space: pre-wrap;
+  line-height: 1.8;
+  color: #344054;
+  margin-bottom: 20rpx;
+}
+
+.ai-action-row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
+}
+
+.ai-action-row button {
+  flex: 1;
+}
+
+.volunteer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+
+.gradient {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 16rpx;
+  color: #ffffff;
+  font-weight: 800;
+  margin-right: 14rpx;
+}
+
+.gradient-冲 {
+  background: #f04438;
+}
+
+.gradient-稳 {
+  background: #1677ff;
+}
+
+.gradient-保 {
+  background: #12b76a;
+}
+
+.gradient-垫 {
+  background: #667085;
+}
+
+.school-name {
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.major-line {
+  margin: 18rpx 0;
+  color: #344054;
+}
+
+.match-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 10rpx 16rpx;
+  border-radius: 999rpx;
+  background: #e8f2ff;
+  color: #1677ff;
+  font-size: 24rpx;
+  font-weight: 700;
+  margin-bottom: 16rpx;
+}
+
+.adjust-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16rpx;
+  align-items: center;
+  padding: 18rpx 0;
+  border-top: 1rpx solid #f2f4f7;
+}
+
+.adjust-label {
+  margin-bottom: 4rpx;
+}
+
+.bottom-actions {
+  position: sticky;
+  bottom: 20rpx;
+  background: rgba(245, 247, 251, 0.92);
+  padding: 16rpx 0;
+}

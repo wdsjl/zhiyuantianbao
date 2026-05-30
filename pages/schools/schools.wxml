@@ -1,0 +1,65 @@
+<view class="container">
+  <view class="card search-card">
+    <input class="input" placeholder="搜索院校 / 专业 / 城市" value="{{keyword}}" bindinput="onKeywordInput" />
+    <button class="secondary-btn filter-btn" bindtap="toggleFilter">筛选</button>
+  </view>
+
+  <view wx:if="{{showFilter}}" class="card">
+    <view class="section-title">一键筛选</view>
+    <view class="filter-group">
+      <view class="label">城市</view>
+      <view class="tag-row">
+        <text wx:for="{{filterOptions.cities}}" wx:key="*this" class="tag {{selected.cities.indexOf(item) > -1 ? 'active' : ''}}" data-field="cities" data-value="{{item}}" bindtap="toggleOption">{{item}}</text>
+      </view>
+    </view>
+    <view class="filter-group">
+      <view class="label">院校类型</view>
+      <view class="tag-row">
+        <text wx:for="{{filterOptions.schoolTypes}}" wx:key="*this" class="tag {{selected.schoolTypes.indexOf(item) > -1 ? 'active' : ''}}" data-field="schoolTypes" data-value="{{item}}" bindtap="toggleOption">{{item}}</text>
+      </view>
+    </view>
+    <view class="filter-group">
+      <view class="label">院校标签</view>
+      <view class="tag-row">
+        <text wx:for="{{filterOptions.tags}}" wx:key="*this" class="tag {{selected.tags.indexOf(item) > -1 ? 'active' : ''}}" data-field="tags" data-value="{{item}}" bindtap="toggleOption">{{item}}</text>
+      </view>
+    </view>
+    <view class="filter-group">
+      <view class="label">专业类型</view>
+      <view class="tag-row">
+        <text wx:for="{{filterOptions.majorTypes}}" wx:key="*this" class="tag {{selected.majorTypes.indexOf(item) > -1 ? 'active' : ''}}" data-field="majorTypes" data-value="{{item}}" bindtap="toggleOption">{{item}}</text>
+      </view>
+    </view>
+    <view class="filter-group">
+      <view class="label">学费</view>
+      <view class="tag-row">
+        <text wx:for="{{filterOptions.tuitionRanges}}" wx:key="*this" class="tag {{selected.tuitionRanges.indexOf(item) > -1 ? 'active' : ''}}" data-field="tuitionRanges" data-value="{{item}}" bindtap="toggleOption">{{item}}</text>
+      </view>
+    </view>
+    <view class="filter-group">
+      <view class="label">学制</view>
+      <view class="tag-row">
+        <text wx:for="{{filterOptions.durations}}" wx:key="*this" class="tag {{selected.durations.indexOf(item) > -1 ? 'active' : ''}}" data-field="durations" data-value="{{item}}" bindtap="toggleOption">{{item}}</text>
+      </view>
+    </view>
+    <button class="primary-btn" bindtap="applyFilter">一键筛选</button>
+  </view>
+
+  <view class="result-summary">匹配院校 {{filteredSchools.length}} 所</view>
+
+  <view wx:for="{{filteredSchools}}" wx:key="id" class="card school-card">
+    <view class="school-head">
+      <view>
+        <view class="school-name">{{item.name}}</view>
+        <view class="sub-text">{{item.city}} · {{item.type}} · {{item.duration}} · {{item.tuition}}元/年</view>
+      </view>
+      <text class="rank">位次 {{item.minRank}}</text>
+    </view>
+    <view class="tag-row small-tags">
+      <text wx:for="{{item.tags}}" wx:key="*this" class="tag active">{{item}}</text>
+      <text class="tag">选科：{{item.subject}}</text>
+    </view>
+    <view class="majors">专业：{{item.majorsText}}</view>
+    <button class="secondary-btn add-btn" data-school="{{item}}" bindtap="addToVolunteer">加入志愿参考</button>
+  </view>
+</view>

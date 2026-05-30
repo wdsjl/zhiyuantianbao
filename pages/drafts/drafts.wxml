@@ -1,0 +1,32 @@
+<view class="container">
+  <view class="card">
+    <view class="section-title">志愿草稿箱</view>
+    <view class="sub-text">支持保存、修改、对比和导出志愿表。</view>
+  </view>
+
+  <view wx:if="{{!drafts.length}}" class="card empty-card">
+    <view class="sub-text">暂无草稿，请先到“志愿填报”生成并保存方案。</view>
+    <button class="primary-btn" bindtap="goVolunteer">去生成方案</button>
+  </view>
+
+  <view wx:for="{{drafts}}" wx:key="id" class="card draft-card">
+    <view class="draft-head">
+      <view>
+        <view class="draft-name">{{item.name}}</view>
+        <view class="sub-text">{{item.createdAt}} · {{item.plan.length}} 个志愿</view>
+      </view>
+      <text class="{{item.risk.level === '高' ? 'risk-high' : item.risk.level === '中' ? 'risk-mid' : 'risk-low'}}">{{item.risk.level}}风险</text>
+    </view>
+    <view class="gradient-stat">
+      <text>冲 {{item.risk.chong}}</text>
+      <text>稳 {{item.risk.wen}}</text>
+      <text>保 {{item.risk.bao}}</text>
+      <text>垫 {{item.risk.dian}}</text>
+    </view>
+    <view class="draft-actions">
+      <button class="secondary-btn" data-index="{{index}}" bindtap="editDraft">修改</button>
+      <button class="secondary-btn" data-index="{{index}}" bindtap="exportDraft">导出</button>
+      <button class="danger-btn" data-index="{{index}}" bindtap="deleteDraft">删除</button>
+    </view>
+  </view>
+</view>

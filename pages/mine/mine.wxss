@@ -1,0 +1,33 @@
+.user-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.user-name {
+  font-size: 38rpx;
+  font-weight: 800;
+  margin-bottom: 8rpx;
+}
+
+.edit-btn {
+  width: 140rpx;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 0;
+  border-bottom: 1rpx solid #f2f4f7;
+  color: #101828;
+}
+
+.menu-item:last-child {
+  border-bottom: 0;
+}
+
+.menu-item text:last-child {
+  color: #98a2b3;
+}

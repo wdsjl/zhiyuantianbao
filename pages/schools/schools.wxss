@@ -1,0 +1,61 @@
+.search-card {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+}
+
+.search-card .input {
+  flex: 1;
+}
+
+.filter-btn {
+  width: 150rpx;
+}
+
+.filter-group {
+  margin-bottom: 26rpx;
+}
+
+.result-summary {
+  color: #667085;
+  margin: 18rpx 4rpx;
+}
+
+.school-card {
+  position: relative;
+}
+
+.school-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
+}
+
+.school-name {
+  font-size: 34rpx;
+  font-weight: 800;
+  color: #101828;
+  margin-bottom: 8rpx;
+}
+
+.rank {
+  color: #1677ff;
+  font-size: 24rpx;
+  white-space: nowrap;
+}
+
+.small-tags {
+  margin-bottom: 16rpx;
+}
+
+.majors {
+  color: #344054;
+  line-height: 1.6;
+  margin-bottom: 18rpx;
+}
+
+.add-btn {
+  width: 240rpx;
+  margin-left: auto;
+}

@@ -1,0 +1,123 @@
+.member-hero {
+  background: linear-gradient(135deg, #1677ff, #36cfc9);
+  color: #ffffff;
+}
+
+.member-hero .sub-text {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.plan-card {
+  border: 2rpx solid transparent;
+}
+
+.current-plan {
+  border-color: #1677ff;
+  box-shadow: 0 16rpx 44rpx rgba(22, 119, 255, 0.16);
+}
+
+.plan-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24rpx;
+  align-items: flex-start;
+  margin-bottom: 16rpx;
+}
+
+.plan-name {
+  font-size: 34rpx;
+  font-weight: 800;
+  color: #17233d;
+  margin-bottom: 8rpx;
+}
+
+.plan-price {
+  font-size: 42rpx;
+  font-weight: 900;
+  color: #f79009;
+  white-space: nowrap;
+}
+
+.feature-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: 20rpx 0;
+}
+
+.feature-item {
+  padding: 10rpx 16rpx;
+  border-radius: 999rpx;
+  background: #eef5ff;
+  color: #1677ff;
+  font-size: 24rpx;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24rpx;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #edf0f5;
+}
+
+.status-row:last-child {
+  border-bottom: 0;
+}
+
+.status-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #17233d;
+  margin-bottom: 8rpx;
+}
+
+.status-tag {
+  flex: 0 0 auto;
+  height: 48rpx;
+  line-height: 48rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  background: #eef5ff;
+  color: #1677ff;
+}
+
+.status-pending {
+  background: #fff7e6;
+  color: #f79009;
+}
+
+.status-processed,
+.status-paid {
+  background: #ecfdf3;
+  color: #12b76a;
+}
+
+.status-cancelled,
+.status-refunded {
+  background: #f2f4f7;
+  color: #667085;
+}
+
+
+.contact-line {
+  font-size: 30rpx;
+  color: #17233d;
+  font-weight: 700;
+  margin: 12rpx 0;
+}
+
+
+.expire-card.warning {
+  border-left: 8rpx solid #f79009;
+}
+
+.expire-card.expired {
+  border-left: 8rpx solid #f04438;
+}
+
+
+.renew-btn {
+  margin-top: 20rpx;
+}

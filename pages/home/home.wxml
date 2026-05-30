@@ -1,0 +1,64 @@
+<view class="container">
+  <view class="hero-card">
+    <view>
+      <view class="hello">{{profile.name ? profile.name + '，你好' : '欢迎使用智愿填报'}}</view>
+      <view class="sub-text">基于分数、位次、性格测评和偏好，生成冲稳保垫志愿方案</view>
+    </view>
+    <button class="profile-btn" bindtap="goProfile">完善信息</button>
+  </view>
+
+  <view class="card score-card">
+    <view class="score-item">
+      <text class="score-num">{{profile.score || '--'}}</text>
+      <text class="score-label">高考分数</text>
+    </view>
+    <view class="score-item">
+      <text class="score-num">{{profile.rank || '--'}}</text>
+      <text class="score-label">全省位次</text>
+    </view>
+    <view class="score-item">
+      <text class="score-num">{{profile.targetBatch || '--'}}</text>
+      <text class="score-label">目标批次</text>
+    </view>
+  </view>
+
+  <view wx:if="{{personality.code}}" class="card">
+    <view class="section-title">性格与专业匹配</view>
+    <view class="sub-text">测评结果：{{personality.code}} · {{personality.primaryType.name}}</view>
+    <view class="tag-row personality-tags">
+      <text wx:for="{{personality.majorTypes}}" wx:key="*this" class="tag active">{{item}}</text>
+    </view>
+  </view>
+
+  <view class="grid-actions">
+    <view class="action-card" bindtap="goPersonality">
+      <view class="action-title">性格测评</view>
+      <view class="sub-text">先测评，再匹配适合专业</view>
+    </view>
+    <view class="action-card" bindtap="goVolunteer">
+      <view class="action-title">智能生成志愿</view>
+      <view class="sub-text">结合性格与分数位次推荐</view>
+    </view>
+    <view class="action-card" bindtap="goVolunteer">
+      <view class="action-title">一键风险排查</view>
+      <view class="sub-text">识别滑档、退档风险</view>
+    </view>
+    <view class="action-card" bindtap="goDrafts">
+      <view class="action-title">我的草稿箱</view>
+      <view class="sub-text">保存、修改、对比、导出</view>
+    </view>
+    <view class="action-card" bindtap="goSchools">
+      <view class="action-title">院校筛选</view>
+      <view class="sub-text">城市、类型、学费一键筛选</view>
+    </view>
+    <view class="action-card member-action" bindtap="goMembership">
+      <view class="action-title">会员中心</view>
+      <view class="sub-text">解锁智能推荐、AI解读、PDF导出</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">填报提醒</view>
+    <view class="warn-box">所有推荐结果仅供参考，请以各省教育考试院正式填报系统和高校招生章程为准。</view>
+  </view>
+</view>

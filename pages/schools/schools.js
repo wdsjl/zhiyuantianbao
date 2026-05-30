@@ -1,0 +1,115 @@
+const { filterOptions } = require('../../utils/mockData');
+const { request } = require('../../utils/request');
+
+Page({
+  data: {
+    keyword: '',
+    showFilter: false,
+    loading: false,
+    filterOptions,
+    selected: {
+      cities: [],
+      schoolTypes: [],
+      tags: [],
+      majorTypes: [],
+      tuitionRanges: [],
+      durations: []
+    },
+    filteredSchools: []
+  },
+  onLoad() {
+    this.fetchSchools();
+  },
+  formatSchools(list) {
+    return list.map((school) => {
+      const tags = [];
+      if (school.is_985) tags.push('985');
+      if (school.is_211) tags.push('211');
+      if (school.is_double_first_class) tags.push('双一流');
+      if (!tags.length) tags.push(school.education_level || '普通本科');
+      return {
+        ...school,
+        id: school.school_id,
+        name: school.school_name,
+        code: school.school_code,
+        type: school.is_public ? '公办' : '民办',
+        tags,
+        majorsText: '点击院校详情查看招生专业',
+        subject: '以招生计划为准',
+        minRank: '--',
+        tuition: '--',
+        duration: '--'
+      };
+    });
+  },
+  onKeywordInput(event) {
+    this.setData({ keyword: event.detail.value });
+  },
+  toggleFilter() {
+    this.setData({ showFilter: !this.data.showFilter });
+  },
+  toggleOption(event) {
+    const { field, value } = event.currentTarget.dataset;
+    const selected = { ...this.data.selected };
+    const values = selected[field];
+    const index = values.indexOf(value);
+    if (index > -1) {
+      values.splice(index, 1);
+    } else {
+      values.push(value);
+    }
+    this.setData({ selected });
+  },
+  getPublicParam() {
+    const types = this.data.selected.schoolTypes;
+    if (types.includes('公办') && !types.includes('民办')) return 1;
+    if (types.includes('民办') && !types.includes('公办')) return 0;
+    return undefined;
+  },
+  getDoubleFirstParam() {
+    return this.data.selected.tags.includes('双一流') ? 1 : undefined;
+  },
+  fetchSchools() {
+    const city = this.data.selected.cities.length === 1 ? this.data.selected.cities[0] : '';
+    const data = {
+      keyword: this.data.keyword,
+      city,
+      limit: 50,
+      offset: 0
+    };
+    const isPublic = this.getPublicParam();
+    const isDoubleFirst = this.getDoubleFirstParam();
+    if (isPublic !== undefined) data.is_public = isPublic;
+    if (isDoubleFirst !== undefined) data.is_double_first_class = isDoubleFirst;
+
+    this.setData({ loading: true });
+    request({ url: '/api/schools', data })
+      .then((res) => {
+        let list = this.formatSchools(res.list || []);
+        list = this.applyClientFilters(list);
+        this.setData({ filteredSchools: list, showFilter: false });
+        if (!list.length) wx.showToast({ title: '建议放宽筛选条件', icon: 'none' });
+      })
+      .catch(() => {
+        wx.showToast({ title: '接口连接失败，请确认后端已启动', icon: 'none' });
+      })
+      .finally(() => {
+        this.setData({ loading: false });
+      });
+  },
+  applyClientFilters(list) {
+    const { selected } = this.data;
+    return list.filter((school) => {
+      const cityHit = !selected.cities.length || selected.cities.includes(school.city);
+      const typeHit = !selected.schoolTypes.length || selected.schoolTypes.includes(school.type);
+      const tagHit = !selected.tags.length || school.tags.some((tag) => selected.tags.includes(tag));
+      return cityHit && typeHit && tagHit;
+    });
+  },
+  applyFilter() {
+    this.fetchSchools();
+  },
+  addToVolunteer() {
+    wx.showToast({ title: '已加入志愿参考', icon: 'success' });
+  }
+});

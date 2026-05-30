@@ -1,0 +1,61 @@
+<view class="container">
+  <view class="card hero-personality">
+    <view class="section-title">性格测评与专业匹配</view>
+    <view class="sub-text">填报志愿前，先通过 12 道题了解你的兴趣特质，系统会给出更适合的专业方向建议。</view>
+    <view wx:if="{{!result}}" class="progress-wrap">
+      <view class="progress-text">完成度 {{progress}}%</view>
+      <view class="progress-bar"><view class="progress-inner" style="width: {{progress}}%;"></view></view>
+    </view>
+  </view>
+
+  <block wx:if="{{!result}}">
+    <view wx:for="{{questions}}" wx:key="id" class="card question-card">
+      <view class="question-title">{{index + 1}}. {{item.text}}</view>
+      <view class="option-grid">
+        <view wx:for="{{options}}" wx:for-item="option" wx:key="value" data-question-id="{{item.id}}" data-value="{{option.value}}" bindtap="selectOption" class="option-item {{item.selectedValue === option.value ? 'active' : ''}}">
+          {{option.label}}
+        </view>
+      </view>
+    </view>
+    <button class="primary-btn submit-btn" bindtap="submitTest">生成专业匹配结果</button>
+  </block>
+
+  <block wx:else>
+    <view class="card result-card">
+      <view class="section-title">你的测评结果：{{result.code}}</view>
+      <view class="result-main">{{result.primaryType.name}}</view>
+      <view class="sub-text">{{result.primaryType.desc}}</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">核心性格类型</view>
+      <view wx:for="{{result.typeDetails}}" wx:key="code" class="type-row">
+        <view>
+          <text class="type-code">{{item.code}}</text>
+          <text class="type-name">{{item.name}}</text>
+        </view>
+        <text class="type-score">{{item.score}}分</text>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">推荐专业大类</view>
+      <view class="tag-row">
+        <text wx:for="{{result.majorTypes}}" wx:key="*this" class="tag active">{{item}}</text>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">适合关注的专业</view>
+      <view class="major-list">
+        <view wx:for="{{result.majors}}" wx:key="*this" class="major-item">{{item}}</view>
+      </view>
+      <view class="warn-box">性格测评只用于辅助判断专业适配度，最终仍需结合分数位次、选科要求、家庭预算、城市偏好和就业趋势综合决策。</view>
+    </view>
+
+    <view class="bottom-actions personality-actions">
+      <button class="secondary-btn" bindtap="retest">重新测评</button>
+      <button class="primary-btn" bindtap="goVolunteer">进入志愿填报</button>
+    </view>
+  </block>
+</view>

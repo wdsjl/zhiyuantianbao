@@ -1,0 +1,18 @@
+.role-row {
+  margin-bottom: 18rpx;
+}
+
+.role-row .tag {
+  min-width: 140rpx;
+  text-align: center;
+}
+
+.inline-fields {
+  display: flex;
+  gap: 16rpx;
+}
+
+.inline-fields .input {
+  flex: 1;
+  min-width: 0;
+}
