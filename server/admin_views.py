@@ -62,6 +62,7 @@ def page(title: str, body: str) -> HTMLResponse:
         <a href="/admin/membership/users">用户会员</a>
         <a href="/admin/membership/usage">次数记录</a>
         <a href="/admin/payments">收款订单</a>
+        <a href="/preview/membership" target="_blank">会员页预览</a>
         <a href="/admin/llm-settings">大模型配置</a>
         <a href="/docs" target="_blank">接口文档</a>
       </nav>

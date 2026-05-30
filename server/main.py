@@ -7,6 +7,7 @@ from schemas import RecommendRequest, RiskInspectRequest, DraftCreateRequest, Pr
 from services import get_gradient_type, get_risk_level, get_risk_reason, inspect_plan_risk
 from import_service import parse_import_file, import_admission_rows
 from admin_views import admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions, admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans, admin_membership_users, admin_membership_usage, admin_payments
+from preview_views import membership_preview_page
 from llm_settings_service import save_llm_settings, get_llm_settings, test_llm_connection, chat_completion
 from data_fetch_service import create_source, fetch_source, list_sources, list_tasks, list_records
 from auth_service import login_or_create_user
@@ -47,6 +48,11 @@ def health():
 @app.get('/admin')
 def admin_index():
     return admin_home()
+
+
+@app.get('/preview/membership')
+def preview_membership(user_id: int | None = None, custom_user_id: str = ''):
+    return membership_preview_page(user_id, custom_user_id)
 
 
 @app.get('/admin/import')
