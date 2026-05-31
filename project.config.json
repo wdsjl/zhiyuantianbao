@@ -9,5 +9,21 @@
     "postcss": true,
     "minified": true
   },
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "server/"
+      },
+      {
+        "type": "folder",
+        "value": "database/"
+      },
+      {
+        "type": "folder",
+        "value": "docs/"
+      }
+    ]
+  },
   "compileType": "miniprogram"
 }
