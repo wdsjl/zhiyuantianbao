@@ -1,6 +1,17 @@
 const { request, BASE_URL } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
 
+const GRADIENT_CLASS_MAP = {
+  冲: 'gradient-rush',
+  稳: 'gradient-stable',
+  保: 'gradient-safe',
+  垫: 'gradient-backup'
+};
+
+function getGradientClass(gradientType) {
+  return GRADIENT_CLASS_MAP[gradientType] || 'gradient-backup';
+}
+
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
   if (gradientType === '冲') return '中';
@@ -31,6 +42,7 @@ function normalizePlan(items) {
     id: `${item.school_id}-${item.major_id}-${index}`,
     sortOrder: item.sort_order,
     gradientType: item.gradient_type,
+    gradientClass: getGradientClass(item.gradient_type),
     schoolId: item.school_id,
     schoolName: item.school_name,
     schoolCode: item.school_code,
@@ -96,7 +108,13 @@ Page({
     });
     const currentPlan = wx.getStorageSync('currentPlan') || [];
     if (currentPlan.length) {
-      this.setData({ plan: currentPlan, aiExplain: wx.getStorageSync('currentAiExplain') || '' });
+      this.setData({
+        plan: currentPlan.map((item) => ({
+          ...item,
+          gradientClass: item.gradientClass || getGradientClass(item.gradientType)
+        })),
+        aiExplain: wx.getStorageSync('currentAiExplain') || ''
+      });
     }
     fetchEntitlements();
   },
