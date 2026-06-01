@@ -191,7 +191,13 @@ E:\zhiyuantianbao
 utils\request.js
 ```
 
-默认会先请求：
+发布版小程序默认请求：
+
+```text
+https://api.zntb.lhyun.net
+```
+
+开发版小程序默认会先请求：
 
 ```text
 http://127.0.0.1:8001
@@ -204,6 +210,18 @@ http://localhost:8001
 ```
 
 所以本地模拟器一般不需要改接口地址。
+
+如果你在微信开发者工具里想强制测试线上域名，可以在控制台执行：
+
+```js
+wx.setStorageSync('apiBaseUrl', 'https://api.zntb.lhyun.net')
+```
+
+恢复本地调试：
+
+```js
+wx.removeStorageSync('apiBaseUrl')
+```
 
 ## 10. 微信开发者工具本地设置
 
@@ -361,24 +379,19 @@ ipconfig
 IPv4 地址 . . . . . . . . . . . . : 192.168.1.8
 ```
 
-然后修改：
+然后临时修改：
 
 ```text
 utils\request.js
 ```
 
-把：
+把开发地址数组里的第一个地址改成你的电脑局域网 IP，例如：
 
 ```js
-const BASE_URL = 'http://127.0.0.1:8001';
+const LOCAL_BASE_URLS = ['http://192.168.1.8:8001', 'http://127.0.0.1:8001', 'http://localhost:8001'];
 ```
 
-改为：
-
-```js
-const BASE_URL = 'http://192.168.1.8:8001';
-```
-
+真机测试完成后，记得还原这个本地改动，不要把个人局域网 IP 提交到 Git。
 同时确保：
 
 1. 手机和电脑在同一个 Wi-Fi。

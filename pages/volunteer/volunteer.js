@@ -1,4 +1,4 @@
-const { request, BASE_URL } = require('../../utils/request');
+const { request, buildUrl } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
 
 const GRADIENT_CLASS_MAP = {
@@ -363,7 +363,7 @@ Page({
         if (!res.confirm) return;
         wx.showLoading({ title: '生成中' });
         wx.downloadFile({
-          url: `${BASE_URL}/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`,
+          url: buildUrl(`/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`),
           success: (downloadRes) => {
             if (downloadRes.statusCode !== 200) {
               wx.showToast({ title: 'PDF 生成失败', icon: 'none' });

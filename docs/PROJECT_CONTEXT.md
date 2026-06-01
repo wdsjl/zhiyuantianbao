@@ -7,7 +7,8 @@
 - 仓库：`wdsjl/zhiyuantianbao`
 - 项目形态：微信小程序前端 + FastAPI 后端 + SQLite 本地数据库
 - 小程序接口基础地址：`utils/request.js`
-- 后端默认地址：`http://127.0.0.1:8001`
+- 生产接口域名：`https://api.zntb.lhyun.net`
+- 后端默认本地地址：`http://127.0.0.1:8001`
 - 后台入口：`http://127.0.0.1:8001/admin`
 - FastAPI 文档：`http://127.0.0.1:8001/docs`
 
@@ -338,6 +339,8 @@ WECHAT_SECRET=
 
 - `WECHAT_APPID`
 - `WECHAT_SECRET`
+
+当前生产接口域名已按 `https://api.zntb.lhyun.net` 配置；HTTPS 证书和 Nginx 反向代理说明见 `docs/DOMAIN_SSL_DEPLOYMENT.md`。
 
 ## 部署与上线注意事项
 

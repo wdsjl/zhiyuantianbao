@@ -1,10 +1,29 @@
-const BASE_URL = 'http://127.0.0.1:8001';
-const LOCAL_FALLBACK_URL = 'http://localhost:8001';
+const PRODUCTION_BASE_URL = 'https://api.zntb.lhyun.net';
+const LOCAL_BASE_URLS = ['http://127.0.0.1:8001', 'http://localhost:8001'];
+const BASE_URL = PRODUCTION_BASE_URL;
+
+function normalizeBaseUrl(baseUrl) {
+  return String(baseUrl || '').replace(/\/+$/, '');
+}
+
+function isReleaseEnvironment() {
+  try {
+    const accountInfo = wx.getAccountInfoSync();
+    return accountInfo && accountInfo.miniProgram && accountInfo.miniProgram.envVersion === 'release';
+  } catch (error) {
+    return false;
+  }
+}
 
 function getBaseUrls() {
-  const customBaseUrl = wx.getStorageSync('apiBaseUrl');
+  const customBaseUrl = normalizeBaseUrl(wx.getStorageSync('apiBaseUrl'));
   if (customBaseUrl) return [customBaseUrl];
-  return [BASE_URL, LOCAL_FALLBACK_URL];
+  if (isReleaseEnvironment()) return [PRODUCTION_BASE_URL];
+  return LOCAL_BASE_URLS.concat(PRODUCTION_BASE_URL);
+}
+
+function buildUrl(path, baseUrl) {
+  return `${normalizeBaseUrl(baseUrl || getBaseUrls()[0])}${path}`;
 }
 
 function request(options) {
@@ -15,7 +34,7 @@ function request(options) {
     function send() {
       const baseUrl = baseUrls[currentIndex];
       wx.request({
-        url: `${baseUrl}${options.url}`,
+        url: buildUrl(options.url, baseUrl),
         method: options.method || 'GET',
         data: options.data || {},
         timeout: options.timeout || 8000,
@@ -47,5 +66,8 @@ function request(options) {
 
 module.exports = {
   BASE_URL,
+  PRODUCTION_BASE_URL,
+  buildUrl,
+  getBaseUrls,
   request
 };
