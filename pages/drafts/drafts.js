@@ -1,4 +1,4 @@
-const { request, BASE_URL } = require('../../utils/request');
+const { request, buildUrl } = require('../../utils/request');
 
 function normalizeServerDraft(draft) {
   const count = { chong: 0, wen: 0, bao: 0, dian: 0 };
@@ -97,7 +97,7 @@ Page({
         if (!res.confirm) return;
         wx.showLoading({ title: '生成中' });
         wx.downloadFile({
-          url: `${BASE_URL}/api/drafts/${draft.id}/pdf?student_id=${profile.studentId}`,
+          url: buildUrl(`/api/drafts/${draft.id}/pdf?student_id=${profile.studentId}`),
           success: (downloadRes) => {
             if (downloadRes.statusCode !== 200) {
               wx.showToast({ title: 'PDF 生成失败', icon: 'none' });

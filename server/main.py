@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form
+from urllib.parse import quote
+
+from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,12 +9,33 @@ from schemas import RecommendRequest, RiskInspectRequest, DraftCreateRequest, Pr
 from services import get_gradient_type, get_risk_level, get_risk_reason, inspect_plan_risk
 from import_service import parse_import_file, import_admission_rows
 from admin_views import admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions, admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans, admin_membership_users, admin_membership_usage, admin_payments
+from preview_views import membership_preview_page
 from llm_settings_service import save_llm_settings, get_llm_settings, test_llm_connection, chat_completion
 from data_fetch_service import create_source, fetch_source, list_sources, list_tasks, list_records
 from auth_service import login_or_create_user
 from pdf_service import build_draft_pdf, escape_pdf_name
 from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, expire_overdue_memberships
 from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv
+from admin_auth_service import (
+    SESSION_COOKIE_NAME,
+    SESSION_MAX_AGE,
+    admin_accounts_page,
+    admin_login_page,
+    admin_setup_page,
+    authenticate_admin,
+    count_admin_accounts,
+    create_admin_account,
+    current_admin_from_request,
+    ensure_admin_tables,
+    forbidden_page,
+    has_permission,
+    login_redirect_url,
+    make_session_cookie,
+    permission_for_admin_request,
+    safe_redirect_target,
+    set_admin_password,
+    update_admin_profile,
+)
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
 
@@ -36,7 +59,35 @@ def ensure_draft_ai_column() -> None:
 ensure_draft_ai_column()
 ensure_membership_tables()
 ensure_payment_tables()
+ensure_admin_tables()
 expire_overdue_memberships()
+
+
+@app.middleware('http')
+async def admin_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith('/admin'):
+        return await call_next(request)
+
+    public_paths = {'/admin/login', '/admin/setup'}
+    if path in public_paths:
+        return await call_next(request)
+
+    if count_admin_accounts() == 0:
+        return RedirectResponse('/admin/setup', status_code=303)
+
+    admin = current_admin_from_request(request)
+    if not admin:
+        return RedirectResponse(login_redirect_url(request), status_code=303)
+
+    permission = permission_for_admin_request(path, request.method)
+    if permission and not has_permission(admin, permission):
+        response = forbidden_page()
+        response.status_code = 403
+        return response
+
+    request.state.admin = admin
+    return await call_next(request)
 
 
 @app.get('/health')
@@ -44,9 +95,119 @@ def health():
     return {'status': 'ok'}
 
 
+@app.get('/admin/setup')
+def admin_setup_get():
+    if count_admin_accounts() > 0:
+        return RedirectResponse('/admin/login', status_code=303)
+    return admin_setup_page()
+
+
+@app.post('/admin/setup')
+def admin_setup_post(
+    username: str = Form(...),
+    password: str = Form(...),
+    confirm_password: str = Form(...),
+    display_name: str = Form('')
+):
+    if count_admin_accounts() > 0:
+        return RedirectResponse('/admin/login', status_code=303)
+    if password != confirm_password:
+        return admin_setup_page('两次输入的密码不一致')
+    try:
+        create_admin_account(username, password, display_name, 'super_admin')
+    except Exception as exc:
+        return admin_setup_page(str(exc))
+    return RedirectResponse('/admin/login?message=初始化成功，请登录', status_code=303)
+
+
+@app.get('/admin/login')
+def admin_login_get(next_url: str = '/admin', message: str = '', error: str = ''):
+    if count_admin_accounts() == 0:
+        return RedirectResponse('/admin/setup', status_code=303)
+    return admin_login_page(safe_redirect_target(next_url), error or message)
+
+
+@app.post('/admin/login')
+def admin_login_post(username: str = Form(...), password: str = Form(...), next_url: str = Form('/admin')):
+    admin = authenticate_admin(username, password)
+    if not admin:
+        return admin_login_page(safe_redirect_target(next_url), '账号或密码错误，或账号已停用')
+    target = safe_redirect_target(next_url)
+    response = RedirectResponse(target, status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        make_session_cookie(admin),
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        samesite='lax',
+    )
+    return response
+
+
+@app.get('/admin/logout')
+def admin_logout():
+    response = RedirectResponse('/admin/login', status_code=303)
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
+
+
+@app.get('/admin/accounts')
+def admin_accounts(request: Request, message: str = ''):
+    return admin_accounts_page(request.state.admin, message)
+
+
+@app.post('/admin/accounts/create')
+def admin_accounts_create(
+    username: str = Form(...),
+    password: str = Form(...),
+    display_name: str = Form(''),
+    role: str = Form('operator')
+):
+    try:
+        create_admin_account(username, password, display_name, role)
+        message = '账号已创建'
+    except Exception as exc:
+        message = f'创建失败：{str(exc)}'
+    return RedirectResponse(f'/admin/accounts?message={quote(message)}', status_code=303)
+
+
+@app.post('/admin/accounts/update')
+def admin_accounts_update(
+    request: Request,
+    admin_id: int = Form(...),
+    display_name: str = Form(''),
+    role: str = Form('operator'),
+    is_active: str = Form('')
+):
+    try:
+        if admin_id == request.state.admin['admin_id']:
+            message = '不能在当前登录账号上修改角色或停用状态'
+        else:
+            update_admin_profile(admin_id, display_name, role, bool(is_active))
+            message = '账号已更新'
+    except Exception as exc:
+        message = f'更新失败：{str(exc)}'
+    return RedirectResponse(f'/admin/accounts?message={quote(message)}', status_code=303)
+
+
+@app.post('/admin/accounts/password')
+def admin_accounts_password(admin_id: int = Form(...), password: str = Form(...)):
+    try:
+        set_admin_password(admin_id, password)
+        message = '密码已重置'
+    except Exception as exc:
+        message = f'重置失败：{str(exc)}'
+    return RedirectResponse(f'/admin/accounts?message={quote(message)}', status_code=303)
+
+
 @app.get('/admin')
 def admin_index():
     return admin_home()
+
+
+@app.get('/preview/membership')
+def preview_membership(user_id: int | None = None, custom_user_id: str = ''):
+    return membership_preview_page(user_id, custom_user_id)
 
 
 @app.get('/admin/import')

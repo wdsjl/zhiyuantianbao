@@ -76,19 +76,19 @@
   margin-right: 14rpx;
 }
 
-.gradient-冲 {
+.gradient-rush {
   background: #f04438;
 }
 
-.gradient-稳 {
+.gradient-stable {
   background: #1677ff;
 }
 
-.gradient-保 {
+.gradient-safe {
   background: #12b76a;
 }
 
-.gradient-垫 {
+.gradient-backup {
   background: #667085;
 }
 
