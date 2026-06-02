@@ -290,6 +290,29 @@ GET /api/membership/support-contact
 
 导出响应使用 `utf-8-sig`，兼容 Excel 中文打开。
 
+
+### 后台登录和权限
+
+主要文件：
+
+- `server/admin_auth_service.py`
+- `server/main.py`
+- `server/admin_views.py`
+
+核心表：
+
+- `admin_accounts`：后台管理员账号
+
+已支持：
+
+- 首次访问 `/admin` 时，如果没有后台账号，会跳转 `/admin/setup` 初始化超级管理员
+- `/admin/login` 后台登录
+- `/admin/logout` 退出登录
+- `/admin/accounts` 多账号管理、重置密码、启停账号、角色分配
+- 角色权限：`super_admin`、`admin`、`operator`、`viewer`
+
+生产环境建议配置 `ADMIN_SESSION_SECRET`，避免使用默认开发密钥。
+
 ## 常用接口
 
 会员相关：

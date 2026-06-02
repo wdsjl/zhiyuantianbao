@@ -248,3 +248,53 @@ https://api.zntb.lhyun.net/admin
 ```
 
 当前后台仍是开发期管理页面，不建议无保护直接暴露给公网长期使用。
+
+## 9. 后台登录和账号权限
+
+后台入口：
+
+```text
+https://api.zntb.lhyun.net/admin
+```
+
+首次部署后，如果数据库里还没有后台账号，访问 `/admin` 会自动跳转到：
+
+```text
+https://api.zntb.lhyun.net/admin/setup
+```
+
+在这里创建第一个超级管理员。后续登录地址：
+
+```text
+https://api.zntb.lhyun.net/admin/login
+```
+
+超级管理员登录后，可以进入：
+
+```text
+https://api.zntb.lhyun.net/admin/accounts
+```
+
+用于开通多个后台账号、重置密码、停用账号和分配角色。
+
+角色权限：
+
+```text
+超级管理员：账号管理和全部功能
+管理员：除账号管理外全部功能
+运营客服：会员和订单处理
+只读查看：只能查看基础后台页面
+```
+
+生产环境建议设置会话密钥环境变量：
+
+```powershell
+setx ADMIN_SESSION_SECRET "换成一串足够长的随机字符串"
+```
+
+如果后端由 PM2 管理，设置后重启：
+
+```powershell
+pm2 restart zhiyuan-backend
+pm2 save
+```
