@@ -6,13 +6,23 @@ from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest, ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate
 from services import get_gradient_type, get_risk_level, get_risk_reason, inspect_plan_risk
 from import_service import parse_import_file, import_admission_rows
-from admin_views import admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions, admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans, admin_membership_users, admin_membership_usage, admin_payments
+from admin_views import (
+    admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
+    admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
+    admin_membership_users, admin_membership_usage, admin_payments,
+    admin_enrollment_plans, admin_province_rules,
+)
+from admin_data_service import (
+    save_school, delete_school, save_major, delete_major, save_admission, delete_admission,
+    save_enrollment_plan, delete_enrollment_plan, save_student, export_students_csv,
+    save_province_rule, delete_province_rule,
+)
 from llm_settings_service import save_llm_settings, get_llm_settings, test_llm_connection, chat_completion
-from data_fetch_service import create_source, fetch_source, list_sources, list_tasks, list_records
+from data_fetch_service import create_source, fetch_source, list_sources, list_tasks, list_records, update_source, delete_source, review_record, archive_record_to_brochure
 from auth_service import login_or_create_user
 from pdf_service import build_draft_pdf, escape_pdf_name
-from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, expire_overdue_memberships
-from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv
+from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, revoke_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, adjust_permission_usage, export_permission_usage_csv, expire_overdue_memberships
+from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv, refund_order
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
 
@@ -67,23 +77,131 @@ async def admin_import_submit(file: UploadFile = File(...)):
 
 
 @app.get('/admin/import/logs')
-def admin_import_logs_page():
-    return admin_logs()
+def admin_import_logs_page(log_id: int | None = None, message: str = ''):
+    return admin_logs(log_id, message)
 
 
 @app.get('/admin/schools')
-def admin_schools_page(keyword: str = ''):
-    return admin_schools(keyword)
+def admin_schools_page(keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    return admin_schools(keyword, page, edit_id, message)
+
+
+@app.post('/admin/schools/create')
+def admin_school_create(
+    school_code: str = Form(...), school_name: str = Form(...), province: str = Form(''),
+    city: str = Form(''), school_type: str = Form(''), education_level: str = Form(''),
+    is_985: str = Form(''), is_211: str = Form(''), is_double_first_class: str = Form(''),
+    is_public: str = Form('1'), authority: str = Form(''), website: str = Form('')
+):
+    try:
+        save_school({
+            'school_code': school_code, 'school_name': school_name, 'province': province, 'city': city,
+            'school_type': school_type, 'education_level': education_level,
+            'is_985': bool(is_985), 'is_211': bool(is_211), 'is_double_first_class': bool(is_double_first_class),
+            'is_public': bool(is_public), 'authority': authority, 'website': website
+        })
+        return RedirectResponse('/admin/schools?message=院校已新增', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/schools?message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/schools/{school_id}/save')
+def admin_school_update(
+    school_id: int, school_code: str = Form(...), school_name: str = Form(...), province: str = Form(''),
+    city: str = Form(''), school_type: str = Form(''), education_level: str = Form(''),
+    is_985: str = Form(''), is_211: str = Form(''), is_double_first_class: str = Form(''),
+    is_public: str = Form(''), authority: str = Form(''), website: str = Form('')
+):
+    try:
+        save_school({
+            'school_code': school_code, 'school_name': school_name, 'province': province, 'city': city,
+            'school_type': school_type, 'education_level': education_level,
+            'is_985': bool(is_985), 'is_211': bool(is_211), 'is_double_first_class': bool(is_double_first_class),
+            'is_public': bool(is_public), 'authority': authority, 'website': website
+        }, school_id)
+        return RedirectResponse('/admin/schools?message=院校已更新', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/schools?edit_id={school_id}&message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/schools/{school_id}/delete')
+def admin_school_delete(school_id: int):
+    try:
+        delete_school(school_id)
+        return RedirectResponse('/admin/schools?message=院校已删除', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/schools?message=删除失败：{exc}', status_code=303)
 
 
 @app.get('/admin/majors')
-def admin_majors_page(keyword: str = ''):
-    return admin_majors(keyword)
+def admin_majors_page(keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    return admin_majors(keyword, page, edit_id, message)
+
+
+@app.post('/admin/majors/create')
+def admin_major_create(
+    major_code: str = Form(...), major_name: str = Form(...), major_category: str = Form(''),
+    major_type: str = Form(''), degree_type: str = Form(''), duration: str = Form('')
+):
+    try:
+        save_major({'major_code': major_code, 'major_name': major_name, 'major_category': major_category, 'major_type': major_type, 'degree_type': degree_type, 'duration': duration})
+        return RedirectResponse('/admin/majors?message=专业已新增', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/majors?message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/majors/{major_id}/save')
+def admin_major_update(
+    major_id: int, major_code: str = Form(...), major_name: str = Form(...), major_category: str = Form(''),
+    major_type: str = Form(''), degree_type: str = Form(''), duration: str = Form('')
+):
+    try:
+        save_major({'major_code': major_code, 'major_name': major_name, 'major_category': major_category, 'major_type': major_type, 'degree_type': degree_type, 'duration': duration}, major_id)
+        return RedirectResponse('/admin/majors?message=专业已更新', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/majors?edit_id={major_id}&message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/majors/{major_id}/delete')
+def admin_major_delete(major_id: int):
+    try:
+        delete_major(major_id)
+        return RedirectResponse('/admin/majors?message=专业已删除', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/majors?message=删除失败：{exc}', status_code=303)
 
 
 @app.get('/admin/students')
-def admin_students_page(keyword: str = ''):
-    return admin_students(keyword)
+def admin_students_page(keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    return admin_students(keyword, page, edit_id, message)
+
+
+@app.post('/admin/students/{student_id}/save')
+def admin_student_update(
+    student_id: int, name: str = Form(...), phone: str = Form(''), province: str = Form(...),
+    city: str = Form(''), school_name: str = Form(''), grade: str = Form(''), class_name: str = Form(''),
+    exam_year: str = Form(...), subject_combination: str = Form(...), score: str = Form(...),
+    rank: str = Form(...), target_batch: str = Form(...)
+):
+    try:
+        save_student(student_id, {
+            'name': name, 'phone': phone, 'province': province, 'city': city, 'school_name': school_name,
+            'grade': grade, 'class_name': class_name, 'exam_year': exam_year,
+            'subject_combination': subject_combination, 'score': score, 'rank': rank, 'target_batch': target_batch
+        })
+        return RedirectResponse('/admin/students?message=学生档案已更新', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/students?edit_id={student_id}&message=保存失败：{exc}', status_code=303)
+
+
+@app.get('/admin/students/export')
+def admin_students_export(keyword: str = ''):
+    csv_text = export_students_csv(keyword)
+    return Response(
+        content=csv_text.encode('utf-8-sig'),
+        media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition': 'attachment; filename="students.csv"'}
+    )
 
 
 
@@ -140,6 +258,12 @@ def admin_membership_user_grant(
 ):
     grant_membership(user_id, plan_code, int(days) if days else None, remark)
     return RedirectResponse('/admin/membership/users?message=会员已开通或调整', status_code=303)
+
+
+@app.post('/admin/membership/users/revoke')
+def admin_membership_user_revoke(user_id: int = Form(...), remark: str = Form('')):
+    revoke_membership(user_id, remark)
+    return RedirectResponse('/admin/membership/users?message=会员已撤销', status_code=303)
 
 
 
@@ -235,6 +359,15 @@ def admin_payment_request_cancel(request_id: int = Form(...)):
     return RedirectResponse('/admin/payments?message=开通申请已取消', status_code=303)
 
 
+@app.post('/admin/payments/{order_id}/refund')
+def admin_payment_refund(order_id: int, remark: str = Form('')):
+    try:
+        refund_order(order_id, remark)
+        return RedirectResponse('/admin/payments?message=订单已标记退款', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/payments?message=退款失败：{exc}', status_code=303)
+
+
 @app.get('/admin/membership/usage')
 def admin_membership_usage_page(keyword: str = '', message: str = ''):
     return admin_membership_usage(keyword, message)
@@ -250,6 +383,22 @@ def admin_membership_usage_reset(usage_id: int = Form(...)):
 def admin_membership_usage_delete(usage_id: int = Form(...)):
     delete_permission_usage(usage_id)
     return RedirectResponse('/admin/membership/usage?message=次数记录已删除', status_code=303)
+
+
+@app.post('/admin/membership/usage/adjust')
+def admin_membership_usage_adjust(usage_id: int = Form(...), delta: int = Form(...)):
+    adjust_permission_usage(usage_id, delta)
+    return RedirectResponse('/admin/membership/usage?message=次数已调整', status_code=303)
+
+
+@app.get('/admin/membership/usage/export')
+def admin_membership_usage_export(keyword: str = ''):
+    csv_text = export_permission_usage_csv(keyword)
+    return Response(
+        content=csv_text.encode('utf-8-sig'),
+        media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition': 'attachment; filename="permission_usage.csv"'}
+    )
 
 
 
@@ -309,8 +458,155 @@ def api_membership_entitlements(user_id: int | None = None):
 
 
 @app.get('/admin/admissions')
-def admin_admissions_page(province: str = '', batch: str = '', year: str = ''):
-    return admin_admissions(province, batch, year)
+def admin_admissions_page(province: str = '', batch: str = '', year: str = '', keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    return admin_admissions(province, batch, year, keyword, page, edit_id, message)
+
+
+@app.post('/admin/admissions/create')
+def admin_admission_create(
+    year: str = Form(...), province: str = Form(...), batch: str = Form(...),
+    school_id: int = Form(...), major_id: int = Form(...),
+    min_score: str = Form(''), min_rank: str = Form(''), avg_score: str = Form(''),
+    avg_rank: str = Form(''), enrollment_count: str = Form('')
+):
+    try:
+        save_admission({
+            'year': year, 'province': province, 'batch': batch, 'school_id': school_id, 'major_id': major_id,
+            'min_score': min_score, 'min_rank': min_rank, 'avg_score': avg_score, 'avg_rank': avg_rank,
+            'enrollment_count': enrollment_count
+        })
+        return RedirectResponse('/admin/admissions?message=录取数据已新增', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/admissions?message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/admissions/{admission_id}/save')
+def admin_admission_update(
+    admission_id: int, year: str = Form(...), province: str = Form(...), batch: str = Form(...),
+    school_id: int = Form(...), major_id: int = Form(...),
+    min_score: str = Form(''), min_rank: str = Form(''), avg_score: str = Form(''),
+    avg_rank: str = Form(''), enrollment_count: str = Form('')
+):
+    try:
+        save_admission({
+            'year': year, 'province': province, 'batch': batch, 'school_id': school_id, 'major_id': major_id,
+            'min_score': min_score, 'min_rank': min_rank, 'avg_score': avg_score, 'avg_rank': avg_rank,
+            'enrollment_count': enrollment_count
+        }, admission_id)
+        return RedirectResponse('/admin/admissions?message=录取数据已更新', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/admissions?edit_id={admission_id}&message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/admissions/{admission_id}/delete')
+def admin_admission_delete(admission_id: int):
+    try:
+        delete_admission(admission_id)
+        return RedirectResponse('/admin/admissions?message=录取数据已删除', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/admissions?message=删除失败：{exc}', status_code=303)
+
+
+@app.get('/admin/enrollment-plans')
+def admin_enrollment_plans_page(province: str = '', batch: str = '', year: str = '', keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    return admin_enrollment_plans(province, batch, year, keyword, page, edit_id, message)
+
+
+@app.post('/admin/enrollment-plans/create')
+def admin_enrollment_plan_create(
+    year: str = Form(...), province: str = Form(...), batch: str = Form(...),
+    school_id: int = Form(...), major_id: int = Form(...),
+    subject_requirement: str = Form(''), enrollment_count: str = Form(''),
+    tuition: str = Form(''), duration: str = Form(''), campus: str = Form(''), special_notes: str = Form('')
+):
+    try:
+        save_enrollment_plan({
+            'year': year, 'province': province, 'batch': batch, 'school_id': school_id, 'major_id': major_id,
+            'subject_requirement': subject_requirement, 'enrollment_count': enrollment_count,
+            'tuition': tuition, 'duration': duration, 'campus': campus, 'special_notes': special_notes
+        })
+        return RedirectResponse('/admin/enrollment-plans?message=招生计划已新增', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/enrollment-plans?message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/enrollment-plans/{plan_id}/save')
+def admin_enrollment_plan_update(
+    plan_id: int, year: str = Form(...), province: str = Form(...), batch: str = Form(...),
+    school_id: int = Form(...), major_id: int = Form(...),
+    subject_requirement: str = Form(''), enrollment_count: str = Form(''),
+    tuition: str = Form(''), duration: str = Form(''), campus: str = Form(''), special_notes: str = Form('')
+):
+    try:
+        save_enrollment_plan({
+            'year': year, 'province': province, 'batch': batch, 'school_id': school_id, 'major_id': major_id,
+            'subject_requirement': subject_requirement, 'enrollment_count': enrollment_count,
+            'tuition': tuition, 'duration': duration, 'campus': campus, 'special_notes': special_notes
+        }, plan_id)
+        return RedirectResponse('/admin/enrollment-plans?message=招生计划已更新', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/enrollment-plans?edit_id={plan_id}&message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/enrollment-plans/{plan_id}/delete')
+def admin_enrollment_plan_delete(plan_id: int):
+    try:
+        delete_enrollment_plan(plan_id)
+        return RedirectResponse('/admin/enrollment-plans?message=招生计划已删除', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/enrollment-plans?message=删除失败：{exc}', status_code=303)
+
+
+@app.get('/admin/province-rules')
+def admin_province_rules_page(province: str = '', year: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    return admin_province_rules(province, year, page, edit_id, message)
+
+
+@app.post('/admin/province-rules/create')
+def admin_province_rule_create(
+    province: str = Form(...), year: str = Form(...), batch: str = Form(...), volunteer_mode: str = Form(...),
+    school_count: str = Form(''), major_count_per_school: str = Form(''),
+    is_parallel_volunteer: str = Form(''), adjustment_supported: str = Form(''),
+    score_priority_rule: str = Form(''), rule_description: str = Form('')
+):
+    try:
+        save_province_rule({
+            'province': province, 'year': year, 'batch': batch, 'volunteer_mode': volunteer_mode,
+            'school_count': school_count, 'major_count_per_school': major_count_per_school,
+            'is_parallel_volunteer': bool(is_parallel_volunteer), 'adjustment_supported': bool(adjustment_supported),
+            'score_priority_rule': score_priority_rule, 'rule_description': rule_description
+        })
+        return RedirectResponse('/admin/province-rules?message=省份规则已新增', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/province-rules?message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/province-rules/{rule_id}/save')
+def admin_province_rule_update(
+    rule_id: int, province: str = Form(...), year: str = Form(...), batch: str = Form(...), volunteer_mode: str = Form(...),
+    school_count: str = Form(''), major_count_per_school: str = Form(''),
+    is_parallel_volunteer: str = Form(''), adjustment_supported: str = Form(''),
+    score_priority_rule: str = Form(''), rule_description: str = Form('')
+):
+    try:
+        save_province_rule({
+            'province': province, 'year': year, 'batch': batch, 'volunteer_mode': volunteer_mode,
+            'school_count': school_count, 'major_count_per_school': major_count_per_school,
+            'is_parallel_volunteer': bool(is_parallel_volunteer), 'adjustment_supported': bool(adjustment_supported),
+            'score_priority_rule': score_priority_rule, 'rule_description': rule_description
+        }, rule_id)
+        return RedirectResponse('/admin/province-rules?message=省份规则已更新', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/province-rules?edit_id={rule_id}&message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/province-rules/{rule_id}/delete')
+def admin_province_rule_delete(rule_id: int):
+    try:
+        delete_province_rule(rule_id)
+        return RedirectResponse('/admin/province-rules?message=省份规则已删除', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/province-rules?message=删除失败：{exc}', status_code=303)
 
 
 
@@ -386,8 +682,8 @@ def api_llm_settings():
 
 
 @app.get('/admin/data-sources')
-def admin_data_sources_page(keyword: str = '', message: str = ''):
-    return admin_data_sources(keyword, message)
+def admin_data_sources_page(keyword: str = '', review_status: str = '', edit_id: int | None = None, message: str = ''):
+    return admin_data_sources(keyword, review_status, edit_id, message)
 
 
 @app.post('/admin/data-sources')
@@ -421,6 +717,51 @@ def admin_data_sources_fetch(source_id: int):
         return RedirectResponse(f'/admin/data-sources?message=采集完成，发现 {result["matched_count"]} 个链接', status_code=303)
     except Exception as exc:
         return RedirectResponse(f'/admin/data-sources?message=采集失败：{str(exc)}', status_code=303)
+
+
+@app.post('/admin/data-sources/{source_id}/save')
+def admin_data_source_update(
+    source_id: int, school_name: str = Form(...), school_code: str = Form(''), source_name: str = Form(''),
+    data_type: str = Form('招生信息'), year: str = Form(''), province: str = Form(''),
+    url: str = Form(...), remark: str = Form(''), is_active: str = Form('')
+):
+    try:
+        update_source(source_id, {
+            'school_name': school_name, 'school_code': school_code, 'source_name': source_name,
+            'data_type': data_type, 'year': year, 'province': province, 'url': url,
+            'remark': remark, 'is_active': bool(is_active)
+        })
+        return RedirectResponse('/admin/data-sources?message=数据源已更新', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/data-sources?edit_id={source_id}&message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/data-sources/{source_id}/delete')
+def admin_data_source_delete(source_id: int):
+    try:
+        delete_source(source_id)
+        return RedirectResponse('/admin/data-sources?message=数据源已删除', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/data-sources?message=删除失败：{exc}', status_code=303)
+
+
+@app.post('/admin/data-sources/records/{record_id}/review')
+def admin_data_record_review(record_id: int, review_status: str = Form(...)):
+    try:
+        review_record(record_id, review_status)
+        label = '已通过' if review_status == 'approved' else ('已驳回' if review_status == 'rejected' else '已更新')
+        return RedirectResponse(f'/admin/data-sources?message=审核记录{label}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/data-sources?message=审核失败：{exc}', status_code=303)
+
+
+@app.post('/admin/data-sources/records/{record_id}/archive')
+def admin_data_record_archive(record_id: int):
+    try:
+        brochure_id = archive_record_to_brochure(record_id)
+        return RedirectResponse(f'/admin/data-sources?message=已归档到招生章程库（ID {brochure_id}）', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/data-sources?message=归档失败：{exc}', status_code=303)
 
 
 @app.get('/api/data-sources')

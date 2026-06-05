@@ -102,6 +102,21 @@ def update_order_status(order_id: int, pay_status: str) -> None:
         connection.commit()
 
 
+def refund_order(order_id: int, remark: str = '') -> None:
+    ensure_payment_tables()
+    with get_connection() as connection:
+        order = row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_id = ?', [order_id]).fetchone())
+        if not order:
+            raise ValueError('订单不存在')
+        if order.get('pay_status') != 'paid':
+            raise ValueError('仅已支付订单可退款')
+        connection.execute(
+            'UPDATE payment_orders SET pay_status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE order_id = ?',
+            ['refunded', remark or order.get('remark') or '管理员退款', order_id]
+        )
+        connection.commit()
+
+
 def get_order_stats() -> dict[str, Any]:
     ensure_payment_tables()
     with get_connection() as connection:

@@ -148,17 +148,111 @@ def list_tasks(source_id: int | None = None) -> list[dict[str, Any]]:
         return rows_to_dicts(connection.execute(sql, params).fetchall())
 
 
-def list_records(task_id: int | None = None, source_id: int | None = None) -> list[dict[str, Any]]:
+def list_records(task_id: int | None = None, source_id: int | None = None, review_status: str = '') -> list[dict[str, Any]]:
     ensure_fetch_tables()
-    sql = 'SELECT * FROM data_fetch_records WHERE 1=1'
+    sql = '''
+    SELECT r.*, s.school_name, s.data_type
+    FROM data_fetch_records r
+    LEFT JOIN data_sources s ON s.source_id = r.source_id
+    WHERE 1=1
+    '''
     params: list[Any] = []
     if task_id:
-        sql += ' AND task_id = ?'
+        sql += ' AND r.task_id = ?'
         params.append(task_id)
     if source_id:
-        sql += ' AND source_id = ?'
+        sql += ' AND r.source_id = ?'
         params.append(source_id)
-    sql += ' ORDER BY record_id DESC LIMIT 200'
+    if review_status:
+        sql += ' AND r.review_status = ?'
+        params.append(review_status)
+    sql += ' ORDER BY r.record_id DESC LIMIT 200'
+    with get_connection() as connection:
+        return rows_to_dicts(connection.execute(sql, params).fetchall())
+
+
+def update_source(source_id: int, data: dict[str, Any]) -> None:
+    ensure_fetch_tables()
+    with get_connection() as connection:
+        source = row_to_dict(connection.execute('SELECT source_id FROM data_sources WHERE source_id = ?', [source_id]).fetchone())
+        if not source:
+            raise ValueError('数据源不存在')
+        connection.execute(
+            '''UPDATE data_sources SET school_name=?, school_code=?, source_name=?, data_type=?,
+               year=?, province=?, url=?, remark=?, is_active=?, updated_at=CURRENT_TIMESTAMP
+               WHERE source_id=?''',
+            [
+                data['school_name'], data.get('school_code'), data.get('source_name') or data['school_name'],
+                data.get('data_type') or '招生信息',
+                int(data['year']) if data.get('year') and str(data['year']).isdigit() else None,
+                data.get('province'), data['url'],
+                data.get('remark'), 1 if data.get('is_active', True) else 0, source_id
+            ]
+        )
+        connection.commit()
+
+
+def delete_source(source_id: int) -> None:
+    ensure_fetch_tables()
+    with get_connection() as connection:
+        connection.execute('DELETE FROM data_sources WHERE source_id = ?', [source_id])
+        connection.commit()
+
+
+def review_record(record_id: int, review_status: str) -> None:
+    ensure_fetch_tables()
+    if review_status not in ('approved', 'rejected', 'pending'):
+        raise ValueError('无效的审核状态')
+    with get_connection() as connection:
+        connection.execute(
+            'UPDATE data_fetch_records SET review_status = ? WHERE record_id = ?',
+            [review_status, record_id]
+        )
+        connection.commit()
+
+
+def archive_record_to_brochure(record_id: int) -> int:
+    ensure_fetch_tables()
+    with get_connection() as connection:
+        record = row_to_dict(connection.execute(
+            '''
+            SELECT r.*, s.school_id, s.school_code, s.school_name, s.year, s.data_type
+            FROM data_fetch_records r
+            JOIN data_sources s ON s.source_id = r.source_id
+            WHERE r.record_id = ?
+            ''',
+            [record_id]
+        ).fetchone())
+        if not record:
+            raise ValueError('采集记录不存在')
+        cursor = connection.execute(
+            '''
+            INSERT INTO admission_brochures (school_id, school_code, school_name, year, title, source_url, file_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            [
+                record.get('school_id'), record.get('school_code'), record.get('school_name'),
+                record.get('year'), record.get('title') or '招生信息',
+                record['url'], record['url'] if record.get('file_ext') else None
+            ]
+        )
+        connection.execute(
+            'UPDATE data_fetch_records SET review_status = ? WHERE record_id = ?',
+            ['approved', record_id]
+        )
+        connection.commit()
+        return cursor.lastrowid
+
+
+def list_brochures(keyword: str = '') -> list[dict[str, Any]]:
+    ensure_fetch_tables()
+    sql = 'SELECT * FROM admission_brochures WHERE 1=1'
+    params: list[Any] = []
+    if keyword:
+        sql += ' AND (school_name LIKE ? OR title LIKE ?)'
+        like = f'%{keyword}%'
+        params.extend([like, like])
+    sql += ' ORDER BY brochure_id DESC LIMIT 100'
     with get_connection() as connection:
         return rows_to_dicts(connection.execute(sql, params).fetchall())
 

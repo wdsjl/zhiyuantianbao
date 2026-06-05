@@ -303,6 +303,48 @@ def list_expiring_members(days: int = 7) -> list[dict[str, Any]]:
 
 
 
+def revoke_membership(user_id: int, remark: str = '') -> None:
+    ensure_membership_tables()
+    with get_connection() as c:
+        c.execute(
+            "UPDATE user_memberships SET status = 'disabled', remark = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND status = 'active'",
+            [remark or '管理员撤销', user_id]
+        )
+        c.commit()
+
+
+def adjust_permission_usage(usage_id: int, delta: int) -> None:
+    ensure_membership_tables()
+    with get_connection() as c:
+        row = row_to_dict(c.execute('SELECT used_count FROM user_permission_usage WHERE usage_id = ?', [usage_id]).fetchone())
+        if not row:
+            raise ValueError('次数记录不存在')
+        new_count = max(int(row['used_count']) + int(delta), 0)
+        c.execute(
+            'UPDATE user_permission_usage SET used_count = ?, updated_at = CURRENT_TIMESTAMP WHERE usage_id = ?',
+            [new_count, usage_id]
+        )
+        c.commit()
+
+
+def export_permission_usage_csv(keyword: str = '') -> str:
+    import csv
+    import io
+    rows = list_permission_usage(keyword)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ID', '用户ID', '手机号', '姓名', '学校', '套餐', '功能', '周期', '已用', '更新时间'])
+    for row in rows:
+        writer.writerow([
+            row.get('usage_id'), row.get('user_id'), row.get('phone'),
+            row.get('student_name') or row.get('user_name'), row.get('school_name'),
+            row.get('plan_name') or row.get('plan_code'),
+            row.get('permission_name') or row.get('permission_code'),
+            row.get('period_key'), row.get('used_count'), row.get('updated_at')
+        ])
+    return output.getvalue()
+
+
 def expire_overdue_memberships() -> int:
     ensure_membership_tables()
     with get_connection() as c:

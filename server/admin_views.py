@@ -4,14 +4,20 @@ from urllib.parse import urlencode
 from fastapi.responses import HTMLResponse
 
 from db import get_connection, rows_to_dicts
-from data_fetch_service import list_sources, list_tasks, list_records
+from data_fetch_service import list_sources, list_tasks, list_records, list_brochures
 from llm_settings_service import get_llm_settings, mask_api_key
 from membership_service import list_plans, list_permissions, get_plan_permission_map, search_users, list_permission_usage, list_expiring_members
 from payment_service import list_orders, get_order_stats, list_open_requests, get_support_contact
 from dashboard_service import get_dashboard_stats
+from admin_data_service import (
+    PAGE_SIZE, search_schools, get_school, search_majors, get_major,
+    search_admissions, get_admission, search_enrollment_plans, get_enrollment_plan,
+    search_students, get_student, search_province_rules, get_province_rule,
+    get_import_log, list_school_options, list_major_options,
+)
 
 
-def page(title: str, body: str) -> HTMLResponse:
+def render_page(title: str, body: str) -> HTMLResponse:
     html = f"""
     <!doctype html>
     <html lang="zh-CN">
@@ -42,6 +48,13 @@ def page(title: str, body: str) -> HTMLResponse:
         .danger {{ color: #f04438; }}
         .success {{ color: #12b76a; }}
         .tag {{ display: inline-block; padding: 4px 8px; border-radius: 999px; background: #eef5ff; color: #1677ff; font-size: 12px; }}
+        .btn-sm {{ height: 32px; padding: 0 12px; font-size: 13px; }}
+        .btn-danger {{ background: #f04438; }}
+        .btn-muted {{ background: #98a2b3; }}
+        .pagination {{ display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }}
+        .pagination a, .pagination span {{ padding: 6px 12px; border-radius: 8px; text-decoration: none; color: #1677ff; background: #eef5ff; font-size: 14px; }}
+        .pagination .current {{ background: #1677ff; color: white; font-weight: 600; }}
+        textarea {{ border: 1px solid #d0d5dd; border-radius: 10px; padding: 10px 12px; min-width: 280px; min-height: 72px; font-family: inherit; }}
       </style>
     </head>
     <body>
@@ -57,6 +70,8 @@ def page(title: str, body: str) -> HTMLResponse:
         <a href="/admin/students">学生档案</a>
         <a href="/admin/majors">专业数据</a>
         <a href="/admin/admissions">录取数据</a>
+        <a href="/admin/enrollment-plans">招生计划</a>
+        <a href="/admin/province-rules">省份规则</a>
         <a href="/admin/data-sources">官方数据源</a>
         <a href="/admin/membership/plans">会员套餐</a>
         <a href="/admin/membership/users">用户会员</a>
@@ -70,6 +85,52 @@ def page(title: str, body: str) -> HTMLResponse:
     </html>
     """
     return HTMLResponse(html)
+
+
+def checked(val) -> str:
+    return 'checked' if val else ''
+
+
+def selected(val, current) -> str:
+    return 'selected' if str(val) == str(current) else ''
+
+
+def pagination_html(base_path: str, page: int, total: int, extra: dict | None = None, page_size: int = PAGE_SIZE) -> str:
+    extra = extra or {}
+    total_pages = max((total + page_size - 1) // page_size, 1)
+    if total_pages <= 1:
+        return f'<p class="muted">共 {total} 条</p>'
+    parts = [f'<p class="muted">共 {total} 条，第 {page}/{total_pages} 页</p><div class="pagination">']
+    for p in range(1, total_pages + 1):
+        if p > 1 and p < total_pages and abs(p - page) > 2:
+            if p == 2 or p == total_pages - 1:
+                parts.append('<span>...</span>')
+            continue
+        if p == 1 or p == total_pages or abs(p - page) <= 1:
+            params = {**extra, 'page': p}
+            query = urlencode({k: v for k, v in params.items() if v})
+            if p == page:
+                parts.append(f'<span class="current">{p}</span>')
+            else:
+                parts.append(f'<a href="{base_path}?{query}">{p}</a>')
+    parts.append('</div>')
+    return ''.join(parts)
+
+
+def school_options_html(selected_id: int | None = None) -> str:
+    options = list_school_options()
+    html = '<option value="">选择院校</option>'
+    for item in options:
+        html += f'<option value="{item["school_id"]}" {selected(str(item["school_id"]), selected_id)}>{escape(item["school_name"])} ({escape(item["school_code"])})</option>'
+    return html
+
+
+def major_options_html(selected_id: int | None = None) -> str:
+    options = list_major_options()
+    html = '<option value="">选择专业</option>'
+    for item in options:
+        html += f'<option value="{item["major_id"]}" {selected(str(item["major_id"]), selected_id)}>{escape(item["major_name"])} ({escape(item["major_code"])})</option>'
+    return html
 
 
 def table(headers: list[str], rows: list[dict], fields: list[str]) -> str:
@@ -154,7 +215,7 @@ def admin_home():
         <a class="button" href="/admin/import">去导入数据</a>
       </div>
     '''
-    return page('运营看板', body)
+    return render_page('运营看板', body)
 
 
 def admin_import(message: str = ''):
@@ -174,140 +235,415 @@ def admin_import(message: str = ''):
         <p class="muted">模板文件位置：<code>database/admission_import_template.csv</code></p>
       </div>
     '''
-    return page('数据导入', body)
+    return render_page('数据导入', body)
 
 
-def admin_logs():
+def admin_logs(log_id: int | None = None, message: str = ''):
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    detail_html = ''
+    if log_id:
+        log = get_import_log(log_id)
+        if log:
+            detail_html = f'''
+              <div class="card">
+                <h2>日志详情 #{log_id}</h2>
+                <p><strong>类型：</strong>{escape(str(log.get("import_type", "")))}</p>
+                <p><strong>文件名：</strong>{escape(str(log.get("file_name", "")))}</p>
+                <p><strong>总数 / 成功 / 失败：</strong>{log.get("total_count", 0)} / {log.get("success_count", 0)} / {log.get("fail_count", 0)}</p>
+                <p><strong>时间：</strong>{escape(str(log.get("created_at", "")))}</p>
+                <p><strong>错误信息：</strong></p>
+                <textarea readonly style="width:100%;min-height:120px">{escape(str(log.get("error_message") or "无"))}</textarea>
+                <p><a class="button btn-muted" href="/admin/import/logs">返回列表</a></p>
+              </div>
+            '''
     with get_connection() as connection:
         rows = rows_to_dicts(connection.execute('SELECT * FROM import_logs ORDER BY created_at DESC LIMIT 100').fetchall())
-    body = '<div class="card"><h2>导入日志</h2>' + table(
-        ['ID', '类型', '文件名', '总数', '成功', '失败', '错误', '时间'],
-        rows,
-        ['log_id', 'import_type', 'file_name', 'total_count', 'success_count', 'fail_count', 'error_message', 'created_at']
-    ) + '</div>'
-    return page('导入日志', body)
-
-
-def admin_schools(keyword: str = ''):
-    sql = 'SELECT * FROM schools WHERE 1=1'
-    params = []
-    if keyword:
-        sql += ' AND (school_name LIKE ? OR school_code LIKE ? OR city LIKE ?)'
-        like = f'%{keyword}%'
-        params.extend([like, like, like])
-    sql += ' ORDER BY school_id DESC LIMIT 100'
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
-    query = escape(keyword)
+    rows_html = ''
+    for row in rows:
+        rows_html += f'''
+          <tr>
+            <td>{row.get("log_id", "")}</td>
+            <td>{escape(str(row.get("import_type", "")))}</td>
+            <td>{escape(str(row.get("file_name", "")))}</td>
+            <td>{row.get("total_count", 0)}</td>
+            <td>{row.get("success_count", 0)}</td>
+            <td>{row.get("fail_count", 0)}</td>
+            <td>{escape(str(row.get("error_message") or "")[:80])}</td>
+            <td>{escape(str(row.get("created_at", "")))}</td>
+            <td><a class="button btn-sm" href="/admin/import/logs?log_id={row.get("log_id")}">详情</a></td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="9" class="muted">暂无数据</td></tr>'
     body = f'''
+      {detail_html}
       <div class="card">
-        <h2>院校数据</h2>
-        <form class="toolbar" method="get">
-          <input name="keyword" value="{query}" placeholder="院校名称 / 代码 / 城市" />
-          <button type="submit">搜索</button>
-        </form>
-        {table(['ID', '代码', '名称', '省份', '城市', '类型', '层次', '985', '211', '双一流', '公办'], rows, ['school_id', 'school_code', 'school_name', 'province', 'city', 'school_type', 'education_level', 'is_985', 'is_211', 'is_double_first_class', 'is_public'])}
+        <h2>导入日志</h2>
+        {message_html}
+        <table><thead><tr><th>ID</th><th>类型</th><th>文件名</th><th>总数</th><th>成功</th><th>失败</th><th>错误</th><th>时间</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
       </div>
     '''
-    return page('院校数据', body)
+    return render_page('导入日志', body)
 
 
-def admin_majors(keyword: str = ''):
-    sql = 'SELECT * FROM majors WHERE 1=1'
-    params = []
-    if keyword:
-        sql += ' AND (major_name LIKE ? OR major_code LIKE ? OR major_type LIKE ?)'
-        like = f'%{keyword}%'
-        params.extend([like, like, like])
-    sql += ' ORDER BY major_id DESC LIMIT 100'
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
+def admin_schools(keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    rows, total = search_schools(keyword, page)
+    edit = get_school(edit_id) if edit_id else None
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    form_title = f'编辑院校 #{edit_id}' if edit else '新增院校'
+    form_action = f'/admin/schools/{edit_id}/save' if edit else '/admin/schools/create'
+    rows_html = ''
+    for row in rows:
+        rows_html += f'''
+          <tr>
+            <td>{row.get("school_id", "")}</td>
+            <td>{escape(str(row.get("school_code", "")))}</td>
+            <td>{escape(str(row.get("school_name", "")))}</td>
+            <td>{escape(str(row.get("province", "")))}</td>
+            <td>{escape(str(row.get("city", "")))}</td>
+            <td>{escape(str(row.get("school_type", "")))}</td>
+            <td>{row.get("is_985", 0)}</td><td>{row.get("is_211", 0)}</td>
+            <td>
+              <a class="button btn-sm" href="/admin/schools?edit_id={row.get("school_id")}&keyword={escape(keyword)}&page={page}">编辑</a>
+              <form method="post" action="/admin/schools/{row.get("school_id")}/delete" style="display:inline" onsubmit="return confirm('确认删除该院校？')">
+                <button type="submit" class="btn-sm btn-danger">删除</button>
+              </form>
+            </td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="9" class="muted">暂无数据</td></tr>'
     body = f'''
       <div class="card">
-        <h2>专业数据</h2>
+        <h2>{form_title}</h2>
+        {message_html}
+        <form class="toolbar" method="post" action="{form_action}">
+          <input name="school_code" value="{escape(str((edit or {}).get("school_code", "")))}" placeholder="院校代码" required />
+          <input name="school_name" value="{escape(str((edit or {}).get("school_name", "")))}" placeholder="院校名称" required />
+          <input name="province" value="{escape(str((edit or {}).get("province", "")))}" placeholder="省份" />
+          <input name="city" value="{escape(str((edit or {}).get("city", "")))}" placeholder="城市" />
+          <input name="school_type" value="{escape(str((edit or {}).get("school_type", "")))}" placeholder="类型" />
+          <input name="education_level" value="{escape(str((edit or {}).get("education_level", "")))}" placeholder="层次" />
+          <label><input type="checkbox" name="is_985" value="1" {checked((edit or {}).get("is_985"))} /> 985</label>
+          <label><input type="checkbox" name="is_211" value="1" {checked((edit or {}).get("is_211"))} /> 211</label>
+          <label><input type="checkbox" name="is_double_first_class" value="1" {checked((edit or {}).get("is_double_first_class"))} /> 双一流</label>
+          <label><input type="checkbox" name="is_public" value="1" {checked((edit or {}).get("is_public", 1))} /> 公办</label>
+          <input name="website" value="{escape(str((edit or {}).get("website", "")))}" placeholder="官网" style="min-width:260px" />
+          <button type="submit">{'保存修改' if edit else '新增院校'}</button>
+          {f'<a class="button btn-muted" href="/admin/schools?keyword={escape(keyword)}&page={page}">取消编辑</a>' if edit else ''}
+        </form>
+      </div>
+      <div class="card">
+        <h2>院校列表</h2>
+        <form class="toolbar" method="get">
+          <input name="keyword" value="{escape(keyword)}" placeholder="院校名称 / 代码 / 城市 / 省份" />
+          <button type="submit">搜索</button>
+        </form>
+        <table><thead><tr><th>ID</th><th>代码</th><th>名称</th><th>省份</th><th>城市</th><th>类型</th><th>985</th><th>211</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
+        {pagination_html('/admin/schools', page, total, {'keyword': keyword})}
+      </div>
+    '''
+    return render_page('院校数据', body)
+
+
+def admin_majors(keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    rows, total = search_majors(keyword, page)
+    edit = get_major(edit_id) if edit_id else None
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    form_action = f'/admin/majors/{edit_id}/save' if edit else '/admin/majors/create'
+    rows_html = ''
+    for row in rows:
+        rows_html += f'''
+          <tr>
+            <td>{row.get("major_id", "")}</td>
+            <td>{escape(str(row.get("major_code", "")))}</td>
+            <td>{escape(str(row.get("major_name", "")))}</td>
+            <td>{escape(str(row.get("major_category", "")))}</td>
+            <td>{escape(str(row.get("major_type", "")))}</td>
+            <td>{escape(str(row.get("degree_type", "")))}</td>
+            <td>{escape(str(row.get("duration", "")))}</td>
+            <td>
+              <a class="button btn-sm" href="/admin/majors?edit_id={row.get("major_id")}&keyword={escape(keyword)}&page={page}">编辑</a>
+              <form method="post" action="/admin/majors/{row.get("major_id")}/delete" style="display:inline" onsubmit="return confirm('确认删除该专业？')">
+                <button type="submit" class="btn-sm btn-danger">删除</button>
+              </form>
+            </td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="8" class="muted">暂无数据</td></tr>'
+    body = f'''
+      <div class="card">
+        <h2>{'编辑专业' if edit else '新增专业'}</h2>
+        {message_html}
+        <form class="toolbar" method="post" action="{form_action}">
+          <input name="major_code" value="{escape(str((edit or {}).get("major_code", "")))}" placeholder="专业代码" required />
+          <input name="major_name" value="{escape(str((edit or {}).get("major_name", "")))}" placeholder="专业名称" required />
+          <input name="major_category" value="{escape(str((edit or {}).get("major_category", "")))}" placeholder="门类" />
+          <input name="major_type" value="{escape(str((edit or {}).get("major_type", "")))}" placeholder="类型" />
+          <input name="degree_type" value="{escape(str((edit or {}).get("degree_type", "")))}" placeholder="层次" />
+          <input name="duration" value="{escape(str((edit or {}).get("duration", "")))}" placeholder="学制" />
+          <button type="submit">{'保存修改' if edit else '新增专业'}</button>
+          {f'<a class="button btn-muted" href="/admin/majors?keyword={escape(keyword)}&page={page}">取消编辑</a>' if edit else ''}
+        </form>
+      </div>
+      <div class="card">
+        <h2>专业列表</h2>
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="专业名称 / 代码 / 类型" />
           <button type="submit">搜索</button>
         </form>
-        {table(['ID', '代码', '名称', '门类', '类型', '层次', '学制'], rows, ['major_id', 'major_code', 'major_name', 'major_category', 'major_type', 'degree_type', 'duration'])}
+        <table><thead><tr><th>ID</th><th>代码</th><th>名称</th><th>门类</th><th>类型</th><th>层次</th><th>学制</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
+        {pagination_html('/admin/majors', page, total, {'keyword': keyword})}
       </div>
     '''
-    return page('专业数据', body)
+    return render_page('专业数据', body)
 
 
-def admin_admissions(province: str = '', batch: str = '', year: str = ''):
-    sql = '''
-    SELECT ar.admission_id, ar.year, ar.province, ar.batch, s.school_name, s.school_code,
-           m.major_name, m.major_code, ar.min_score, ar.min_rank, ar.avg_score, ar.avg_rank, ar.enrollment_count
-    FROM admission_records ar
-    JOIN schools s ON s.school_id = ar.school_id
-    JOIN majors m ON m.major_id = ar.major_id
-    WHERE 1=1
-    '''
-    params = []
-    if province:
-        sql += ' AND ar.province = ?'
-        params.append(province)
-    if batch:
-        sql += ' AND ar.batch = ?'
-        params.append(batch)
-    if year:
-        sql += ' AND ar.year = ?'
-        params.append(int(year))
-    sql += ' ORDER BY ar.year DESC, ar.min_rank ASC LIMIT 200'
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
+def admin_admissions(province: str = '', batch: str = '', year: str = '', keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    rows, total = search_admissions(province, batch, year, keyword, page)
+    edit = get_admission(edit_id) if edit_id else None
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    form_action = f'/admin/admissions/{edit_id}/save' if edit else '/admin/admissions/create'
+    rows_html = ''
+    for row in rows:
+        rows_html += f'''
+          <tr>
+            <td>{row.get("admission_id", "")}</td><td>{row.get("year", "")}</td><td>{escape(str(row.get("province", "")))}</td>
+            <td>{escape(str(row.get("batch", "")))}</td><td>{escape(str(row.get("school_name", "")))}</td>
+            <td>{escape(str(row.get("major_name", "")))}</td><td>{row.get("min_score", "")}</td><td>{row.get("min_rank", "")}</td>
+            <td>
+              <a class="button btn-sm" href="/admin/admissions?edit_id={row.get("admission_id")}&province={escape(province)}&batch={escape(batch)}&year={escape(year)}&keyword={escape(keyword)}&page={page}">编辑</a>
+              <form method="post" action="/admin/admissions/{row.get("admission_id")}/delete" style="display:inline" onsubmit="return confirm('确认删除？')">
+                <button type="submit" class="btn-sm btn-danger">删除</button>
+              </form>
+            </td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="9" class="muted">暂无数据</td></tr>'
     body = f'''
       <div class="card">
-        <h2>录取数据</h2>
+        <h2>{'编辑录取数据' if edit else '新增录取数据'}</h2>
+        {message_html}
+        <form class="toolbar" method="post" action="{form_action}">
+          <input name="year" value="{escape(str((edit or {}).get("year", year or "")))}" placeholder="年份" required />
+          <input name="province" value="{escape(str((edit or {}).get("province", province or "")))}" placeholder="省份" required />
+          <input name="batch" value="{escape(str((edit or {}).get("batch", batch or "")))}" placeholder="批次" required />
+          <select name="school_id" required>{school_options_html((edit or {}).get("school_id"))}</select>
+          <select name="major_id" required>{major_options_html((edit or {}).get("major_id"))}</select>
+          <input name="min_score" value="{escape(str((edit or {}).get("min_score", "")))}" placeholder="最低分" />
+          <input name="min_rank" value="{escape(str((edit or {}).get("min_rank", "")))}" placeholder="最低位次" />
+          <input name="avg_score" value="{escape(str((edit or {}).get("avg_score", "")))}" placeholder="平均分" />
+          <input name="avg_rank" value="{escape(str((edit or {}).get("avg_rank", "")))}" placeholder="平均位次" />
+          <input name="enrollment_count" value="{escape(str((edit or {}).get("enrollment_count", "")))}" placeholder="招生人数" />
+          <button type="submit">{'保存修改' if edit else '新增记录'}</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>录取数据列表</h2>
         <form class="toolbar" method="get">
-          <input name="province" value="{escape(province)}" placeholder="省份，例如 浙江" />
-          <input name="batch" value="{escape(batch)}" placeholder="批次，例如 普通类一段" />
-          <input name="year" value="{escape(year)}" placeholder="年份，例如 2025" />
+          <input name="province" value="{escape(province)}" placeholder="省份" />
+          <input name="batch" value="{escape(batch)}" placeholder="批次" />
+          <input name="year" value="{escape(year)}" placeholder="年份" />
+          <input name="keyword" value="{escape(keyword)}" placeholder="院校/专业名称" />
           <button type="submit">筛选</button>
         </form>
-        {table(['ID', '年份', '省份', '批次', '院校', '院校代码', '专业', '专业代码', '最低分', '最低位次', '平均分', '平均位次', '招生人数'], rows, ['admission_id', 'year', 'province', 'batch', 'school_name', 'school_code', 'major_name', 'major_code', 'min_score', 'min_rank', 'avg_score', 'avg_rank', 'enrollment_count'])}
+        <table><thead><tr><th>ID</th><th>年份</th><th>省份</th><th>批次</th><th>院校</th><th>专业</th><th>最低分</th><th>最低位次</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
+        {pagination_html('/admin/admissions', page, total, {'province': province, 'batch': batch, 'year': year, 'keyword': keyword})}
       </div>
     '''
-    return page('录取数据', body)
+    return render_page('录取数据', body)
+
+
+def admin_enrollment_plans(province: str = '', batch: str = '', year: str = '', keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    rows, total = search_enrollment_plans(province, batch, year, keyword, page)
+    edit = get_enrollment_plan(edit_id) if edit_id else None
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    form_action = f'/admin/enrollment-plans/{edit_id}/save' if edit else '/admin/enrollment-plans/create'
+    rows_html = ''
+    for row in rows:
+        rows_html += f'''
+          <tr>
+            <td>{row.get("plan_id", "")}</td><td>{row.get("year", "")}</td><td>{escape(str(row.get("province", "")))}</td>
+            <td>{escape(str(row.get("batch", "")))}</td><td>{escape(str(row.get("school_name", "")))}</td>
+            <td>{escape(str(row.get("major_name", "")))}</td><td>{row.get("enrollment_count", "")}</td><td>{row.get("tuition", "")}</td>
+            <td>
+              <a class="button btn-sm" href="/admin/enrollment-plans?edit_id={row.get("plan_id")}&province={escape(province)}&batch={escape(batch)}&year={escape(year)}&keyword={escape(keyword)}&page={page}">编辑</a>
+              <form method="post" action="/admin/enrollment-plans/{row.get("plan_id")}/delete" style="display:inline" onsubmit="return confirm('确认删除？')">
+                <button type="submit" class="btn-sm btn-danger">删除</button>
+              </form>
+            </td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="9" class="muted">暂无数据</td></tr>'
+    body = f'''
+      <div class="card">
+        <h2>{'编辑招生计划' if edit else '新增招生计划'}</h2>
+        {message_html}
+        <form class="toolbar" method="post" action="{form_action}">
+          <input name="year" value="{escape(str((edit or {}).get("year", year or "")))}" placeholder="年份" required />
+          <input name="province" value="{escape(str((edit or {}).get("province", province or "")))}" placeholder="省份" required />
+          <input name="batch" value="{escape(str((edit or {}).get("batch", batch or "")))}" placeholder="批次" required />
+          <select name="school_id" required>{school_options_html((edit or {}).get("school_id"))}</select>
+          <select name="major_id" required>{major_options_html((edit or {}).get("major_id"))}</select>
+          <input name="subject_requirement" value="{escape(str((edit or {}).get("subject_requirement", "")))}" placeholder="选科要求" />
+          <input name="enrollment_count" value="{escape(str((edit or {}).get("enrollment_count", "")))}" placeholder="招生人数" />
+          <input name="tuition" value="{escape(str((edit or {}).get("tuition", "")))}" placeholder="学费" />
+          <input name="duration" value="{escape(str((edit or {}).get("duration", "")))}" placeholder="学制" />
+          <input name="campus" value="{escape(str((edit or {}).get("campus", "")))}" placeholder="校区" />
+          <input name="special_notes" value="{escape(str((edit or {}).get("special_notes", "")))}" placeholder="备注" style="min-width:260px" />
+          <button type="submit">{'保存修改' if edit else '新增计划'}</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>招生计划列表</h2>
+        <form class="toolbar" method="get">
+          <input name="province" value="{escape(province)}" placeholder="省份" />
+          <input name="batch" value="{escape(batch)}" placeholder="批次" />
+          <input name="year" value="{escape(year)}" placeholder="年份" />
+          <input name="keyword" value="{escape(keyword)}" placeholder="院校/专业名称" />
+          <button type="submit">筛选</button>
+        </form>
+        <table><thead><tr><th>ID</th><th>年份</th><th>省份</th><th>批次</th><th>院校</th><th>专业</th><th>人数</th><th>学费</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
+        {pagination_html('/admin/enrollment-plans', page, total, {'province': province, 'batch': batch, 'year': year, 'keyword': keyword})}
+      </div>
+    '''
+    return render_page('招生计划', body)
+
+
+def admin_province_rules(province: str = '', year: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    rows, total = search_province_rules(province, year, page)
+    edit = get_province_rule(edit_id) if edit_id else None
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    form_action = f'/admin/province-rules/{edit_id}/save' if edit else '/admin/province-rules/create'
+    rows_html = ''
+    for row in rows:
+        rows_html += f'''
+          <tr>
+            <td>{row.get("rule_id", "")}</td><td>{escape(str(row.get("province", "")))}</td><td>{row.get("year", "")}</td>
+            <td>{escape(str(row.get("batch", "")))}</td><td>{escape(str(row.get("volunteer_mode", "")))}</td>
+            <td>{row.get("school_count", "")}</td><td>{row.get("major_count_per_school", "")}</td>
+            <td>
+              <a class="button btn-sm" href="/admin/province-rules?edit_id={row.get("rule_id")}&province={escape(province)}&year={escape(year)}&page={page}">编辑</a>
+              <form method="post" action="/admin/province-rules/{row.get("rule_id")}/delete" style="display:inline" onsubmit="return confirm('确认删除？')">
+                <button type="submit" class="btn-sm btn-danger">删除</button>
+              </form>
+            </td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="8" class="muted">暂无数据</td></tr>'
+    body = f'''
+      <div class="card">
+        <h2>{'编辑省份规则' if edit else '新增省份规则'}</h2>
+        {message_html}
+        <form method="post" action="{form_action}">
+          <div class="toolbar">
+            <input name="province" value="{escape(str((edit or {}).get("province", province or "")))}" placeholder="省份" required />
+            <input name="year" value="{escape(str((edit or {}).get("year", year or "")))}" placeholder="年份" required />
+            <input name="batch" value="{escape(str((edit or {}).get("batch", "")))}" placeholder="批次" required />
+            <input name="volunteer_mode" value="{escape(str((edit or {}).get("volunteer_mode", "")))}" placeholder="志愿模式" required />
+            <input name="school_count" value="{escape(str((edit or {}).get("school_count", "")))}" placeholder="院校志愿数" />
+            <input name="major_count_per_school" value="{escape(str((edit or {}).get("major_count_per_school", "")))}" placeholder="每校专业数" />
+            <label><input type="checkbox" name="is_parallel_volunteer" value="1" {checked((edit or {}).get("is_parallel_volunteer", 1))} /> 平行志愿</label>
+            <label><input type="checkbox" name="adjustment_supported" value="1" {checked((edit or {}).get("adjustment_supported", 1))} /> 支持调剂</label>
+          </div>
+          <div class="toolbar">
+            <input name="score_priority_rule" value="{escape(str((edit or {}).get("score_priority_rule", "")))}" placeholder="分数优先规则" style="min-width:260px" />
+            <textarea name="rule_description" placeholder="规则说明">{escape(str((edit or {}).get("rule_description", "")))}</textarea>
+            <button type="submit">{'保存修改' if edit else '新增规则'}</button>
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>省份规则列表</h2>
+        <form class="toolbar" method="get">
+          <input name="province" value="{escape(province)}" placeholder="省份" />
+          <input name="year" value="{escape(year)}" placeholder="年份" />
+          <button type="submit">筛选</button>
+        </form>
+        <table><thead><tr><th>ID</th><th>省份</th><th>年份</th><th>批次</th><th>志愿模式</th><th>院校数</th><th>专业数</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
+        {pagination_html('/admin/province-rules', page, total, {'province': province, 'year': year})}
+      </div>
+    '''
+    return render_page('省份规则', body)
 
 
 
-def admin_students(keyword: str = ''):
-    sql = """
-    SELECT s.student_id, u.user_id, u.openid, u.phone, u.role, s.name, s.province, s.city,
-           s.school_name, s.grade, s.class_name, s.exam_year, s.subject_combination,
-           s.score, s.rank, s.target_batch, s.updated_at
-    FROM students s
-    JOIN users u ON u.user_id = s.user_id
-    WHERE 1=1
-    """
-    params = []
-    if keyword:
-        sql += ' AND (s.name LIKE ? OR u.phone LIKE ? OR s.school_name LIKE ? OR s.class_name LIKE ?)'
-        like = f'%{keyword}%'
-        params.extend([like, like, like, like])
-    sql += ' ORDER BY s.updated_at DESC LIMIT 200'
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
+def admin_students(keyword: str = '', page: int = 1, edit_id: int | None = None, message: str = ''):
+    rows, total = search_students(keyword, page)
+    edit = get_student(edit_id) if edit_id else None
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    edit_form = ''
+    if edit:
+        edit_form = f'''
+          <div class="card">
+            <h2>编辑学生档案 #{edit_id}</h2>
+            {message_html}
+            <form method="post" action="/admin/students/{edit_id}/save">
+              <div class="toolbar">
+                <input name="name" value="{escape(str(edit.get("name", "")))}" placeholder="姓名" required />
+                <input name="phone" value="{escape(str(edit.get("phone", "")))}" placeholder="手机号" />
+                <input name="province" value="{escape(str(edit.get("province", "")))}" placeholder="省份" required />
+                <input name="city" value="{escape(str(edit.get("city", "")))}" placeholder="城市" />
+                <input name="school_name" value="{escape(str(edit.get("school_name", "")))}" placeholder="学校" />
+                <input name="grade" value="{escape(str(edit.get("grade", "")))}" placeholder="年级" />
+                <input name="class_name" value="{escape(str(edit.get("class_name", "")))}" placeholder="班级" />
+                <input name="exam_year" value="{escape(str(edit.get("exam_year", "")))}" placeholder="高考年份" required />
+                <input name="subject_combination" value="{escape(str(edit.get("subject_combination", "")))}" placeholder="选科" required />
+                <input name="score" value="{escape(str(edit.get("score", "")))}" placeholder="分数" required />
+                <input name="rank" value="{escape(str(edit.get("rank", "")))}" placeholder="位次" required />
+                <input name="target_batch" value="{escape(str(edit.get("target_batch", "")))}" placeholder="目标批次" required />
+                <button type="submit">保存修改</button>
+                <a class="button btn-muted" href="/admin/students?keyword={escape(keyword)}&page={page}">取消</a>
+              </div>
+            </form>
+          </div>
+        '''
+    rows_html = ''
+    for row in rows:
+        rows_html += f'''
+          <tr>
+            <td>{row.get("student_id", "")}</td><td>{escape(str(row.get("phone", "")))}</td>
+            <td>{escape(str(row.get("name", "")))}</td><td>{escape(str(row.get("school_name", "")))}</td>
+            <td>{escape(str(row.get("class_name", "")))}</td><td>{row.get("score", "")}</td><td>{row.get("rank", "")}</td>
+            <td>{escape(str(row.get("target_batch", "")))}</td>
+            <td><a class="button btn-sm" href="/admin/students?edit_id={row.get("student_id")}&keyword={escape(keyword)}&page={page}">编辑</a></td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="9" class="muted">暂无数据</td></tr>'
     body = f"""
+      {edit_form}
       <div class="card">
         <h2>学生档案</h2>
+        {'' if edit else message_html}
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="姓名 / 手机号 / 学校 / 班级" />
           <button type="submit">搜索</button>
+          <a class="button" href="/admin/students/export?keyword={escape(keyword)}">导出 CSV</a>
         </form>
-        {table(['学生ID', '用户ID', '手机号', '角色', '姓名', '省份', '城市', '学校', '年级', '班级', '年份', '选科', '分数', '位次', '批次', '更新时间'], rows, ['student_id', 'user_id', 'phone', 'role', 'name', 'province', 'city', 'school_name', 'grade', 'class_name', 'exam_year', 'subject_combination', 'score', 'rank', 'target_batch', 'updated_at'])}
+        <table><thead><tr><th>学生ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>班级</th><th>分数</th><th>位次</th><th>批次</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
+        {pagination_html('/admin/students', page, total, {'keyword': keyword})}
       </div>
     """
-    return page('学生档案', body)
+    return render_page('学生档案', body)
 
 
 
-def admin_data_sources(keyword: str = '', message: str = ''):
+def admin_data_sources(keyword: str = '', review_status: str = '', edit_id: int | None = None, message: str = ''):
     sources = list_sources(keyword)
     tasks = list_tasks()
-    records = list_records()
+    records = list_records(review_status=review_status or '')
+    brochures = list_brochures(keyword)
+    edit_source = None
+    if edit_id:
+        for source in sources:
+            if source.get('source_id') == edit_id:
+                edit_source = source
+                break
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     rows_html = ''
     for source in sources:
@@ -321,8 +657,12 @@ def admin_data_sources(keyword: str = '', message: str = ''):
             <td>{escape(str(source.get('last_status', '') or '未采集'))}</td>
             <td>{escape(str(source.get('last_fetch_at', '') or ''))}</td>
             <td>
-              <form method="post" action="/admin/data-sources/{source.get('source_id')}/fetch">
-                <button type="submit">采集</button>
+              <form method="post" action="/admin/data-sources/{source.get('source_id')}/fetch" style="display:inline">
+                <button type="submit" class="btn-sm">采集</button>
+              </form>
+              <a class="button btn-sm" href="/admin/data-sources?edit_id={source.get('source_id')}&keyword={escape(keyword)}">编辑</a>
+              <form method="post" action="/admin/data-sources/{source.get('source_id')}/delete" style="display:inline" onsubmit="return confirm('确认删除？')">
+                <button type="submit" class="btn-sm btn-danger">删除</button>
               </form>
             </td>
           </tr>
@@ -330,21 +670,89 @@ def admin_data_sources(keyword: str = '', message: str = ''):
     if not rows_html:
         rows_html = '<tr><td colspan="8" class="muted">暂无数据源</td></tr>'
 
+    record_rows = ''
+    for record in records:
+        status = record.get('review_status', 'pending')
+        status_class = 'success' if status == 'approved' else ('danger' if status == 'rejected' else '')
+        record_rows += f'''
+          <tr>
+            <td>{record.get('record_id', '')}</td>
+            <td>{escape(str(record.get('school_name', '')))}</td>
+            <td>{escape(str(record.get('record_type', '')))}</td>
+            <td>{escape(str(record.get('title', '')))}</td>
+            <td>{escape(str(record.get('file_ext', '')))}</td>
+            <td class="{status_class}">{escape(str(status))}</td>
+            <td><a href="{escape(str(record.get('url', '')))}" target="_blank">打开</a></td>
+            <td>
+              <form method="post" action="/admin/data-sources/records/{record.get('record_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="approved" />
+                <button type="submit" class="btn-sm">通过</button>
+              </form>
+              <form method="post" action="/admin/data-sources/records/{record.get('record_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="rejected" />
+                <button type="submit" class="btn-sm btn-danger">驳回</button>
+              </form>
+              <form method="post" action="/admin/data-sources/records/{record.get('record_id')}/archive" style="display:inline">
+                <button type="submit" class="btn-sm btn-muted">归档章程</button>
+              </form>
+            </td>
+          </tr>
+        '''
+    if not record_rows:
+        record_rows = '<tr><td colspan="8" class="muted">暂无采集链接</td></tr>'
+
+    brochure_rows = ''
+    for item in brochures:
+        brochure_rows += f'''
+          <tr>
+            <td>{item.get('brochure_id', '')}</td>
+            <td>{escape(str(item.get('school_name', '')))}</td>
+            <td>{item.get('year', '')}</td>
+            <td>{escape(str(item.get('title', '')))}</td>
+            <td><a href="{escape(str(item.get('source_url', '')))}" target="_blank">来源</a></td>
+          </tr>
+        '''
+    if not brochure_rows:
+        brochure_rows = '<tr><td colspan="5" class="muted">暂无已归档章程</td></tr>'
+
+    edit_form = ''
+    if edit_source:
+        edit_form = f'''
+          <div class="card">
+            <h2>编辑数据源 #{edit_id}</h2>
+            <form class="toolbar" method="post" action="/admin/data-sources/{edit_id}/save">
+              <input name="school_name" value="{escape(str(edit_source.get('school_name', '')))}" required />
+              <input name="school_code" value="{escape(str(edit_source.get('school_code', '')))}" />
+              <input name="source_name" value="{escape(str(edit_source.get('source_name', '')))}" />
+              <select name="data_type">
+                <option value="招生信息" {selected('招生信息', edit_source.get('data_type'))}>招生信息</option>
+                <option value="招生计划" {selected('招生计划', edit_source.get('data_type'))}>招生计划</option>
+                <option value="招生章程" {selected('招生章程', edit_source.get('data_type'))}>招生章程</option>
+                <option value="历年录取分数" {selected('历年录取分数', edit_source.get('data_type'))}>历年录取分数</option>
+                <option value="专业介绍" {selected('专业介绍', edit_source.get('data_type'))}>专业介绍</option>
+              </select>
+              <input name="year" value="{escape(str(edit_source.get('year') or ''))}" placeholder="年份" />
+              <input name="province" value="{escape(str(edit_source.get('province') or ''))}" placeholder="省份" />
+              <input name="url" value="{escape(str(edit_source.get('url', '')))}" style="min-width:360px" required />
+              <input name="remark" value="{escape(str(edit_source.get('remark') or ''))}" placeholder="备注" />
+              <label><input type="checkbox" name="is_active" value="1" {checked(edit_source.get('is_active', 1))} /> 启用</label>
+              <button type="submit">保存</button>
+              <a class="button btn-muted" href="/admin/data-sources?keyword={escape(keyword)}">取消</a>
+            </form>
+          </div>
+        '''
+
     task_table = table(
         ['任务ID', '数据源ID', '高校', '状态', '页面标题', '匹配链接', '错误', '时间'],
         tasks,
         ['task_id', 'source_id', 'school_name', 'task_status', 'page_title', 'matched_count', 'error_message', 'created_at']
     )
-    record_table = table(
-        ['记录ID', '任务ID', '类型', '标题', '扩展名', '关键词', '审核状态', '链接'],
-        records,
-        ['record_id', 'task_id', 'record_type', 'title', 'file_ext', 'matched_keyword', 'review_status', 'url']
-    )
     body = f'''
       <div class="card">
         <h2>高校官方数据源</h2>
         {message_html}
-        <p class="muted">第一版支持配置高校招生官网 URL，并自动发现页面中的招生计划、招生章程、历年录取分数、PDF、Excel、CSV、Word 等链接。采集结果先归档，后续人工审核后再入库。</p>
+        <p class="muted">配置高校招生官网 URL，自动发现招生计划、招生章程、历年录取分数等链接。采集结果需人工审核，通过后可归档到招生章程库。</p>
+        {edit_form}
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="高校 / 数据源 / URL" />
           <button type="submit">搜索</button>
@@ -352,7 +760,7 @@ def admin_data_sources(keyword: str = '', message: str = ''):
         <form class="toolbar" method="post" action="/admin/data-sources">
           <input name="school_name" placeholder="高校名称" required />
           <input name="school_code" placeholder="高校代码" />
-          <input name="source_name" placeholder="数据源名称，例如本科招生网" />
+          <input name="source_name" placeholder="数据源名称" />
           <select name="data_type">
             <option value="招生信息">招生信息</option>
             <option value="招生计划">招生计划</option>
@@ -369,9 +777,26 @@ def admin_data_sources(keyword: str = '', message: str = ''):
         <table><thead><tr><th>ID</th><th>高校</th><th>数据源</th><th>类型</th><th>URL</th><th>状态</th><th>最近采集</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
       </div>
       <div class="card"><h2>最近采集任务</h2>{task_table}</div>
-      <div class="card"><h2>采集发现链接</h2>{record_table}</div>
+      <div class="card">
+        <h2>采集发现链接（人工审核）</h2>
+        <form class="toolbar" method="get">
+          <input type="hidden" name="keyword" value="{escape(keyword)}" />
+          <select name="review_status">
+            <option value="">全部状态</option>
+            <option value="pending" {selected('pending', review_status)}>待审核</option>
+            <option value="approved" {selected('approved', review_status)}>已通过</option>
+            <option value="rejected" {selected('rejected', review_status)}>已驳回</option>
+          </select>
+          <button type="submit">筛选</button>
+        </form>
+        <table><thead><tr><th>ID</th><th>高校</th><th>类型</th><th>标题</th><th>扩展名</th><th>审核</th><th>链接</th><th>操作</th></tr></thead><tbody>{record_rows}</tbody></table>
+      </div>
+      <div class="card">
+        <h2>已归档招生章程</h2>
+        <table><thead><tr><th>ID</th><th>高校</th><th>年份</th><th>标题</th><th>来源</th></tr></thead><tbody>{brochure_rows}</tbody></table>
+      </div>
     '''
-    return page('官方数据源', body)
+    return render_page('官方数据源', body)
 
 
 
@@ -383,14 +808,14 @@ def admin_llm_settings(message: str = ''):
       <div class="card">
         <h2>大模型配置</h2>
         {message_html}
-        <p class="muted">管理后台可直接填写大模型 API Key。当前仅保存配置，后续可用于智能问答、招生章程解读、专业推荐解释等能力。API Key 会在页面中脱敏展示。</p>
+        <p class="muted">管理大模型 API 配置，已接入 AI 志愿方案解读。API Key 在页面中脱敏展示。</p>
         <form method="post" action="/admin/llm-settings">
           <div class="toolbar">
             <select name="provider">
-              <option value="openai-compatible">OpenAI Compatible</option>
-              <option value="deepseek">DeepSeek</option>
-              <option value="qwen">通义千问</option>
-              <option value="zhipu">智谱</option>
+              <option value="openai-compatible" {selected('openai-compatible', settings.get('provider'))}>OpenAI Compatible</option>
+              <option value="deepseek" {selected('deepseek', settings.get('provider'))}>DeepSeek</option>
+              <option value="qwen" {selected('qwen', settings.get('provider'))}>通义千问</option>
+              <option value="zhipu" {selected('zhipu', settings.get('provider'))}>智谱</option>
             </select>
             <input name="base_url" value="{escape(str(settings.get('base_url') or ''))}" placeholder="Base URL，例如 https://api.openai.com/v1" style="min-width:360px" />
             <input name="model_name" value="{escape(str(settings.get('model_name') or ''))}" placeholder="模型名，例如 gpt-4o-mini / deepseek-chat" style="min-width:260px" />
@@ -408,7 +833,7 @@ def admin_llm_settings(message: str = ''):
         <p class="muted">安全提示：生产环境建议把 Key 加密存储，并限制后台访问权限。</p>
       </div>
     '''
-    return page('大模型配置', body)
+    return render_page('大模型配置', body)
 
 
 
@@ -466,7 +891,7 @@ def admin_membership_plans(message: str = ''):
         <table><thead><tr><th>分类</th><th>权限</th>{plan_headers}</tr></thead><tbody>{permission_rows}</tbody></table>
       </div>
     '''
-    return page('会员套餐配置', body)
+    return render_page('会员套餐配置', body)
 
 
 def admin_membership_users(keyword: str = '', message: str = ''):
@@ -489,6 +914,10 @@ def admin_membership_users(keyword: str = '', message: str = ''):
                 <input name="days" placeholder="天数，留空按套餐" style="min-width:120px;width:120px" />
                 <input name="remark" placeholder="备注" />
                 <button type="submit">开通/调整</button>
+              </form>
+              <form method="post" action="/admin/membership/users/revoke" style="display:inline;margin-top:6px" onsubmit="return confirm('确认撤销该用户会员？')">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <button type="submit" class="btn-sm btn-danger">撤销会员</button>
               </form>
             </td>
           </tr>
@@ -539,7 +968,7 @@ def admin_membership_users(keyword: str = '', message: str = ''):
         <table><thead><tr><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>分数</th><th>位次</th><th>当前会员</th><th>开通/调整</th></tr></thead><tbody>{rows}</tbody></table>
       </div>
     '''
-    return page('用户会员管理', body)
+    return render_page('用户会员管理', body)
 
 
 
@@ -563,11 +992,21 @@ def admin_membership_usage(keyword: str = '', message: str = ''):
             <td>
               <form method="post" action="/admin/membership/usage/reset" style="display:inline">
                 <input type="hidden" name="usage_id" value="{item.get('usage_id', '')}" />
-                <button type="submit">清零</button>
+                <button type="submit" class="btn-sm">清零</button>
+              </form>
+              <form method="post" action="/admin/membership/usage/adjust" style="display:inline">
+                <input type="hidden" name="usage_id" value="{item.get('usage_id', '')}" />
+                <input type="hidden" name="delta" value="-1" />
+                <button type="submit" class="btn-sm">-1</button>
+              </form>
+              <form method="post" action="/admin/membership/usage/adjust" style="display:inline">
+                <input type="hidden" name="usage_id" value="{item.get('usage_id', '')}" />
+                <input type="hidden" name="delta" value="1" />
+                <button type="submit" class="btn-sm">+1</button>
               </form>
               <form method="post" action="/admin/membership/usage/delete" style="display:inline">
                 <input type="hidden" name="usage_id" value="{item.get('usage_id', '')}" />
-                <button type="submit" style="background:#f04438">删除</button>
+                <button type="submit" class="btn-sm btn-danger">删除</button>
               </form>
             </td>
           </tr>
@@ -582,11 +1021,12 @@ def admin_membership_usage(keyword: str = '', message: str = ''):
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="手机号 / 姓名 / 学校 / 权限码" />
           <button type="submit">搜索</button>
+          <a class="button" href="/admin/membership/usage/export?keyword={escape(keyword)}">导出 CSV</a>
         </form>
         <table><thead><tr><th>ID</th><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>套餐</th><th>功能</th><th>周期</th><th>已用</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table>
       </div>
     '''
-    return page('会员次数记录', body)
+    return render_page('会员次数记录', body)
 
 
 
@@ -617,10 +1057,13 @@ def admin_payments(keyword: str = '', message: str = ''):
             <td>{escape(str(order.get('payer_contact') or ''))}</td>
             <td>{escape(str(order.get('paid_at') or ''))}</td>
             <td>{escape(str(order.get('remark') or ''))}</td>
+            <td>
+              {f'<form method="post" action="/admin/payments/{order.get("order_id")}/refund" style="display:inline" onsubmit="return confirm(\'确认退款？\')"><button type="submit" class="btn-sm btn-danger">退款</button></form>' if order.get('pay_status') == 'paid' else ''}
+            </td>
           </tr>
         '''
     if not rows:
-        rows = '<tr><td colspan="12" class="muted">暂无订单</td></tr>'
+        rows = '<tr><td colspan="13" class="muted">暂无订单</td></tr>'
     request_rows = ''
     for request in open_requests:
         request_type_text = '续费' if request.get('request_type') == 'renew' else '开通'
@@ -715,7 +1158,7 @@ def admin_payments(keyword: str = '', message: str = ''):
           <button type="submit">搜索</button>
           <a class="button" href="/admin/payments/export?keyword={escape(keyword)}">导出 CSV</a>
         </form>
-        <table><thead><tr><th>ID</th><th>订单号</th><th>手机号</th><th>姓名</th><th>套餐</th><th>金额</th><th>类型</th><th>方式</th><th>状态</th><th>联系方式</th><th>支付时间</th><th>备注</th></tr></thead><tbody>{rows}</tbody></table>
+        <table><thead><tr><th>ID</th><th>订单号</th><th>手机号</th><th>姓名</th><th>套餐</th><th>金额</th><th>类型</th><th>方式</th><th>状态</th><th>联系方式</th><th>支付时间</th><th>备注</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table>
       </div>
     '''
-    return page('收款订单', body)
+    return render_page('收款订单', body)
