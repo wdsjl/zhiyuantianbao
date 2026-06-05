@@ -35,6 +35,24 @@ ADMIN_SESSION_SECRET=请改成随机字符串
 
 未登录访问 `/admin/*` 会自动跳转到登录页。
 
+## Windows PM2 部署
+
+推荐使用项目根目录的 `ecosystem.config.js`：
+
+```powershell
+cd C:\zhiyuantianbao
+pm2 start ecosystem.config.js
+pm2 save
+```
+
+或使用 `server/run.bat`：
+
+```powershell
+pm2 start C:\zhiyuantianbao\server\run.bat --name zhiyuan-backend --interpreter cmd --interpreter-args "/c"
+```
+
+不要使用 `start.py`（含热重载，Windows 下易崩溃）。
+
 ## 微信登录配置
 
 后端已支持：

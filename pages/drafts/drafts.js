@@ -1,4 +1,5 @@
 const { request, BASE_URL } = require('../../utils/request');
+const { loadActiveProfileSync } = require('../../utils/profileHelper');
 
 function normalizeServerDraft(draft) {
   const count = { chong: 0, wen: 0, bao: 0, dian: 0 };
@@ -51,7 +52,7 @@ Page({
     this.fetchDrafts();
   },
   fetchDrafts() {
-    const profile = wx.getStorageSync('studentProfile') || {};
+    const profile = loadActiveProfileSync();
     if (!profile.studentId) {
       this.setData({ drafts: wx.getStorageSync('drafts') || [] });
       return;
@@ -84,7 +85,7 @@ Page({
   exportDraft(event) {
     const index = event.currentTarget.dataset.index;
     const draft = this.data.drafts[index];
-    const profile = wx.getStorageSync('studentProfile') || {};
+    const profile = loadActiveProfileSync();
     if (!profile.studentId || !draft.id) {
       wx.showToast({ title: '请先保存到后端草稿', icon: 'none' });
       return;
@@ -128,7 +129,7 @@ Page({
   deleteDraft(event) {
     const index = event.currentTarget.dataset.index;
     const draft = this.data.drafts[index];
-    const profile = wx.getStorageSync('studentProfile') || {};
+    const profile = loadActiveProfileSync();
     wx.showModal({
       title: '删除草稿',
       content: '删除后不可恢复，是否继续？',

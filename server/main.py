@@ -7,17 +7,17 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest, ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate
-from services import get_gradient_type, get_risk_level, get_risk_reason, inspect_plan_risk
+from services import get_gradient_type, get_risk_level, get_risk_reason, inspect_plan_risk, matches_subject_requirement
 from import_service import parse_import_file, import_admission_rows
 from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
-    admin_enrollment_plans, admin_province_rules, admin_login,
+    admin_enrollment_plans, admin_province_rules, admin_login, admin_account,
 )
 from admin_auth_service import (
     ensure_admin_auth, verify_session_token, verify_admin_credentials,
-    create_session_token, session_cookie_options, ADMIN_SESSION_COOKIE,
+    create_session_token, session_cookie_options, ADMIN_SESSION_COOKIE, change_admin_password,
 )
 from admin_data_service import (
     save_school, delete_school, save_major, delete_major, save_admission, delete_admission,
@@ -97,6 +97,28 @@ def admin_logout():
     response = RedirectResponse('/admin/login', status_code=303)
     response.delete_cookie(ADMIN_SESSION_COOKIE, path='/')
     return response
+
+
+@app.get('/admin/account')
+def admin_account_page(message: str = ''):
+    return admin_account(message)
+
+
+@app.post('/admin/account/password')
+def admin_account_password_change(
+    old_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...)
+):
+    if new_password != confirm_password:
+        return RedirectResponse('/admin/account?message=两次输入的新密码不一致', status_code=303)
+    try:
+        change_admin_password(old_password, new_password)
+        response = RedirectResponse('/admin/login?message=密码已修改，请重新登录', status_code=303)
+        response.delete_cookie(ADMIN_SESSION_COOKIE, path='/')
+        return response
+    except Exception as exc:
+        return RedirectResponse(f'/admin/account?message={exc}', status_code=303)
 
 
 @app.get('/admin')
@@ -1164,6 +1186,11 @@ def recommend(request: RecommendRequest):
 
     with get_connection() as connection:
         rows = rows_to_dicts(connection.execute(sql, params).fetchall())
+
+    rows = [
+        row for row in rows
+        if matches_subject_requirement(request.subject_combination, row.get('subject_requirement'))
+    ]
 
     grouped = {}
     for row in rows:

@@ -58,6 +58,7 @@
       <switch checked="{{item.isAdjustable}}" data-index="{{index}}" bindchange="toggleAdjust" />
     </view>
     <view class="warn-box">{{item.riskReason}}</view>
+    <button class="danger-btn remove-btn" data-index="{{index}}" bindtap="removePlanItem">移除该志愿</button>
   </view>
 
   <view wx:if="{{plan.length}}" class="bottom-actions">

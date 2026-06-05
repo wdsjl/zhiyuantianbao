@@ -1,0 +1,45 @@
+.school-title {
+  font-size: 40rpx;
+  font-weight: 800;
+  color: #101828;
+  margin-bottom: 12rpx;
+}
+
+.meta-line {
+  color: #667085;
+  line-height: 1.8;
+  margin-bottom: 16rpx;
+}
+
+.plan-card {
+  margin-top: 8rpx;
+}
+
+.plan-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+
+.plan-name {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #101828;
+}
+
+.plan-meta {
+  color: #667085;
+  line-height: 1.7;
+  margin-bottom: 16rpx;
+}
+
+.score-line {
+  color: #344054;
+  margin-bottom: 16rpx;
+}
+
+.add-btn {
+  width: 220rpx;
+  margin-left: auto;
+}

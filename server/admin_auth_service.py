@@ -111,6 +111,19 @@ def verify_session_token(token: str | None) -> str | None:
         return None
 
 
+def change_admin_password(old_password: str, new_password: str) -> None:
+    if not verify_admin_credentials(get_admin_username(), old_password):
+        raise ValueError('原密码不正确')
+    if len(new_password or '') < 6:
+        raise ValueError('新密码至少 6 位')
+    with get_connection() as connection:
+        connection.execute(
+            "UPDATE app_settings SET setting_value = ?, updated_at = CURRENT_TIMESTAMP WHERE setting_key = 'admin_password_hash'",
+            [hash_password(new_password)]
+        )
+        connection.commit()
+
+
 def session_cookie_options() -> dict[str, Any]:
     return {
         'httponly': True,

@@ -34,11 +34,11 @@ Page({
         code: school.school_code,
         type: school.is_public ? '公办' : '民办',
         tags,
-        majorsText: '点击院校详情查看招生专业',
-        subject: '以招生计划为准',
+        majorsText: '点击查看招生专业与历年分数',
+        subject: school.education_level || '本科',
         minRank: '--',
         tuition: '--',
-        duration: '--'
+        duration: school.city || ''
       };
     });
   },
@@ -109,7 +109,14 @@ Page({
   applyFilter() {
     this.fetchSchools();
   },
-  addToVolunteer() {
-    wx.showToast({ title: '已加入志愿参考', icon: 'success' });
+  openSchoolDetail(event) {
+    const school = event.currentTarget.dataset.school;
+    if (!school || !school.school_id) return;
+    wx.navigateTo({ url: `/pages/school-detail/school-detail?id=${school.school_id}` });
+  },
+  addToVolunteer(event) {
+    const school = event.currentTarget.dataset.school;
+    if (!school || !school.school_id) return;
+    wx.navigateTo({ url: `/pages/school-detail/school-detail?id=${school.school_id}` });
   }
 });

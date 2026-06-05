@@ -85,6 +85,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
         <a href="/admin/membership/usage">次数记录</a>
         <a href="/admin/payments">收款订单</a>
         <a href="/admin/llm-settings">大模型配置</a>
+        <a href="/admin/account">账号设置</a>
         <a href="/docs" target="_blank">接口文档</a>
         {user_bar}
       </nav>
@@ -93,6 +94,26 @@ def render_page(title: str, body: str) -> HTMLResponse:
     </html>
     """
     return HTMLResponse(html)
+
+
+def admin_account(message: str = ''):
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    body = f'''
+      <div class="card">
+        <h2>后台账号设置</h2>
+        {message_html}
+        <p class="muted">修改管理后台登录密码。修改后需重新登录。</p>
+        <form method="post" action="/admin/account/password">
+          <div class="toolbar">
+            <input name="old_password" type="password" placeholder="原密码" required />
+            <input name="new_password" type="password" placeholder="新密码（至少6位）" required />
+            <input name="confirm_password" type="password" placeholder="确认新密码" required />
+            <button type="submit">修改密码</button>
+          </div>
+        </form>
+      </div>
+    '''
+    return render_page('账号设置', body)
 
 
 def admin_login(message: str = '', next_path: str = '/admin') -> HTMLResponse:

@@ -1,5 +1,6 @@
 const { request, BASE_URL } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
+const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -77,6 +78,10 @@ Page({
     aiLoading: false
   },
   onShow() {
+    refreshActiveProfile().then((profile) => {
+      this.setData({ profile: profile || loadActiveProfileSync() });
+      this.consumePendingPlanAppend();
+    });
     const personality = wx.getStorageSync('personalityResult') || null;
     if (!personality) {
       wx.showModal({
@@ -90,15 +95,39 @@ Page({
       });
       return;
     }
-    this.setData({
-      profile: wx.getStorageSync('studentProfile') || {},
-      personality
-    });
+    this.setData({ personality });
     const currentPlan = wx.getStorageSync('currentPlan') || [];
     if (currentPlan.length) {
       this.setData({ plan: currentPlan, aiExplain: wx.getStorageSync('currentAiExplain') || '' });
     }
     fetchEntitlements();
+  },
+  consumePendingPlanAppend() {
+    const pending = wx.getStorageSync('pendingPlanAppend');
+    if (!pending) return;
+    wx.removeStorageSync('pendingPlanAppend');
+    this.appendPlanItem(pending);
+  },
+  appendPlanItem(item) {
+    const plan = [...this.data.plan];
+    plan.push({
+      ...item,
+      id: `${item.schoolId}-${item.majorId}-${Date.now()}`,
+      sortOrder: plan.length + 1,
+      personalityMatched: false
+    });
+    this.setData({ plan, riskResult: null, aiExplain: '' });
+    wx.setStorageSync('currentPlan', plan);
+    wx.removeStorageSync('currentAiExplain');
+    wx.showToast({ title: '已加入志愿方案', icon: 'success' });
+  },
+  removePlanItem(event) {
+    const index = event.currentTarget.dataset.index;
+    const plan = [...this.data.plan];
+    plan.splice(index, 1);
+    this.setData({ plan, riskResult: null, aiExplain: '' });
+    wx.setStorageSync('currentPlan', plan);
+    wx.removeStorageSync('currentAiExplain');
   },
   ensureProfile() {
     const { profile } = this.data;
@@ -138,6 +167,7 @@ Page({
         score: Number(profile.score),
         rank: Number(profile.rank),
         subject_combination: profile.subjectCombination,
+        major_types: (this.data.personality && this.data.personality.majorTypes) || [],
         accept_adjustment: true
       }
     })

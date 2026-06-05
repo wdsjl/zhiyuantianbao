@@ -1,12 +1,16 @@
+const { refreshActiveProfile } = require('../../utils/profileHelper');
+
 Page({
   data: {
     profile: {},
     personality: {}
   },
   onShow() {
-    this.setData({
-      profile: wx.getStorageSync('studentProfile') || {},
-      personality: wx.getStorageSync('personalityResult') || {}
+    refreshActiveProfile().then((profile) => {
+      this.setData({
+        profile: profile || wx.getStorageSync('studentProfile') || {},
+        personality: wx.getStorageSync('personalityResult') || {}
+      });
     });
   },
   goProfile() {

@@ -1,3 +1,8 @@
+.remove-btn {
+  margin-top: 18rpx;
+  width: 220rpx;
+}
+
 .button-row,
 .bottom-actions {
   display: flex;

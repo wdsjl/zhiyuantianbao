@@ -1,3 +1,17 @@
+SUBJECT_KEYWORDS = ('物理', '化学', '生物', '历史', '政治', '地理', '技术')
+
+
+def matches_subject_requirement(student_combination: str, requirement: str | None) -> bool:
+    if not requirement or requirement.strip() in ('不限', '无要求', '无', '-', '—'):
+        return True
+    combo = (student_combination or '').replace('/', '+').replace('、', '+').replace(',', '+')
+    req = requirement.replace('/', '+').replace('、', '+').replace(',', '+')
+    required = [subject for subject in SUBJECT_KEYWORDS if subject in req]
+    if not required:
+        return True
+    return all(subject in combo for subject in required)
+
+
 def get_gradient_type(user_rank: int, min_rank: int | None) -> str:
     if min_rank is None:
         return '稳'

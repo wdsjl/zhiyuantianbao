@@ -1,7 +1,7 @@
 from typing import Any
 
 from db import get_connection, row_to_dict, rows_to_dicts
-from membership_service import ensure_membership_tables, grant_membership
+from membership_service import ensure_membership_tables, grant_membership, revoke_membership
 
 
 def ensure_payment_tables() -> None:
@@ -115,6 +115,7 @@ def refund_order(order_id: int, remark: str = '') -> None:
             ['refunded', remark or order.get('remark') or '管理员退款', order_id]
         )
         connection.commit()
+    revoke_membership(int(order['user_id']), remark or '订单退款，会员已撤销')
 
 
 def get_order_stats() -> dict[str, Any]:

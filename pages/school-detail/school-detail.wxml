@@ -1,0 +1,32 @@
+<view class="container">
+  <view class="card" wx:if="{{school}}">
+    <view class="school-title">{{school.school_name}}</view>
+    <view class="meta-line">{{school.city}} · {{school.school_type || '院校'}} · {{school.is_public ? '公办' : '民办'}}</view>
+    <view class="tag-row">
+      <text wx:if="{{school.is_985}}" class="tag active">985</text>
+      <text wx:if="{{school.is_211}}" class="tag active">211</text>
+      <text wx:if="{{school.is_double_first_class}}" class="tag active">双一流</text>
+      <text class="tag">代码 {{school.school_code}}</text>
+    </view>
+    <view wx:if="{{school.website}}" class="sub-text">官网：{{school.website}}</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">招生专业</view>
+    <view wx:if="{{loading}}" class="sub-text">加载中...</view>
+    <view wx:elif="{{!plans.length}}" class="sub-text">暂无招生计划，请稍后在后台导入数据。</view>
+    <view wx:for="{{plans}}" wx:key="planKey" class="plan-card">
+      <view class="plan-head">
+        <view class="plan-name">{{item.major_name}}</view>
+        <text class="tag">{{item.year}}年</text>
+      </view>
+      <view class="plan-meta">
+        批次：{{item.batch}} · 选科：{{item.subject_requirement || '以简章为准'}} · 学制：{{item.duration || '--'}} · 学费：{{item.tuition || '--'}}元/年
+      </view>
+      <view class="score-line" wx:if="{{item.min_rank}}">
+        近年参考：最低分 {{item.min_score || '--'}} / 最低位次 {{item.min_rank || '--'}}
+      </view>
+      <button class="secondary-btn add-btn" data-plan="{{item}}" bindtap="addMajorToPlan">加入志愿</button>
+    </view>
+  </view>
+</view>

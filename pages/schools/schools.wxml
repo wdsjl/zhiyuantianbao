@@ -47,11 +47,11 @@
 
   <view class="result-summary">匹配院校 {{filteredSchools.length}} 所</view>
 
-  <view wx:for="{{filteredSchools}}" wx:key="id" class="card school-card">
+  <view wx:for="{{filteredSchools}}" wx:key="id" class="card school-card" data-school="{{item}}" bindtap="openSchoolDetail">
     <view class="school-head">
       <view>
         <view class="school-name">{{item.name}}</view>
-        <view class="sub-text">{{item.city}} · {{item.type}} · {{item.duration}} · {{item.tuition}}元/年</view>
+        <view class="sub-text">{{item.city}} · {{item.type}} · {{item.subject}}</view>
       </view>
       <text class="rank">位次 {{item.minRank}}</text>
     </view>
@@ -60,6 +60,6 @@
       <text class="tag">选科：{{item.subject}}</text>
     </view>
     <view class="majors">专业：{{item.majorsText}}</view>
-    <button class="secondary-btn add-btn" data-school="{{item}}" bindtap="addToVolunteer">加入志愿参考</button>
+    <button class="secondary-btn add-btn" data-school="{{item}}" catchtap="addToVolunteer">查看专业并加入志愿</button>
   </view>
 </view>

@@ -2,6 +2,7 @@
   "pages": [
     "pages/home/home",
     "pages/schools/schools",
+    "pages/school-detail/school-detail",
     "pages/personality/personality",
     "pages/volunteer/volunteer",
     "pages/mine/mine",
