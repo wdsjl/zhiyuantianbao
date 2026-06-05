@@ -1,6 +1,9 @@
-from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form
+from urllib.parse import quote
+
+from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest, ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate
@@ -10,7 +13,11 @@ from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
-    admin_enrollment_plans, admin_province_rules,
+    admin_enrollment_plans, admin_province_rules, admin_login,
+)
+from admin_auth_service import (
+    ensure_admin_auth, verify_session_token, verify_admin_credentials,
+    create_session_token, session_cookie_options, ADMIN_SESSION_COOKIE,
 )
 from admin_data_service import (
     save_school, delete_school, save_major, delete_major, save_admission, delete_admission,
@@ -35,6 +42,21 @@ app.add_middleware(
 )
 
 
+class AdminAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path.startswith('/admin') and path != '/admin/login':
+            if not verify_session_token(request.cookies.get(ADMIN_SESSION_COOKIE)):
+                next_path = path
+                if request.url.query:
+                    next_path = f'{path}?{request.url.query}'
+                return RedirectResponse(f'/admin/login?next={quote(next_path)}', status_code=303)
+        return await call_next(request)
+
+
+app.add_middleware(AdminAuthMiddleware)
+
+
 def ensure_draft_ai_column() -> None:
     with get_connection() as connection:
         columns = [row['name'] for row in connection.execute('PRAGMA table_info(volunteer_drafts)').fetchall()]
@@ -46,12 +68,35 @@ def ensure_draft_ai_column() -> None:
 ensure_draft_ai_column()
 ensure_membership_tables()
 ensure_payment_tables()
+ensure_admin_auth()
 expire_overdue_memberships()
 
 
 @app.get('/health')
 def health():
     return {'status': 'ok'}
+
+
+@app.get('/admin/login')
+def admin_login_page(next: str = '/admin', message: str = ''):
+    return admin_login(message, next)
+
+
+@app.post('/admin/login')
+def admin_login_submit(username: str = Form(...), password: str = Form(...), next: str = Form('/admin')):
+    safe_next = next if next.startswith('/admin') and not next.startswith('/admin/login') else '/admin'
+    if not verify_admin_credentials(username, password):
+        return admin_login('账号或密码错误', safe_next)
+    response = RedirectResponse(safe_next, status_code=303)
+    response.set_cookie(ADMIN_SESSION_COOKIE, create_session_token(username), **session_cookie_options())
+    return response
+
+
+@app.post('/admin/logout')
+def admin_logout():
+    response = RedirectResponse('/admin/login', status_code=303)
+    response.delete_cookie(ADMIN_SESSION_COOKIE, path='/')
+    return response
 
 
 @app.get('/admin')

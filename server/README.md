@@ -25,6 +25,16 @@ http://127.0.0.1:8001/docs
 http://127.0.0.1:8001/admin
 ```
 
+默认登录账号（首次启动自动写入数据库，可通过环境变量覆盖）：
+
+```text
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+ADMIN_SESSION_SECRET=请改成随机字符串
+```
+
+未登录访问 `/admin/*` 会自动跳转到登录页。
+
 ## 微信登录配置
 
 后端已支持：

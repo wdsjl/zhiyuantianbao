@@ -18,6 +18,11 @@ from admin_data_service import (
 
 
 def render_page(title: str, body: str) -> HTMLResponse:
+    user_bar = '''
+      <form method="post" action="/admin/logout" style="margin-left:auto;margin-bottom:0">
+        <button type="submit" class="btn-sm btn-muted">退出登录</button>
+      </form>
+    '''
     html = f"""
     <!doctype html>
     <html lang="zh-CN">
@@ -31,8 +36,10 @@ def render_page(title: str, body: str) -> HTMLResponse:
         header {{ background: linear-gradient(135deg, #1677ff, #36cfc9); color: white; padding: 28px 40px; }}
         header h1 {{ margin: 0; font-size: 28px; }}
         header p {{ margin: 8px 0 0; opacity: .9; }}
-        nav {{ background: white; padding: 14px 40px; box-shadow: 0 8px 24px rgba(22, 119, 255, .08); position: sticky; top: 0; z-index: 2; }}
+        nav {{ background: white; padding: 14px 40px; box-shadow: 0 8px 24px rgba(22, 119, 255, .08); position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 0; }}
         nav a {{ display: inline-block; margin-right: 18px; color: #1677ff; text-decoration: none; font-weight: 600; }}
+        .login-wrap {{ min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }}
+        .login-card {{ width: 100%; max-width: 420px; }}
         main {{ padding: 28px 40px; }}
         .card {{ background: white; border-radius: 18px; padding: 24px; box-shadow: 0 12px 32px rgba(22, 119, 255, .08); margin-bottom: 22px; }}
         .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }}
@@ -79,8 +86,51 @@ def render_page(title: str, body: str) -> HTMLResponse:
         <a href="/admin/payments">收款订单</a>
         <a href="/admin/llm-settings">大模型配置</a>
         <a href="/docs" target="_blank">接口文档</a>
+        {user_bar}
       </nav>
       <main>{body}</main>
+    </body>
+    </html>
+    """
+    return HTMLResponse(html)
+
+
+def admin_login(message: str = '', next_path: str = '/admin') -> HTMLResponse:
+    safe_next = next_path if next_path.startswith('/admin') and not next_path.startswith('/admin/login') else '/admin'
+    message_html = f'<p class="danger">{escape(message)}</p>' if message else ''
+    html = f"""
+    <!doctype html>
+    <html lang="zh-CN">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>后台登录</title>
+      <style>
+        * {{ box-sizing: border-box; }}
+        body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fb; color: #17233d; }}
+        .login-wrap {{ min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }}
+        .card {{ background: white; border-radius: 18px; padding: 32px; box-shadow: 0 12px 32px rgba(22, 119, 255, .08); width: 100%; max-width: 420px; }}
+        h1 {{ margin: 0 0 8px; font-size: 28px; }}
+        .muted {{ color: #667085; line-height: 1.7; margin-bottom: 20px; }}
+        .danger {{ color: #f04438; }}
+        input {{ width: 100%; height: 44px; border: 1px solid #d0d5dd; border-radius: 10px; padding: 0 12px; margin-bottom: 14px; }}
+        button {{ width: 100%; height: 44px; border: 0; border-radius: 999px; color: white; background: #1677ff; cursor: pointer; font-size: 16px; font-weight: 600; }}
+      </style>
+    </head>
+    <body>
+      <div class="login-wrap">
+        <div class="card">
+          <h1>管理后台登录</h1>
+          <p class="muted">请输入账号和密码访问数据管理后台。</p>
+          {message_html}
+          <form method="post" action="/admin/login">
+            <input type="hidden" name="next" value="{escape(safe_next)}" />
+            <input name="username" placeholder="账号" autocomplete="username" required />
+            <input name="password" type="password" placeholder="密码" autocomplete="current-password" required />
+            <button type="submit">登录</button>
+          </form>
+        </div>
+      </div>
     </body>
     </html>
     """
