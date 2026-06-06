@@ -13,8 +13,9 @@ from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
-    admin_enrollment_plans, admin_province_rules, admin_login, admin_account,
+    admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
 )
+from crawler_service import crawl_and_import, import_schools_only, ensure_crawl_tables
 from admin_auth_service import (
     ensure_admin_auth, verify_session_token, verify_admin_credentials,
     create_session_token, session_cookie_options, ADMIN_SESSION_COOKIE, change_admin_password,
@@ -69,6 +70,7 @@ ensure_draft_ai_column()
 ensure_membership_tables()
 ensure_payment_tables()
 ensure_admin_auth()
+ensure_crawl_tables()
 expire_overdue_memberships()
 
 
@@ -124,6 +126,41 @@ def admin_account_password_change(
 @app.get('/admin')
 def admin_index():
     return admin_home()
+
+
+@app.get('/admin/crawler')
+def admin_crawler_page(crawl_id: int | None = None, message: str = ''):
+    return admin_crawler(message, crawl_id)
+
+
+@app.post('/admin/crawler/run')
+def admin_crawler_run(
+    province: str = Form('浙江'),
+    year: int = Form(2024),
+    school_limit: int = Form(20),
+):
+    try:
+        result = crawl_and_import(province, year, school_limit or 20)
+        message = (
+            f"采集完成：处理 {result.get('school_processed', 0)} 所院校，"
+            f"共 {result['total_count']} 条记录，成功 {result['success_count']} 条，失败 {result['fail_count']} 条"
+        )
+        crawl_id = result.get('crawl_id')
+        return RedirectResponse(f'/admin/crawler?crawl_id={crawl_id}&message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/crawler?message={quote(f"采集失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/crawler/schools')
+def admin_crawler_schools(school_limit: int = Form(50)):
+    try:
+        result = import_schools_only(school_limit or 50)
+        message = f"院校同步完成：共 {result['total']} 所，成功 {result['success']} 所"
+        if result.get('errors'):
+            message += f"，部分失败：{result['errors'][0]}"
+        return RedirectResponse(f'/admin/crawler?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/crawler?message={quote(f"同步失败：{exc}")}', status_code=303)
 
 
 @app.get('/admin/import')

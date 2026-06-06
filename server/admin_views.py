@@ -15,6 +15,7 @@ from admin_data_service import (
     search_students, get_student, search_province_rules, get_province_rule,
     get_import_log, list_school_options, list_major_options,
 )
+from crawler_service import PROVINCE_IDS, list_crawl_logs, get_crawl_log
 
 
 def render_page(title: str, body: str) -> HTMLResponse:
@@ -72,6 +73,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
       <nav>
         <a href="/admin">首页</a>
         <a href="/admin/import">数据导入</a>
+        <a href="/admin/crawler">数据采集</a>
         <a href="/admin/import/logs">导入日志</a>
         <a href="/admin/schools">院校数据</a>
         <a href="/admin/students">学生档案</a>
@@ -284,9 +286,91 @@ def admin_home():
         <div class="grid">{data_cards}</div>
         <p class="muted">录取数据越完整，推荐和风险检测越准确。</p>
         <a class="button" href="/admin/import">去导入数据</a>
+        <a class="button btn-muted" href="/admin/crawler">在线采集</a>
       </div>
     '''
     return render_page('运营看板', body)
+
+
+def admin_crawler(message: str = '', crawl_id: int | None = None):
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    province_options = ''.join(
+        f'<option value="{escape(name)}">{escape(name)}</option>' for name in PROVINCE_IDS
+    )
+    detail_html = ''
+    if crawl_id:
+        log = get_crawl_log(crawl_id)
+        if log:
+            detail_html = f'''
+              <div class="card">
+                <h2>采集详情 #{crawl_id}</h2>
+                <p><strong>数据源：</strong>{escape(str(log.get("source_name", "")))}</p>
+                <p><strong>省份 / 年份：</strong>{escape(str(log.get("province", "")))} / {log.get("year", "")}</p>
+                <p><strong>院校进度：</strong>{log.get("school_processed", 0)} / {log.get("school_total", 0)}</p>
+                <p><strong>记录总数 / 成功 / 失败：</strong>{log.get("row_total", 0)} / {log.get("row_success", 0)} / {log.get("row_fail", 0)}</p>
+                <p><strong>状态：</strong><span class="tag">{escape(str(log.get("status", "")))}</span></p>
+                <p><strong>开始时间：</strong>{escape(str(log.get("created_at", "")))}</p>
+                <p><strong>结束时间：</strong>{escape(str(log.get("finished_at") or "进行中"))}</p>
+                <p><strong>错误信息：</strong></p>
+                <textarea readonly style="width:100%;min-height:120px">{escape(str(log.get("error_message") or "无"))}</textarea>
+                <p><a class="button btn-muted" href="/admin/crawler">返回列表</a></p>
+              </div>
+            '''
+    logs = list_crawl_logs(30)
+    log_rows = ''
+    for row in logs:
+        log_rows += f'''
+          <tr>
+            <td>{row.get("crawl_id", "")}</td>
+            <td>{escape(str(row.get("province", "")))}</td>
+            <td>{row.get("year", "")}</td>
+            <td>{row.get("school_processed", 0)} / {row.get("school_total", 0)}</td>
+            <td>{row.get("row_total", 0)}</td>
+            <td>{row.get("row_success", 0)}</td>
+            <td>{row.get("row_fail", 0)}</td>
+            <td><span class="tag">{escape(str(row.get("status", "")))}</span></td>
+            <td>{escape(str(row.get("created_at", "")))}</td>
+            <td><a class="button btn-sm" href="/admin/crawler?crawl_id={row.get("crawl_id")}">详情</a></td>
+          </tr>
+        '''
+    if not log_rows:
+        log_rows = '<tr><td colspan="10" class="muted">暂无采集记录</td></tr>'
+    body = f'''
+      {detail_html}
+      <div class="card">
+        <h2>高考数据采集</h2>
+        {message_html}
+        <p class="muted">
+          数据来源：<strong>掌上高考 static-data.gaokao.cn</strong>（教育部阳光高考合作数据服务）。
+          采集内容包括全国院校库、分省专业录取分数线与招生计划，并自动写入本地数据库。
+          建议先用较小「院校数量」试跑，确认无误后再扩大范围；全量约 3000 校，耗时较长，可用命令行后台执行。
+        </p>
+        <form method="post" action="/admin/crawler/run">
+          <div class="toolbar">
+            <select name="province">{province_options}</select>
+            <input name="year" type="number" value="2024" min="2018" max="2026" placeholder="年份" style="min-width:120px" />
+            <input name="school_limit" type="number" value="20" min="1" max="3000" placeholder="院校数量" style="min-width:120px" />
+            <button type="submit">采集分数线并导入</button>
+          </div>
+        </form>
+        <form method="post" action="/admin/crawler/schools" style="margin-top:12px">
+          <div class="toolbar">
+            <input name="school_limit" type="number" value="50" min="1" max="3000" placeholder="院校数量" style="min-width:120px" />
+            <button type="submit" class="btn-muted">仅同步院校库</button>
+          </div>
+          <p class="muted">仅同步院校基础信息（名称、代码、985/211 等），不采集录取分数线。</p>
+        </form>
+        <p class="muted">命令行全量采集：<code>cd server && python crawler_service.py --province 浙江 --year 2024 --limit 0</code></p>
+      </div>
+      <div class="card">
+        <h2>采集日志</h2>
+        <table>
+          <thead><tr><th>ID</th><th>省份</th><th>年份</th><th>院校进度</th><th>记录数</th><th>成功</th><th>失败</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
+          <tbody>{log_rows}</tbody>
+        </table>
+      </div>
+    '''
+    return render_page('数据采集', body)
 
 
 def admin_import(message: str = ''):
