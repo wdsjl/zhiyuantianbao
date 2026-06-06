@@ -46,9 +46,23 @@ Page({
     const field = event.currentTarget.dataset.field;
     this.setData({ [`form.${field}`]: event.detail.value });
   },
+  isTempOpenid(openid) {
+    return !openid || openid.startsWith('dev_') || openid.startsWith('local_') || openid.startsWith('test_');
+  },
   buildLocalOpenid(form) {
     const loginUser = wx.getStorageSync('loginUser') || {};
-    return form.openid || loginUser.openid || `local_${form.phone || form.name || 'student'}`;
+    const candidates = [loginUser.openid, form.openid].filter(Boolean);
+    const realOpenid = candidates.find((id) => !this.isTempOpenid(id));
+    if (realOpenid) return realOpenid;
+    if (candidates.length) return candidates[0];
+    return `local_${form.phone || form.name || 'student'}`;
+  },
+  showSaveError(message) {
+    wx.showModal({
+      title: '档案保存失败',
+      content: message || '请稍后重试',
+      showCancel: false
+    });
   },
   finishSave(saved) {
     const { form } = this.data;
@@ -89,7 +103,7 @@ Page({
           finish();
         })
         .catch((error) => {
-          wx.showToast({ title: formatRequestError(error) || '家长绑定失败', icon: 'none', duration: 3000 });
+          this.showSaveError(formatRequestError(error) || '家长绑定失败');
         });
       return;
     }
@@ -162,7 +176,7 @@ Page({
           });
           return;
         }
-        wx.showToast({ title: message || '档案保存失败', icon: 'none', duration: 3000 });
+        this.showSaveError(message || '档案保存失败');
       });
   }
 });

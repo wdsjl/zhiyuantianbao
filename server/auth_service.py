@@ -9,6 +9,12 @@ from db import get_connection, row_to_dict
 WECHAT_SESSION_URL = 'https://api.weixin.qq.com/sns/jscode2session'
 
 
+def is_temp_openid(openid: str | None) -> bool:
+    if not openid:
+        return True
+    return openid.startswith(('dev_', 'local_', 'test_'))
+
+
 def normalize_role(role: str) -> str:
     if role in ['学生', 'student']:
         return 'student'
