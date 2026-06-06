@@ -3,13 +3,13 @@
     <view class="section-title">会员中心</view>
     <view class="sub-text">当前套餐：{{entitlements.plan.plan_name || '免费版'}}</view>
     <view wx:if="{{entitlements.membership && entitlements.membership.expires_at}}" class="sub-text">到期时间：{{entitlements.membership.expires_at}}</view>
-    <view wx:else class="sub-text">免费功能长期可用，会员功能请联系客服开通。</view>
+    <view wx:else class="sub-text">免费功能长期可用，升级会员解锁更多智能填报能力。</view>
   </view>
 
   <view wx:if="{{membershipNotice}}" class="card expire-card {{membershipNotice.type}}">
     <view class="section-title">会员提醒</view>
     <view class="sub-text">{{membershipNotice.text}}</view>
-    <button class="primary-btn renew-btn" loading="{{applying}}" disabled="{{applying}}" bindtap="renewCurrentPlan">立即续费</button>
+    <button class="primary-btn renew-btn" loading="{{paying}}" disabled="{{paying}}" bindtap="renewCurrentPlan">立即续费</button>
   </view>
 
   <view wx:for="{{plans}}" wx:key="plan_code" class="card plan-card {{item.plan_code === currentPlanCode ? 'current-plan' : ''}}">
@@ -25,26 +25,8 @@
       <view wx:for="{{item.features}}" wx:key="*this" class="feature-item">{{item}}</view>
     </view>
     <button wx:if="{{item.plan_code === currentPlanCode}}" class="secondary-btn" disabled>当前套餐</button>
-    <button wx:else class="primary-btn" data-index="{{index}}" loading="{{applying}}" disabled="{{applying}}" bindtap="contactOpen">提交开通申请</button>
-  </view>
-
-  <view class="card" wx:if="{{supportContact && (supportContact.support_wechat || supportContact.support_phone || supportContact.support_note)}}">
-    <view class="section-title">开通联系指引</view>
-    <view wx:if="{{supportContact.support_wechat}}" class="contact-line">客服微信：{{supportContact.support_wechat}}</view>
-    <view wx:if="{{supportContact.support_phone}}" class="contact-line">客服电话：{{supportContact.support_phone}}</view>
-    <view wx:if="{{supportContact.support_note}}" class="warn-box">{{supportContact.support_note}}</view>
-  </view>
-
-  <view class="card" wx:if="{{openRequests.length}}">
-    <view class="section-title">我的开通申请</view>
-    <view wx:for="{{openRequests}}" wx:key="request_id" class="status-row">
-      <view>
-        <view class="status-title">{{item.plan_name}} · {{item.priceText}}</view>
-        <view class="sub-text">提交时间：{{item.created_at}}</view>
-        <view wx:if="{{item.message}}" class="sub-text">备注：{{item.message}}</view>
-      </view>
-      <view class="status-tag status-{{item.request_status}}">{{item.statusText}}</view>
-    </view>
+    <button wx:elif="{{item.canPay}}" class="primary-btn" data-index="{{index}}" loading="{{paying}}" disabled="{{paying}}" bindtap="payForPlan">立即支付开通</button>
+    <button wx:else class="secondary-btn" disabled>免费使用</button>
   </view>
 
   <view class="card" wx:if="{{orders.length}}">
@@ -53,15 +35,15 @@
       <view>
         <view class="status-title">{{item.plan_name}} · {{item.amountText}}</view>
         <view class="sub-text">订单号：{{item.order_no}}</view>
-        <view class="sub-text">支付时间：{{item.paid_at}}</view>
+        <view class="sub-text">支付时间：{{item.paid_at || '待确认'}}</view>
       </view>
       <view class="status-tag status-{{item.pay_status}}">{{item.statusText}}</view>
     </view>
   </view>
 
   <view class="card">
-    <view class="section-title">合规说明</view>
-    <view class="warn-box">个人主体阶段不在小程序内直接收款。点击套餐可提交开通申请，客服确认收款后人工开通；企业主体升级后可接入微信支付自动开通。</view>
+    <view class="section-title">支付说明</view>
+    <view class="warn-box">会员套餐通过微信支付完成开通，支付成功后系统自动开通对应权益。</view>
     <view class="warn-box">所有推荐、风险检测和 AI 解读仅供参考，不构成录取承诺，最终以官方招生政策和正式填报系统为准。</view>
   </view>
 </view>

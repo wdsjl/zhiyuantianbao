@@ -1,14 +1,14 @@
 from urllib.parse import quote
 
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
-from fastapi.responses import Response, RedirectResponse
+from fastapi.responses import Response, RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import (
     RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
-    ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate,
+    ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest,
 )
 from student_report_service import (
@@ -46,6 +46,7 @@ from auth_service import login_or_create_user, is_temp_openid
 from pdf_service import build_draft_pdf, escape_pdf_name
 from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, revoke_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, adjust_permission_usage, export_permission_usage_csv, expire_overdue_memberships
 from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv, refund_order
+from wechat_pay_service import create_wechat_payment, handle_wechat_pay_notify, sync_wechat_order_status, is_wechat_pay_ready
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
 
@@ -585,6 +586,37 @@ def api_membership_my_status(user_id: int):
         'requests': list_user_open_requests(user_id),
         'orders': list_user_orders(user_id)
     }
+
+
+@app.get('/api/payments/wechat/status')
+def api_wechat_pay_status():
+    return {'enabled': is_wechat_pay_ready()}
+
+
+@app.post('/api/payments/wechat/create')
+def api_wechat_pay_create(payload: PaymentCreateRequest):
+    try:
+        return create_wechat_payment(payload.user_id, payload.plan_code, payload.request_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/payments/wechat/orders/{order_no}')
+def api_wechat_pay_order_status(order_no: str, user_id: int):
+    try:
+        return sync_wechat_order_status(order_no, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/payments/wechat/notify')
+async def api_wechat_pay_notify(request: Request):
+    body = await request.body()
+    try:
+        result = handle_wechat_pay_notify(dict(request.headers), body.decode('utf-8'))
+        return JSONResponse(result)
+    except Exception as exc:
+        return JSONResponse({'code': 'FAIL', 'message': str(exc)}, status_code=500)
 
 
 @app.post('/api/membership/open-requests')

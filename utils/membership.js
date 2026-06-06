@@ -87,7 +87,7 @@ function showUpgradeModal(permissionCode, title, message) {
   const name = title || PERMISSION_LABELS[permissionCode] || '该功能';
   wx.showModal({
     title: '会员功能',
-    content: message || `${name}需要开通对应会员后使用，或当前套餐次数已用完。个人主体阶段请联系客服开通，企业主体上线后可直接支付开通。`,
+    content: message || `${name}需要开通对应会员后使用，或当前套餐次数已用完。请前往会员中心微信支付开通。`,
     confirmText: '查看会员',
     cancelText: '稍后再说',
     success: (res) => {

@@ -124,3 +124,9 @@ class OpenRequestCreate(BaseModel):
     contact_phone: Optional[str] = None
     message: Optional[str] = None
     request_type: str = 'open'
+
+
+class PaymentCreateRequest(BaseModel):
+    user_id: int
+    plan_code: str
+    request_type: str = 'open'
