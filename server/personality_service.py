@@ -125,8 +125,6 @@ def build_personality_ai_context(personality: dict[str, Any]) -> str:
             lines.extend([f"- {line}" for line in type_analysis])
         if personality.get('aiCareerReport'):
             lines.append(f"AI 个性化填报报告：\n{personality.get('aiCareerReport')}")
-        elif personality.get('aiCareerReport'):
-            lines.append(f"AI 深度职业报告：\n{personality.get('aiCareerReport')}")
         return '\n'.join([line for line in lines if line and line.strip()])
 
     primary = personality.get('primaryType') or {}

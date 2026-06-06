@@ -87,11 +87,9 @@ Page({
     if (personality) {
       const { migrateLegacyResult } = require('../../utils/personality');
       personality = migrateLegacyResult(personality);
-      const aiCareerReport = wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
       const studentAiReport = wx.getStorageSync('studentAiReport') || '';
-      if (aiCareerReport || studentAiReport) {
-        personality = { ...personality, aiCareerReport, aiCareerReport: studentAiReport || aiCareerReport };
-      }
+      const aiCareerReport = studentAiReport || wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
+      if (aiCareerReport) personality = { ...personality, aiCareerReport };
     }
     if (!personality) {
       const profile = this.data.profile || loadActiveProfileSync();
