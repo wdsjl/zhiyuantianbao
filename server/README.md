@@ -206,3 +206,22 @@ https://api.zntb.lhyun.net
 ```text
 api.zntb.lhyun.net
 ```
+
+## 微信支付
+
+小程序会员中心已接入微信支付 JSAPI。服务器需配置：
+
+```text
+WECHAT_APPID=小程序AppID
+WECHAT_MCH_ID=1621904940
+WECHAT_PAY_API_V3_KEY=商户平台APIv3密钥
+WECHAT_PAY_SERIAL_NO=商户API证书序列号
+WECHAT_PAY_PRIVATE_KEY_PATH=C:/zhiyuantianbao/server/certs/apiclient_key.pem
+WECHAT_PAY_NOTIFY_URL=https://api.zntb.lhyun.net/api/payments/wechat/notify
+```
+
+1. 将 `apiclient_key.pem` 放到 `server/certs/`
+2. 微信商户平台配置支付回调地址：`https://api.zntb.lhyun.net/api/payments/wechat/notify`
+3. 小程序后台关联商户号 `1621904940`
+4. 安装依赖后重启：`pip install -r requirements.txt && pm2 restart zhiyuan-backend`
+5. 访问 `GET /api/payments/wechat/status`，返回 `{"enabled": true}` 表示支付就绪

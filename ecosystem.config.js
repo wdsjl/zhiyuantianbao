@@ -8,7 +8,11 @@ module.exports = {
     env: {
       ADMIN_USERNAME: 'admin',
       ADMIN_PASSWORD: 'admin123',
-      ADMIN_SESSION_SECRET: 'please-change-this-secret'
+      ADMIN_SESSION_SECRET: 'please-change-this-secret',
+      WECHAT_APPID: 'wx58ed9703d22d85c2',
+      WECHAT_MCH_ID: '1621904940',
+      WECHAT_PAY_NOTIFY_URL: 'https://api.zntb.lhyun.net/api/payments/wechat/notify',
+      WECHAT_PAY_PRIVATE_KEY_PATH: 'C:/zhiyuantianbao/server/certs/apiclient_key.pem'
     }
   }]
 };
