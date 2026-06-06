@@ -69,6 +69,12 @@ function toApiItem(item, index) {
   };
 }
 
+const PLAN_STYLE_OPTIONS = [
+  { value: 'balanced', label: '均衡方案', desc: '冲2 稳5 保2' },
+  { value: 'aggressive', label: '激进冲院校', desc: '冲3 稳4 保2' },
+  { value: 'conservative', label: '保守稳上岸', desc: '冲1 稳5 保3' }
+];
+
 Page({
   data: {
     profile: {},
@@ -78,9 +84,14 @@ Page({
     riskClass: 'risk-low',
     loading: false,
     aiExplain: '',
-    aiLoading: false
+    aiLoading: false,
+    planStyle: 'balanced',
+    planStyleOptions: PLAN_STYLE_OPTIONS,
+    strategyMeta: null
   },
   onShow() {
+    const savedStyle = wx.getStorageSync('volunteerPlanStyle') || 'balanced';
+    this.setData({ planStyle: savedStyle });
     refreshActiveProfile().then((profile) => {
       this.setData({ profile: profile || loadActiveProfileSync() });
       this.consumePendingPlanAppend();
@@ -165,6 +176,11 @@ Page({
     this.setData({ aiExplain: '' });
     wx.removeStorageSync('currentAiExplain');
   },
+  onPlanStyleChange(event) {
+    const planStyle = event.currentTarget.dataset.style;
+    this.setData({ planStyle });
+    wx.setStorageSync('volunteerPlanStyle', planStyle);
+  },
   generatePlan() {
     if (!this.ensureProfile()) return;
     requirePermission('smart_recommend', '智能志愿推荐', { consume: true }).then((allowed) => {
@@ -185,7 +201,9 @@ Page({
         rank: Number(profile.rank),
         subject_combination: profile.subjectCombination,
         major_types: (this.data.personality && this.data.personality.majorTypes) || [],
-        accept_adjustment: true
+        accept_adjustment: true,
+        plan_style: this.data.planStyle || 'balanced',
+        volunteer_count: 9
       }
     })
       .then((res) => {
@@ -193,11 +211,12 @@ Page({
         const preferredTypes = personality.majorTypes || [];
         const plan = normalizePlan(res.items || []).map((item) => ({
           ...item,
-          personalityMatched: preferredTypes.includes(item.majorType)
+          personalityMatched: preferredTypes.includes(item.majorType),
+          admissionProbability: item.admission_probability || ''
         }));
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
-        this.setData({ plan, riskResult, riskClass, aiExplain: '' });
+        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta: res.strategy || null });
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');

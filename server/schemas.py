@@ -45,6 +45,8 @@ class RecommendRequest(BaseModel):
     major_types: list[str] = Field(default_factory=list)
     only_public: Optional[bool] = None
     accept_adjustment: bool = True
+    plan_style: str = 'balanced'
+    volunteer_count: int = 9
 
 
 class RiskInspectRequest(BaseModel):

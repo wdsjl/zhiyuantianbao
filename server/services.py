@@ -12,17 +12,14 @@ def matches_subject_requirement(student_combination: str, requirement: str | Non
     return all(subject in combo for subject in required)
 
 
-def get_gradient_type(user_rank: int, min_rank: int | None) -> str:
-    if min_rank is None:
-        return '稳'
-    gap = min_rank - user_rank
-    if gap < -6000:
-        return '冲'
-    if gap < 8000:
-        return '稳'
-    if gap < 35000:
-        return '保'
-    return '垫'
+def get_gradient_type(
+    user_rank: int,
+    min_rank: int | None,
+    segment: str = 'mid',
+    batch: str = '',
+) -> str:
+    from rank_strategy_service import classify_gradient
+    return classify_gradient(user_rank, min_rank, segment, batch)
 
 
 def get_risk_level(gradient_type: str, is_adjustable: bool) -> str:

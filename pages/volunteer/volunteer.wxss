@@ -1,3 +1,21 @@
+.strategy-title {
+  font-size: 28rpx;
+  margin-top: 18rpx;
+  margin-bottom: 12rpx;
+}
+
+.strategy-row {
+  margin-bottom: 12rpx;
+}
+
+.strategy-row .tag {
+  font-size: 22rpx;
+}
+
+.strategy-meta {
+  margin-bottom: 8rpx;
+}
+
 .remove-btn {
   margin-top: 18rpx;
   width: 220rpx;

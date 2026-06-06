@@ -1,7 +1,22 @@
 <view class="container">
   <view class="card">
     <view class="section-title">智能梯度志愿</view>
-    <view class="sub-text">自动生成冲、稳、保、垫四档志愿，并结合性格测评给出专业适配提示。</view>
+    <view class="sub-text">仅按全省位次 X 划分冲稳保：冲 0.90X~0.95X、稳 0.95X~1.05X、保 1.15X~1.25X。</view>
+    <view class="section-title strategy-title">填报策略</view>
+    <view class="tag-row strategy-row">
+      <text
+        wx:for="{{planStyleOptions}}"
+        wx:key="value"
+        class="tag {{planStyle === item.value ? 'active' : ''}}"
+        data-style="{{item.value}}"
+        bindtap="onPlanStyleChange"
+      >{{item.label}}（{{item.desc}}）</text>
+    </view>
+    <view wx:if="{{strategyMeta}}" class="sub-text strategy-meta">
+      位次区间：冲 {{strategyMeta.bands.chong[0]}}~{{strategyMeta.bands.chong[1]}}，
+      稳 {{strategyMeta.bands.wen[0]}}~{{strategyMeta.bands.wen[1]}}，
+      保 {{strategyMeta.bands.bao[0]}}~{{strategyMeta.bands.bao[1]}}
+    </view>
     <view class="button-row">
       <button class="primary-btn" bindtap="generatePlan">智能生成</button>
       <button class="secondary-btn" bindtap="inspectRisk">风险排查</button>
@@ -49,6 +64,7 @@
     </view>
     <view class="sub-text">{{item.city}} · {{item.schoolType}} · {{item.duration}} · {{item.tuition}}元/年</view>
     <view class="major-line">专业：{{item.majorName}}（{{item.majorCode}}）</view>
+    <view wx:if="{{item.admissionProbability}}" class="sub-text">录取概率参考：{{item.admissionProbability}}</view>
     <view wx:if="{{item.personalityMatched}}" class="match-badge">与性格测评推荐专业大类匹配：{{item.majorType}}</view>
     <view class="adjust-row">
       <view>

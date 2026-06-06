@@ -12,11 +12,15 @@ function getGradientClass(gradientType) {
 }
 
 function getGradientType(userRank, schoolRank) {
-  const gap = schoolRank - userRank;
-  if (gap < -6000) return '冲';
-  if (gap < 8000) return '稳';
-  if (gap < 35000) return '保';
-  return '垫';
+  if (!userRank || !schoolRank) return '稳';
+  const rank = Number(schoolRank);
+  const x = Number(userRank);
+  if (rank >= x * 0.9 && rank <= x * 0.95) return '冲';
+  if (rank >= x * 0.95 && rank <= x * 1.05) return '稳';
+  if (rank >= x * 1.15 && rank <= x * 1.25) return '保';
+  if (rank < x * 0.9) return '冲';
+  if (rank > x * 1.25) return '垫';
+  return '稳';
 }
 
 function getRiskLevel(item) {

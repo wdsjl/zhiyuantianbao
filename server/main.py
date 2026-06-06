@@ -19,6 +19,9 @@ from personality_service import (
     build_personality_ai_context, build_career_report_prompt,
 )
 from services import get_gradient_type, get_risk_level, get_risk_reason, inspect_plan_risk, matches_subject_requirement
+from rank_strategy_service import (
+    assemble_recommendation_plan, detect_segment, estimate_rank_from_score, AI_STRATEGY_PROMPT,
+)
 from import_service import parse_import_file, import_admission_rows
 from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
@@ -1361,11 +1364,34 @@ def recommend(request: RecommendRequest):
         weighted_score = round(score_sum / weight_sum) if weight_sum else latest.get('min_score')
         weighted_items.append({**latest, 'weighted_rank': weighted_rank, 'weighted_score': weighted_score, 'years_used': [item['year'] for item in sorted_records]})
 
-    weighted_items.sort(key=lambda item: abs((item.get('weighted_rank') or request.rank) - request.rank))
+    user_rank = int(request.rank)
+    if user_rank <= 0 and request.score:
+        estimated = estimate_rank_from_score(rows, int(request.score))
+        if estimated:
+            user_rank = estimated
+
+    with get_connection() as connection:
+        total_row = connection.execute(
+            'SELECT MAX(min_rank) AS total_rank FROM admission_records WHERE province = ? AND batch = ?',
+            [request.province, request.batch]
+        ).fetchone()
+    province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
+    segment = detect_segment(user_rank, province_total_rank, request.batch)
+
+    selected_rows, strategy_meta = assemble_recommendation_plan(
+        weighted_items,
+        user_rank=user_rank,
+        plan_style=request.plan_style or 'balanced',
+        batch=request.batch,
+        segment=segment,
+        total_slots=max(1, int(request.volunteer_count or 9)),
+    )
 
     items = []
-    for index, row in enumerate(weighted_items[:40], start=1):
-        gradient_type = get_gradient_type(request.rank, row.get('weighted_rank'))
+    for index, row in enumerate(selected_rows, start=1):
+        gradient_type = row.get('gradient_type') or get_gradient_type(
+            user_rank, row.get('weighted_rank'), segment, request.batch
+        )
         is_adjustable = request.accept_adjustment
         risk_level = get_risk_level(gradient_type, is_adjustable)
         items.append({
@@ -1377,6 +1403,7 @@ def recommend(request: RecommendRequest):
             'major_id': row['major_id'],
             'major_name': row['major_name'],
             'major_code': row['major_code'],
+            'major_type': row.get('major_type'),
             'city': row['city'],
             'school_type': row['school_type'],
             'tuition': row.get('tuition'),
@@ -1386,12 +1413,18 @@ def recommend(request: RecommendRequest):
             'weighted_score': row.get('weighted_score'),
             'weighted_rank': row.get('weighted_rank'),
             'years_used': row.get('years_used'),
+            'admission_probability': row.get('admission_probability'),
             'is_adjustable': is_adjustable,
             'risk_level': risk_level,
             'risk_reason': get_risk_reason(gradient_type, is_adjustable)
         })
 
-    return {'items': items, 'risk': inspect_plan_risk(items), 'algorithm': '近三年位次加权：最近一年50%，第二年30%，第三年20%'}
+    return {
+        'items': items,
+        'risk': inspect_plan_risk(items),
+        'strategy': strategy_meta,
+        'algorithm': strategy_meta.get('algorithm'),
+    }
 
 
 @app.post('/api/ai/plan-explain')
@@ -1418,13 +1451,16 @@ def ai_plan_explain(request: PlanExplainRequest):
 1. 不承诺录取，不使用“保证”“一定”等词。
 2. 分为：整体评价、性格与专业适配、冲稳保结构、风险提醒、下一步建议。
 3. 语言面向学生和家长，控制在 500 字以内。
+4. 核心只看全省位次 X，不要以分数高低作为主要判断依据。
+
+位次冲稳保规则：
+{AI_STRATEGY_PROMPT}
 
 学生信息：
 省份：{profile.get('province', '')}
 批次：{profile.get('targetBatch', profile.get('batch', ''))}
 选科：{profile.get('subjectCombination', '')}
-分数：{profile.get('score', '')}
-位次：{profile.get('rank', '')}
+全省位次 X：{profile.get('rank', '')}
 
 霍兰德职业兴趣测评（供专业适配参考）：
 {build_personality_ai_context(personality)}
@@ -1469,7 +1505,7 @@ def ai_career_report(request: CareerReportRequest):
     prompt = build_career_report_prompt(request.profile or {}, request.personality)
     try:
         content = chat_completion([
-            {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将霍兰德职业兴趣测评与分数位次结合分析。所有建议必须提示以官方信息为准。'},
+            {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将霍兰德职业兴趣测评与全省位次冲稳保策略结合分析。所有建议必须提示以官方信息为准。'},
             {'role': 'user', 'content': prompt}
         ], max_tokens=1200)
         assessment_id = request.assessment_id
