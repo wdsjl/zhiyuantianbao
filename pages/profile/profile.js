@@ -1,16 +1,23 @@
 const { request, formatRequestError } = require('../../utils/request');
+const {
+  SUBJECT_COMBINATIONS,
+  TARGET_BATCHES,
+  findOptionIndex,
+  normalizeSubjectCombination
+} = require('../../utils/profileOptions');
 
 Page({
   data: {
+    subjectOptions: SUBJECT_COMBINATIONS,
+    targetBatchOptions: TARGET_BATCHES,
+    subjectIndex: -1,
+    targetBatchIndex: -1,
     form: {
       role: '学生',
       name: '',
       phone: '',
       province: '',
       city: '',
-      school: '',
-      grade: '高三',
-      className: '',
       subjectCombination: '',
       score: '',
       rank: '',
@@ -21,18 +28,28 @@ Page({
       openid: ''
     }
   },
+  syncPickerIndices(form) {
+    const subjectIndex = findOptionIndex(SUBJECT_COMBINATIONS, form.subjectCombination);
+    const targetBatchIndex = findOptionIndex(TARGET_BATCHES, form.targetBatch);
+    this.setData({
+      subjectIndex: subjectIndex >= 0 ? subjectIndex : 0,
+      targetBatchIndex: targetBatchIndex >= 0 ? targetBatchIndex : 0,
+      'form.subjectCombination': subjectIndex >= 0 ? SUBJECT_COMBINATIONS[subjectIndex] : form.subjectCombination
+    });
+  },
   onLoad() {
     const stored = wx.getStorageSync('studentProfile');
     const loginUser = wx.getStorageSync('loginUser') || {};
     if (stored) {
-      this.setData({
-        form: {
-          ...this.data.form,
-          ...stored,
-          openid: stored.openid || loginUser.openid,
-          userId: stored.userId || loginUser.user_id
-        }
-      });
+      const form = {
+        ...this.data.form,
+        ...stored,
+        subjectCombination: normalizeSubjectCombination(stored.subjectCombination) || stored.subjectCombination || '',
+        openid: stored.openid || loginUser.openid,
+        userId: stored.userId || loginUser.user_id
+      };
+      this.setData({ form });
+      this.syncPickerIndices(form);
       return;
     }
     if (loginUser.openid) {
@@ -45,6 +62,20 @@ Page({
   onInput(event) {
     const field = event.currentTarget.dataset.field;
     this.setData({ [`form.${field}`]: event.detail.value });
+  },
+  onSubjectChange(event) {
+    const index = Number(event.detail.value);
+    this.setData({
+      subjectIndex: index,
+      'form.subjectCombination': SUBJECT_COMBINATIONS[index]
+    });
+  },
+  onTargetBatchChange(event) {
+    const index = Number(event.detail.value);
+    this.setData({
+      targetBatchIndex: index,
+      'form.targetBatch': TARGET_BATCHES[index]
+    });
   },
   isTempOpenid(openid) {
     return !openid || openid.startsWith('dev_') || openid.startsWith('local_') || openid.startsWith('test_');
@@ -139,9 +170,6 @@ Page({
         name: form.name,
         province: form.province,
         city: form.city,
-        school_name: form.school,
-        grade: form.grade,
-        class_name: form.className,
         exam_year: new Date().getFullYear(),
         exam_type: '普通类',
         subject_combination: form.subjectCombination,
