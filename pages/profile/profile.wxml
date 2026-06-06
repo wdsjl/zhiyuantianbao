@@ -26,16 +26,12 @@
       </view>
     </view>
     <view class="form-item">
-      <text class="label">学校 / 年级 / 班级</text>
-      <view class="inline-fields three-fields">
-        <input class="input" placeholder="学校" value="{{form.school}}" data-field="school" bindinput="onInput" />
-        <input class="input" placeholder="年级" value="{{form.grade}}" data-field="grade" bindinput="onInput" />
-        <input class="input" placeholder="班级" value="{{form.className}}" data-field="className" bindinput="onInput" />
-      </view>
-    </view>
-    <view class="form-item">
       <text class="label">选科组合</text>
-      <input class="input" placeholder="例如：物理+化学+生物" value="{{form.subjectCombination}}" data-field="subjectCombination" bindinput="onInput" />
+      <picker mode="selector" range="{{subjectOptions}}" value="{{subjectIndex}}" bindchange="onSubjectChange">
+        <view class="picker {{form.subjectCombination ? '' : 'picker-placeholder'}}">
+          {{form.subjectCombination || '请选择选科组合'}}
+        </view>
+      </picker>
     </view>
     <view class="form-item">
       <text class="label">高考分数 / 全省位次</text>
@@ -46,7 +42,11 @@
     </view>
     <view class="form-item">
       <text class="label">目标批次</text>
-      <input class="input" placeholder="本科批 / 专科批" value="{{form.targetBatch}}" data-field="targetBatch" bindinput="onInput" />
+      <picker mode="selector" range="{{targetBatchOptions}}" value="{{targetBatchIndex}}" bindchange="onTargetBatchChange">
+        <view class="picker {{form.targetBatch ? '' : 'picker-placeholder'}}">
+          {{form.targetBatch || '请选择目标批次'}}
+        </view>
+      </picker>
     </view>
 
     <view wx:if="{{form.role === '家长'}}" class="form-item">
