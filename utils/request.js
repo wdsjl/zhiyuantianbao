@@ -1,4 +1,5 @@
-const BASE_URL = 'http://127.0.0.1:8001';
+// 生产环境 API 地址；本地调试可临时改回 http://127.0.0.1:8001
+const BASE_URL = 'https://api.zntb.lhyun.net';
 
 function parseApiDetail(detail) {
   if (!detail) return '';
