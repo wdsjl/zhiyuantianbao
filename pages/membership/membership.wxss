@@ -121,3 +121,7 @@
 .renew-btn {
   margin-top: 20rpx;
 }
+
+.error-card button {
+  margin-top: 20rpx;
+}
