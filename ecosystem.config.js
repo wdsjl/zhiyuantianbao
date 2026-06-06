@@ -1,3 +1,10 @@
+let secrets = {};
+try {
+  secrets = require('./ecosystem.secrets.js');
+} catch (error) {
+  secrets = {};
+}
+
 module.exports = {
   apps: [{
     name: 'zhiyuan-backend',
@@ -12,7 +19,8 @@ module.exports = {
       WECHAT_APPID: 'wx58ed9703d22d85c2',
       WECHAT_MCH_ID: '1621904940',
       WECHAT_PAY_NOTIFY_URL: 'https://api.zntb.lhyun.net/api/payments/wechat/notify',
-      WECHAT_PAY_PRIVATE_KEY_PATH: 'C:/zhiyuantianbao/server/certs/apiclient_key.pem'
+      WECHAT_PAY_PRIVATE_KEY_PATH: 'C:/zhiyuantianbao/server/certs/apiclient_key.pem',
+      ...secrets
     }
   }]
 };

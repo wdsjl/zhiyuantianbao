@@ -12,11 +12,9 @@ ENV/
 .mypy_cache/
 .ruff_cache/
 
-# WeChat Pay certificates
+# WeChat Pay certificates and local secrets
 server/certs/*.pem
-
-# WeChat Pay certificates
-server/certs/*.pem
+ecosystem.secrets.js
 
 # Local environment
 .env
