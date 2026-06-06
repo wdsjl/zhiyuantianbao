@@ -504,6 +504,9 @@ def crawl_and_import(
                     '__error__': f'{school_name}({school_id}): {exc}'
                 })
             processed += 1
+            if processed == 1 or processed % 10 == 0 or processed == len(school_ids):
+                valid_count = sum(1 for row in all_rows if '__error__' not in row)
+                update_crawl_log_progress(crawl_id, processed, valid_count)
 
         valid_rows = [row for row in all_rows if '__error__' not in row]
         errors = [row['__error__'] for row in all_rows if '__error__' in row]
@@ -520,39 +523,20 @@ def crawl_and_import(
             'success' if not errors else 'partial', '\n'.join(errors[:20]) or result.get('errors', [''])[0] if result.get('errors') else None
         )
         return result
+    except KeyboardInterrupt:
+        valid_count = sum(1 for row in all_rows if '__error__' not in row)
+        finish_crawl_log(
+            crawl_id, processed, valid_count, 0, 0, 'interrupted',
+            f'用户中断：已扫描 {processed}/{len(school_ids)} 所院校，本年份数据未入库'
+        )
+        log_progress(f'[{year}] 采集已中断（{processed}/{len(school_ids)}），本年份数据未写入数据库')
+        raise
     except Exception as exc:
         finish_crawl_log(crawl_id, processed, len(all_rows), 0, len(all_rows), 'failed', str(exc))
         raise
 
 
-if __name__ == '__main__':
-    import argparse
-    import sys
-
-    try:
-        sys.stdout.reconfigure(line_buffering=True)
-    except Exception:
-        pass
-
-    parser = argparse.ArgumentParser(description='采集掌上高考数据并导入数据库')
-    parser.add_argument('--province', help='生源省份，例如 浙江；多个省份用逗号分隔')
-    parser.add_argument('--all-provinces', action='store_true', help='采集全部 31 个生源省份')
-    parser.add_argument('--preset', choices=list(__import__('crawler_config').CRAWL_PRESETS.keys()), help='使用预设方案')
-    parser.add_argument('--year', type=int, help='单个录取年份')
-    parser.add_argument('--years', help='多个年份，逗号分隔，如 2024,2023,2022')
-    parser.add_argument('--recent-years', type=int, default=0, help='采集最近 N 年（默认从昨年起算）')
-    parser.add_argument('--limit', type=int, default=20, help='最多采集院校数量，0 表示全部')
-    parser.add_argument('--schools-only', action='store_true', help='仅同步院校库，不采集分数线')
-    parser.add_argument('--list-provinces', action='store_true', help='列出已配置的全部省份')
-    args = parser.parse_args()
-
-    if args.list_provinces:
-        for region in REGION_ORDER:
-            names = [item['name'] for item in PROVINCE_CONFIGS if item['region'] == region]
-            print(f'{region}: {"、".join(names)}')
-        raise SystemExit(0)
-
-    limit = None if args.limit == 0 else args.limit
+def _run_cli(args, limit):
     if args.schools_only:
         print(import_schools_only(limit))
     elif args.all_provinces or (args.province and ',' in args.province):
@@ -590,3 +574,38 @@ if __name__ == '__main__':
                 result = crawl_and_import_years(province, years, limit, progress)
             log_progress('全部完成。')
             print(result, flush=True)
+
+
+if __name__ == '__main__':
+    import argparse
+    import sys
+
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
+    parser = argparse.ArgumentParser(description='采集掌上高考数据并导入数据库')
+    parser.add_argument('--province', help='生源省份，例如 浙江；多个省份用逗号分隔')
+    parser.add_argument('--all-provinces', action='store_true', help='采集全部 31 个生源省份')
+    parser.add_argument('--preset', choices=list(__import__('crawler_config').CRAWL_PRESETS.keys()), help='使用预设方案')
+    parser.add_argument('--year', type=int, help='单个录取年份')
+    parser.add_argument('--years', help='多个年份，逗号分隔，如 2024,2023,2022')
+    parser.add_argument('--recent-years', type=int, default=0, help='采集最近 N 年（默认从昨年起算）')
+    parser.add_argument('--limit', type=int, default=20, help='最多采集院校数量，0 表示全部')
+    parser.add_argument('--schools-only', action='store_true', help='仅同步院校库，不采集分数线')
+    parser.add_argument('--list-provinces', action='store_true', help='列出已配置的全部省份')
+    args = parser.parse_args()
+
+    if args.list_provinces:
+        for region in REGION_ORDER:
+            names = [item['name'] for item in PROVINCE_CONFIGS if item['region'] == region]
+            print(f'{region}: {"、".join(names)}')
+        raise SystemExit(0)
+
+    limit = None if args.limit == 0 else args.limit
+    try:
+        _run_cli(args, limit)
+    except KeyboardInterrupt:
+        log_progress('采集已手动停止。若需继续，请重新执行命令；已完成年份的数据会保留。')
+        raise SystemExit(130)
