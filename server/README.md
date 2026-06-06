@@ -72,6 +72,60 @@ WECHAT_SECRET=你的小程序secret
 
 设置后，后端会使用微信官方 `jscode2session` 换取真实 `openid`。
 
+## 本地爬取后上传到服务器
+
+适合在本地电脑长时间跑爬虫，再把数据合并到服务器（保留服务器上的用户、订单、会员等数据）。
+
+### 1. 本地爬取
+
+```powershell
+cd C:\zhiyuantianbao\server
+python -u crawler_service.py --province 河南 --preset full_recent_3y
+# 或全国：python -u crawler_service.py --all-provinces --preset full_recent_3y
+```
+
+爬取结果保存在项目根目录：
+
+```text
+database/zhiyuan.db
+```
+
+建议先复制一份备份：
+
+```powershell
+copy C:\zhiyuantianbao\database\zhiyuan.db C:\zhiyuantianbao\database\zhiyuan_local.db
+```
+
+### 2. 上传到服务器
+
+将 `zhiyuan_local.db` 通过远程桌面、FTP、网盘等方式复制到服务器，例如：
+
+```text
+C:\zhiyuantianbao\database\zhiyuan_local.db
+```
+
+### 3. 合并到服务器数据库（推荐）
+
+```powershell
+cd C:\zhiyuantianbao\server
+pm2 stop zhiyuan-backend
+copy C:\zhiyuantianbao\database\zhiyuan.db C:\zhiyuantianbao\database\zhiyuan_backup.db
+python db_merge.py --source C:\zhiyuantianbao\database\zhiyuan_local.db --target C:\zhiyuantianbao\database\zhiyuan.db
+pm2 start zhiyuan-backend
+```
+
+`db_merge.py` 只合并院校、专业、录取、招生计划和采集日志，**不会覆盖**用户档案、订单、会员、志愿草稿。
+
+### 4. 整库替换（仅适用于服务器尚无业务数据）
+
+若服务器还是空库、没有真实用户，也可以直接替换：
+
+```powershell
+pm2 stop zhiyuan-backend
+copy C:\zhiyuantianbao\database\zhiyuan.db C:\zhiyuantianbao\database\zhiyuan.db
+pm2 start zhiyuan-backend
+```
+
 ## 已支持能力
 
 - 学生档案保存 / 查询
