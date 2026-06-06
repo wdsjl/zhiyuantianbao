@@ -9,7 +9,10 @@ from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import (
     RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate,
-    PersonalityAssessmentRequest, CareerReportRequest,
+    PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest,
+)
+from student_report_service import (
+    ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
 )
 from personality_service import (
     ensure_personality_tables, save_assessment, get_latest_assessment, save_ai_career_report,
@@ -84,6 +87,7 @@ ensure_payment_tables()
 ensure_admin_auth()
 ensure_crawl_tables()
 ensure_personality_tables()
+ensure_student_report_tables()
 expire_overdue_memberships()
 
 
@@ -1435,6 +1439,42 @@ def ai_career_report(request: CareerReportRequest):
         return {'report': content, 'assessment_id': assessment_id}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/ai/student-report')
+def ai_student_report(request: StudentReportRequest):
+    if not request.profile:
+        raise HTTPException(status_code=400, detail='请先完善学生档案')
+    if not request.personality:
+        raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
+    prompt = build_student_report_prompt(
+        request.profile,
+        request.personality,
+        request.preferences or {},
+        request.volunteer_summary,
+    )
+    try:
+        content = chat_completion([
+            {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将分数位次、兴趣测评与个人需求融合为个性化报告。'},
+            {'role': 'user', 'content': prompt}
+        ], max_tokens=1800)
+        report_id = save_student_report(
+            request.student_id,
+            request.user_id,
+            request.preferences or {},
+            content,
+        )
+        return {'report': content, 'report_id': report_id}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/ai/student-report')
+def get_student_report(student_id: int):
+    report = get_latest_student_report(student_id)
+    if not report:
+        return {'report': None}
+    return {'report': report}
 
 
 @app.post('/api/risk-inspect')

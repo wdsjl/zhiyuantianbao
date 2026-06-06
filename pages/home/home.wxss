@@ -67,6 +67,11 @@
   box-shadow: 0 12rpx 32rpx rgba(22, 119, 255, 0.08);
 }
 
+.highlight-action {
+  background: linear-gradient(135deg, #eef5ff, #f6fffb);
+  border: 2rpx solid #d6e8ff;
+}
+
 .action-title {
   font-size: 30rpx;
   font-weight: 700;

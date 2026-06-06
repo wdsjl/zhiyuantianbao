@@ -24,6 +24,10 @@
       <text>方案对比</text>
       <text>›</text>
     </view>
+    <view class="menu-item" bindtap="goStudentReport">
+      <text>个性化填报报告</text>
+      <text>AI</text>
+    </view>
     <view class="menu-item">
       <text>导出记录</text>
       <text>{{exportCount}} 条</text>

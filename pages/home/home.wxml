@@ -32,8 +32,12 @@
 
   <view class="grid-actions">
     <view class="action-card" bindtap="goPersonality">
-      <view class="action-title">性格测评</view>
+      <view class="action-title">霍兰德测评</view>
       <view class="sub-text">先测评，再匹配适合专业</view>
+    </view>
+    <view class="action-card highlight-action" bindtap="goStudentReport">
+      <view class="action-title">个性化报告</view>
+      <view class="sub-text">分数+性格+需求，AI 专属报告</view>
     </view>
     <view class="action-card" bindtap="goVolunteer">
       <view class="action-title">智能生成志愿</view>

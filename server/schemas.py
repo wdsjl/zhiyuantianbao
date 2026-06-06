@@ -107,6 +107,15 @@ class CareerReportRequest(BaseModel):
     assessment_id: Optional[int] = None
 
 
+class StudentReportRequest(BaseModel):
+    student_id: Optional[int] = None
+    user_id: Optional[int] = None
+    profile: dict = Field(default_factory=dict)
+    personality: dict = Field(default_factory=dict)
+    preferences: dict = Field(default_factory=dict)
+    volunteer_summary: Optional[str] = None
+
+
 
 class OpenRequestCreate(BaseModel):
     user_id: int

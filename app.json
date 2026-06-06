@@ -9,7 +9,8 @@
     "pages/profile/profile",
     "pages/drafts/drafts",
     "pages/membership/membership",
-    "pages/compare/compare"
+    "pages/compare/compare",
+    "pages/student-report/student-report"
   ],
   "window": {
     "navigationBarTitleText": "智愿填报",

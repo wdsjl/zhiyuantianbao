@@ -46,5 +46,8 @@ Page({
   },
   goMembership() {
     wx.navigateTo({ url: '/pages/membership/membership' });
+  },
+  goStudentReport() {
+    wx.navigateTo({ url: '/pages/student-report/student-report' });
   }
 });

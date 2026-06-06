@@ -8,7 +8,7 @@ const PERMISSION_LABELS = {
   pdf_export: 'PDF 志愿表导出',
   school_compare: '院校对比',
   score_full_history: '完整历年分数线和位次',
-  personality_deep: '深度测评报告'
+  personality_deep: '深度测评报告 / 个性化填报报告'
 };
 
 function getCurrentUserId() {

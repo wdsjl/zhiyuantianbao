@@ -1,0 +1,67 @@
+<view class="container">
+  <view class="card hero-card">
+    <view class="section-title">AI 个性化填报报告</view>
+    <view class="sub-text">综合你的分数位次、霍兰德测评结果和个人需求，由大模型生成专属志愿填报策略报告。</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">学生基础信息</view>
+    <view class="info-row"><text class="label">姓名</text><text>{{profile.name || '未填写'}}</text></view>
+    <view class="info-row"><text class="label">省份/批次</text><text>{{profile.province || '--'}} · {{profile.targetBatch || '--'}}</text></view>
+    <view class="info-row"><text class="label">选科</text><text>{{profile.subjectCombination || '--'}}</text></view>
+    <view class="info-row"><text class="label">分数/位次</text><text>{{profile.score || '--'}} / {{profile.rank || '--'}}</text></view>
+    <view class="info-row"><text class="label">霍兰德代码</text><text>{{personality.code || '未完成测评'}}</text></view>
+    <button class="secondary-btn mini-btn" bindtap="goProfile">完善档案</button>
+    <button wx:if="{{!personality.code}}" class="secondary-btn mini-btn" bindtap="goPersonality">去做测评</button>
+  </view>
+
+  <view class="card">
+    <view class="section-title">个人需求（发给大模型）</view>
+    <view class="form-item">
+      <text class="label">意向城市</text>
+      <input class="input" placeholder="如：杭州、上海、武汉" value="{{preferences.preferredCitiesText}}" data-field="preferredCitiesText" bindinput="onPrefInput" />
+    </view>
+    <view class="form-item">
+      <text class="label">意向专业大类</text>
+      <input class="input" placeholder="如：计算机类、电子信息类" value="{{preferences.preferredMajorTypesText}}" data-field="preferredMajorTypesText" bindinput="onPrefInput" />
+    </view>
+    <view class="form-item">
+      <text class="label">感兴趣专业</text>
+      <input class="input" placeholder="如：软件工程、人工智能" value="{{preferences.preferredMajorsText}}" data-field="preferredMajorsText" bindinput="onPrefInput" />
+    </view>
+    <view class="form-item">
+      <text class="label">不想考虑的方向</text>
+      <input class="input" placeholder="如：医学、师范、偏远地区" value="{{preferences.avoidDirectionsText}}" data-field="avoidDirectionsText" bindinput="onPrefInput" />
+    </view>
+    <view class="form-item">
+      <text class="label">院校层次偏好</text>
+      <input class="input" placeholder="如：985/211/双一流/本科即可" value="{{preferences.schoolLevelPreference}}" data-field="schoolLevelPreference" bindinput="onPrefInput" />
+    </view>
+    <view class="form-item">
+      <text class="label">学费预算</text>
+      <input class="input" placeholder="如：每年不超过1.5万" value="{{preferences.tuitionBudget}}" data-field="tuitionBudget" bindinput="onPrefInput" />
+    </view>
+    <view class="form-item">
+      <text class="label">职业目标</text>
+      <input class="input" placeholder="如：从事互联网开发、考公、读研" value="{{preferences.careerGoal}}" data-field="careerGoal" bindinput="onPrefInput" />
+    </view>
+    <view class="form-item">
+      <text class="label">其他补充</text>
+      <textarea class="textarea" placeholder="如：希望离家近、父母建议学医但自己不确定..." value="{{preferences.otherNotes}}" data-field="otherNotes" bindinput="onPrefInput" />
+    </view>
+  </view>
+
+  <view class="card">
+    <button class="primary-btn" bindtap="generateReport" loading="{{loading}}">生成个性化报告</button>
+    <view class="warn-box">报告由大模型基于你填写的数据生成，仅供参考，不构成录取承诺。</view>
+  </view>
+
+  <view wx:if="{{report}}" class="card report-card">
+    <view class="section-title">你的专属报告</view>
+    <view class="report-content">{{report}}</view>
+    <view class="report-actions">
+      <button class="secondary-btn" bindtap="copyReport">复制报告</button>
+      <button class="primary-btn" bindtap="goVolunteer">去填报志愿</button>
+    </view>
+  </view>
+</view>

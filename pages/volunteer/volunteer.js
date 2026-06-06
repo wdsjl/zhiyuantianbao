@@ -188,6 +188,7 @@ Page({
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
         this.setData({ plan, riskResult, riskClass, aiExplain: '' });
         wx.setStorageSync('currentPlan', plan);
+        wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
         wx.showToast({ title: '已生成志愿方案', icon: 'success' });
       })
@@ -211,6 +212,7 @@ Page({
         const riskResult = normalizeRisk(res);
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
         this.setData({ riskResult, riskClass, aiExplain: '' });
+        wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
       })
       .catch(() => {
