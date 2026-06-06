@@ -222,6 +222,18 @@ def start_crawl_log(province: str, year: int, school_total: int) -> int:
         return cursor.lastrowid
 
 
+def update_crawl_log_progress(crawl_id: int, processed: int, row_total: int = 0) -> None:
+    with get_connection() as connection:
+        connection.execute(
+            '''
+            UPDATE crawl_logs SET school_processed = ?, row_total = ?
+            WHERE crawl_id = ? AND status = 'running'
+            ''',
+            [processed, row_total, crawl_id]
+        )
+        connection.commit()
+
+
 def finish_crawl_log(crawl_id: int, processed: int, row_total: int, success: int, fail: int, status: str, error_message: str | None = None) -> None:
     with get_connection() as connection:
         connection.execute(
