@@ -1,4 +1,4 @@
-const { fetchEntitlements } = require('../../utils/membership');
+const { fetchEntitlements, goMembershipPage } = require('../../utils/membership');
 
 Page({
   data: {
@@ -33,7 +33,7 @@ Page({
     wx.navigateTo({ url: '/pages/compare/compare' });
   },
   goMembership() {
-    wx.navigateTo({ url: '/pages/membership/membership' });
+    goMembershipPage();
   },
   goStudentReport() {
     wx.navigateTo({ url: '/pages/student-report/student-report' });

@@ -61,7 +61,8 @@ Page({
     wx.switchTab({ url: '/pages/schools/schools' });
   },
   goMembership() {
-    wx.navigateTo({ url: '/pages/membership/membership' });
+    const { goMembershipPage } = require('../../utils/membership');
+    goMembershipPage();
   },
   goStudentReport() {
     wx.navigateTo({ url: '/pages/student-report/student-report' });
