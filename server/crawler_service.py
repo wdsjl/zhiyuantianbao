@@ -22,6 +22,10 @@ USER_AGENT = 'Mozilla/5.0 ZhiyuanGaokaoCrawler/1.0 (+local research)'
 REQUEST_INTERVAL = 0.2
 
 
+def log_progress(message: str) -> None:
+    print(message, flush=True)
+
+
 def ensure_crawl_tables() -> None:
     with get_connection() as connection:
         connection.execute(
@@ -301,13 +305,22 @@ def has_running_crawl(province: str | None = None) -> bool:
         return bool(row and row['count'])
 
 
-def run_crawl_job(province: str, preset_key: str, years: list[int] | None = None) -> dict[str, Any]:
+def run_crawl_job(
+    province: str,
+    preset_key: str,
+    years: list[int] | None = None,
+    on_progress: Callable[..., None] | None = None,
+) -> dict[str, Any]:
     options = resolve_preset_options(preset_key, years)
     selected_years = options['years']
     school_limit = options['school_limit']
+    limit_text = '全量' if school_limit is None else f'{school_limit} 所院校'
+    log_progress(
+        f'开始采集：{province} | 年份 {", ".join(str(year) for year in selected_years)} | {limit_text}'
+    )
     if len(selected_years) == 1:
-        return crawl_and_import(province, selected_years[0], school_limit)
-    return crawl_and_import_years(province, selected_years, school_limit)
+        return crawl_and_import(province, selected_years[0], school_limit, on_progress)
+    return crawl_and_import_years(province, selected_years, school_limit, on_progress)
 
 
 def crawl_all_provinces(
@@ -451,7 +464,9 @@ def crawl_and_import(
     if not province_id:
         raise ValueError(f'不支持的省份：{province}')
 
+    log_progress(f'[{year}] 正在获取全国院校列表，请稍候...')
     schools = fetch_school_list()
+    log_progress(f'[{year}] 院校列表就绪，共 {len(schools)} 所，开始逐校采集 {province} 数据')
     school_ids = list(schools.keys())
     if school_limit:
         school_ids = school_ids[:school_limit]
@@ -480,7 +495,11 @@ def crawl_and_import(
 
         valid_rows = [row for row in all_rows if '__error__' not in row]
         errors = [row['__error__'] for row in all_rows if '__error__' in row]
+        log_progress(f'[{year}] 采集完成，正在写入数据库：{len(valid_rows)} 条记录')
         result = import_admission_rows(f'crawler_{province}_{year}.json', valid_rows)
+        log_progress(
+            f'[{year}] 入库完成：成功 {result["success_count"]} 条，失败 {result["fail_count"]} 条'
+        )
         result['crawl_id'] = crawl_id
         result['school_processed'] = processed
         result['crawl_errors'] = errors[:20]
@@ -496,6 +515,13 @@ def crawl_and_import(
 
 if __name__ == '__main__':
     import argparse
+    import sys
+
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(description='采集掌上高考数据并导入数据库')
     parser.add_argument('--province', help='生源省份，例如 浙江；多个省份用逗号分隔')
     parser.add_argument('--all-provinces', action='store_true', help='采集全部 31 个生源省份')
@@ -522,13 +548,20 @@ if __name__ == '__main__':
         provinces = None if args.all_provinces else [item.strip() for item in args.province.split(',') if item.strip()]
 
         def province_progress(name, index, total):
-            print(f'[{index}/{total}] 开始采集 {name}')
+            log_progress(f'[{index}/{total}] 开始采集 {name}')
 
-        print(crawl_all_provinces(preset_key, provinces, province_progress))
+        print(crawl_all_provinces(preset_key, provinces, province_progress), flush=True)
     else:
         province = args.province or '浙江'
+
+        def progress(done, total, name, year=None):
+            prefix = f'[{year}] ' if year else ''
+            log_progress(f'{prefix}[{done + 1}/{total}] {name}')
+
         if args.preset:
-            print(run_crawl_job(province, args.preset))
+            result = run_crawl_job(province, args.preset, on_progress=progress)
+            log_progress('全部完成。')
+            print(result, flush=True)
         else:
             if args.years:
                 years = [int(item.strip()) for item in args.years.split(',') if item.strip()]
@@ -539,11 +572,9 @@ if __name__ == '__main__':
             else:
                 years = default_recent_years(3)
 
-            def progress(done, total, name, year=None):
-                prefix = f'[{year}] ' if year else ''
-                print(f'{prefix}[{done + 1}/{total}] {name}')
-
             if len(years) == 1:
-                print(crawl_and_import(province, years[0], limit, progress))
+                result = crawl_and_import(province, years[0], limit, progress)
             else:
-                print(crawl_and_import_years(province, years, limit, progress))
+                result = crawl_and_import_years(province, years, limit, progress)
+            log_progress('全部完成。')
+            print(result, flush=True)
