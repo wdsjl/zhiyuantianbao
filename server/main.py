@@ -42,7 +42,7 @@ from admin_data_service import (
 )
 from llm_settings_service import save_llm_settings, get_llm_settings, test_llm_connection, chat_completion
 from data_fetch_service import create_source, fetch_source, list_sources, list_tasks, list_records, update_source, delete_source, review_record, archive_record_to_brochure
-from auth_service import login_or_create_user
+from auth_service import login_or_create_user, is_temp_openid
 from pdf_service import build_draft_pdf, escape_pdf_name
 from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, revoke_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, adjust_permission_usage, export_permission_usage_csv, expire_overdue_memberships
 from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv, refund_order
@@ -1003,8 +1003,18 @@ def save_profile(request: ProfileSaveRequest):
         if not user and request.phone:
             phone_user = row_to_dict(connection.execute('SELECT user_id, openid FROM users WHERE phone = ?', [request.phone]).fetchone())
             if phone_user and phone_user.get('openid') and phone_user.get('openid') != openid:
-                raise HTTPException(status_code=409, detail='该手机号已绑定其他微信账号，不能重复注册使用')
-            user = phone_user
+                phone_openid = phone_user.get('openid') or ''
+                if is_temp_openid(phone_openid) and not is_temp_openid(openid):
+                    user = phone_user
+                elif is_temp_openid(openid) and not is_temp_openid(phone_openid):
+                    user = phone_user
+                    openid = phone_openid
+                elif is_temp_openid(phone_openid) and is_temp_openid(openid):
+                    user = phone_user
+                else:
+                    raise HTTPException(status_code=409, detail='该手机号已绑定其他微信账号，不能重复注册使用')
+            elif phone_user:
+                user = phone_user
 
         if user:
             user_id = user['user_id']
