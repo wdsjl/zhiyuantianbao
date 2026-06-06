@@ -15,7 +15,7 @@ from admin_views import (
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
 )
-from crawler_service import crawl_and_import, import_schools_only, ensure_crawl_tables
+from crawler_service import crawl_and_import, crawl_and_import_years, import_schools_only, ensure_crawl_tables, default_recent_years
 from admin_auth_service import (
     ensure_admin_auth, verify_session_token, verify_admin_credentials,
     create_session_token, session_cookie_options, ADMIN_SESSION_COOKIE, change_admin_password,
@@ -135,18 +135,24 @@ def admin_crawler_page(crawl_id: int | None = None, message: str = ''):
 
 @app.post('/admin/crawler/run')
 def admin_crawler_run(
-    province: str = Form('浙江'),
-    year: int = Form(2024),
+    province: str = Form('河南'),
+    years: list[int] = Form(default=[]),
     school_limit: int = Form(20),
 ):
     try:
-        result = crawl_and_import(province, year, school_limit or 20)
+        selected_years = years or default_recent_years(3)
+        if len(selected_years) == 1:
+            result = crawl_and_import(province, selected_years[0], school_limit or 20)
+        else:
+            result = crawl_and_import_years(province, selected_years, school_limit or 20)
+        year_text = '、'.join(str(year) for year in sorted(selected_years, reverse=True))
         message = (
-            f"采集完成：处理 {result.get('school_processed', 0)} 所院校，"
+            f"采集完成（{province} {year_text}）：处理 {result.get('school_processed', 0)} 所院校，"
             f"共 {result['total_count']} 条记录，成功 {result['success_count']} 条，失败 {result['fail_count']} 条"
         )
-        crawl_id = result.get('crawl_id')
-        return RedirectResponse(f'/admin/crawler?crawl_id={crawl_id}&message={quote(message)}', status_code=303)
+        crawl_id = result.get('crawl_id') or (result.get('crawl_ids') or [None])[-1]
+        target = f'/admin/crawler?crawl_id={crawl_id}&message={quote(message)}' if crawl_id else f'/admin/crawler?message={quote(message)}'
+        return RedirectResponse(target, status_code=303)
     except Exception as exc:
         return RedirectResponse(f'/admin/crawler?message={quote(f"采集失败：{exc}")}', status_code=303)
 

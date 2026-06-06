@@ -97,6 +97,23 @@ def bool_flag(value: Any) -> int:
     return 1 if text in ('1', 'true', 'True') else 0
 
 
+def parse_optional_int(value: Any) -> int | None:
+    if value is None or value == '' or value == '-':
+        return None
+    try:
+        return int(float(str(value).strip()))
+    except (ValueError, TypeError):
+        return None
+
+
+def default_recent_years(count: int = 3, end_year: int | None = None) -> list[int]:
+    """返回最近若干录取年份（默认不含当年，因数据可能未公布）。"""
+    from datetime import datetime
+    current = datetime.now().year
+    latest = end_year if end_year is not None else current - 1
+    return [latest - offset for offset in range(count)]
+
+
 def normalize_batch_name(name: str) -> str:
     mapping = {
         '平行录取一段': '普通类一段',
@@ -175,10 +192,11 @@ def build_import_row(
         'subject_requirement': score_item.get('sp_info') or plan.get('sp_info') or '',
         'enrollment_count': int(plan.get('num') or 0) or None,
         'tuition': int(float(plan.get('tuition') or 0)) if plan.get('tuition') else None,
-        'min_score': int(score_item.get('min') or 0) or None,
-        'min_rank': int(score_item.get('min_section') or 0) or None,
-        'avg_score': int(score_item.get('average') or 0) or None,
-        'max_score': int(score_item.get('max') or 0) or None,
+        'min_score': parse_optional_int(score_item.get('min')),
+        'min_rank': parse_optional_int(score_item.get('min_section')),
+        'avg_score': parse_optional_int(score_item.get('average')),
+        'max_score': parse_optional_int(score_item.get('max')),
+        'max_rank': parse_optional_int(score_item.get('max_section')),
     }
 
 
@@ -191,7 +209,7 @@ def crawl_school_rows(school_id: str, school_brief: dict[str, Any], year: int, p
     plans = plan_map(plan_items)
     rows = []
     for score_item in score_items:
-        if not score_item.get('min') and not score_item.get('min_section'):
+        if parse_optional_int(score_item.get('min')) is None and parse_optional_int(score_item.get('min_section')) is None:
             continue
         plan_item = find_plan_for_score(score_item, plans)
         rows.append(build_import_row(school_brief, detail, score_item, plan_item, year, province_name))
@@ -280,11 +298,52 @@ def import_schools_only(limit: int | None = None) -> dict[str, Any]:
     return {'total': len(school_ids), 'success': success, 'errors': errors[:20]}
 
 
+def crawl_and_import_years(
+    province: str,
+    years: list[int],
+    school_limit: int | None = 50,
+    on_progress: Callable[[int, int, str, int], None] | None = None,
+) -> dict[str, Any]:
+    if not years:
+        raise ValueError('请至少指定一个录取年份')
+    years = sorted(set(years), reverse=True)
+    combined: dict[str, Any] = {
+        'province': province,
+        'years': years,
+        'year_results': [],
+        'total_count': 0,
+        'success_count': 0,
+        'fail_count': 0,
+        'school_processed': 0,
+        'crawl_ids': [],
+        'crawl_errors': [],
+        'errors': [],
+    }
+    for year in years:
+        def year_progress(done: int, total: int, name: str, current_year: int = year) -> None:
+            if on_progress:
+                on_progress(done, total, name, current_year)
+
+        result = crawl_and_import(province, year, school_limit, year_progress)
+        combined['year_results'].append(result)
+        combined['total_count'] += result.get('total_count', 0)
+        combined['success_count'] += result.get('success_count', 0)
+        combined['fail_count'] += result.get('fail_count', 0)
+        combined['school_processed'] = max(combined['school_processed'], result.get('school_processed', 0))
+        if result.get('crawl_id'):
+            combined['crawl_ids'].append(result['crawl_id'])
+        combined['crawl_errors'].extend(result.get('crawl_errors') or [])
+        combined['errors'].extend(result.get('errors') or [])
+    combined['crawl_errors'] = combined['crawl_errors'][:20]
+    combined['errors'] = combined['errors'][:20]
+    return combined
+
+
 def crawl_and_import(
     province: str,
     year: int,
     school_limit: int | None = 50,
-    on_progress: Callable[[int, int, str], None] | None = None,
+    on_progress: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
     province_id = PROVINCE_IDS.get(province)
     if not province_id:
@@ -304,7 +363,10 @@ def crawl_and_import(
             brief = schools[school_id]
             school_name = brief.get('name', school_id)
             if on_progress:
-                on_progress(processed, len(school_ids), school_name)
+                try:
+                    on_progress(processed, len(school_ids), school_name, year)
+                except TypeError:
+                    on_progress(processed, len(school_ids), school_name)
             try:
                 rows = crawl_school_rows(school_id, brief, year, province, province_id)
                 all_rows.extend(rows)
@@ -334,7 +396,9 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='采集掌上高考数据并导入数据库')
     parser.add_argument('--province', default='浙江', help='生源省份，例如 浙江')
-    parser.add_argument('--year', type=int, default=2024, help='录取年份')
+    parser.add_argument('--year', type=int, help='单个录取年份')
+    parser.add_argument('--years', help='多个年份，逗号分隔，如 2024,2023,2022')
+    parser.add_argument('--recent-years', type=int, default=0, help='采集最近 N 年（默认从昨年起算）')
     parser.add_argument('--limit', type=int, default=20, help='最多采集院校数量，0 表示全部')
     parser.add_argument('--schools-only', action='store_true', help='仅同步院校库，不采集分数线')
     args = parser.parse_args()
@@ -342,6 +406,20 @@ if __name__ == '__main__':
     if args.schools_only:
         print(import_schools_only(limit))
     else:
-        def progress(done, total, name):
-            print(f'[{done + 1}/{total}] {name}')
-        print(crawl_and_import(args.province, args.year, limit, progress))
+        if args.years:
+            years = [int(item.strip()) for item in args.years.split(',') if item.strip()]
+        elif args.recent_years:
+            years = default_recent_years(args.recent_years)
+        elif args.year:
+            years = [args.year]
+        else:
+            years = [2024]
+
+        def progress(done, total, name, year=None):
+            prefix = f'[{year}] ' if year else ''
+            print(f'{prefix}[{done + 1}/{total}] {name}')
+
+        if len(years) == 1:
+            print(crawl_and_import(args.province, years[0], limit, progress))
+        else:
+            print(crawl_and_import_years(args.province, years, limit, progress))

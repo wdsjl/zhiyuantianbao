@@ -15,7 +15,7 @@ from admin_data_service import (
     search_students, get_student, search_province_rules, get_province_rule,
     get_import_log, list_school_options, list_major_options,
 )
-from crawler_service import PROVINCE_IDS, list_crawl_logs, get_crawl_log
+from crawler_service import PROVINCE_IDS, list_crawl_logs, get_crawl_log, default_recent_years
 
 
 def render_page(title: str, body: str) -> HTMLResponse:
@@ -294,8 +294,15 @@ def admin_home():
 
 def admin_crawler(message: str = '', crawl_id: int | None = None):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    recent_years = default_recent_years(3)
     province_options = ''.join(
-        f'<option value="{escape(name)}">{escape(name)}</option>' for name in PROVINCE_IDS
+        f'<option value="{escape(name)}"{" selected" if name == "河南" else ""}>{escape(name)}</option>'
+        for name in PROVINCE_IDS
+    )
+    year_checks = ''.join(
+        f'<label style="display:inline-flex;align-items:center;gap:6px;margin-right:14px">'
+        f'<input type="checkbox" name="years" value="{year}"{" checked" if year in recent_years else ""} /> {year}年</label>'
+        for year in sorted(recent_years + [2022, 2021], reverse=True)
     )
     detail_html = ''
     if crawl_id:
@@ -342,16 +349,18 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
         {message_html}
         <p class="muted">
           数据来源：<strong>掌上高考 static-data.gaokao.cn</strong>（教育部阳光高考合作数据服务）。
-          采集内容包括全国院校库、分省专业录取分数线与招生计划，并自动写入本地数据库。
-          建议先用较小「院校数量」试跑，确认无误后再扩大范围；全量约 3000 校，耗时较长，可用命令行后台执行。
+          采集内容包括全国院校库、分省专业录取分数线、<strong>录取位次</strong>、招生计划与选科要求，并自动写入本地数据库。
+          志愿填报核心参考字段：最低分、最低位次、平均分、招生人数、选科要求。
+          建议先用较小「院校数量」试跑；全量约 3000 校 × 多年份，耗时较长，可用命令行后台执行。
         </p>
         <form method="post" action="/admin/crawler/run">
           <div class="toolbar">
             <select name="province">{province_options}</select>
-            <input name="year" type="number" value="2024" min="2018" max="2026" placeholder="年份" style="min-width:120px" />
             <input name="school_limit" type="number" value="20" min="1" max="3000" placeholder="院校数量" style="min-width:120px" />
             <button type="submit">采集分数线并导入</button>
           </div>
+          <p style="margin:12px 0 8px"><strong>录取年份（可多选，建议勾选近三年）：</strong></p>
+          <div class="toolbar">{year_checks}</div>
         </form>
         <form method="post" action="/admin/crawler/schools" style="margin-top:12px">
           <div class="toolbar">
@@ -360,7 +369,7 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
           </div>
           <p class="muted">仅同步院校基础信息（名称、代码、985/211 等），不采集录取分数线。</p>
         </form>
-        <p class="muted">命令行全量采集：<code>cd server && python crawler_service.py --province 浙江 --year 2024 --limit 0</code></p>
+        <p class="muted">命令行河南近三年全量采集：<code>cd server && python crawler_service.py --province 河南 --recent-years 3 --limit 0</code></p>
       </div>
       <div class="card">
         <h2>采集日志</h2>
