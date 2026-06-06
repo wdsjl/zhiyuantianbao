@@ -9,7 +9,11 @@ Page({
     refreshActiveProfile().then((profile) => {
       this.setData({
         profile: profile || wx.getStorageSync('studentProfile') || {},
-        personality: wx.getStorageSync('personalityResult') || {}
+        personality: (() => {
+          const { migrateLegacyResult } = require('../../utils/personality');
+          const result = wx.getStorageSync('personalityResult') || {};
+          return result.code ? migrateLegacyResult(result) : result;
+        })()
       });
     });
   },

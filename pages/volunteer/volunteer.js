@@ -82,7 +82,13 @@ Page({
       this.setData({ profile: profile || loadActiveProfileSync() });
       this.consumePendingPlanAppend();
     });
-    const personality = wx.getStorageSync('personalityResult') || null;
+    let personality = wx.getStorageSync('personalityResult') || null;
+    if (personality) {
+      const { migrateLegacyResult } = require('../../utils/personality');
+      personality = migrateLegacyResult(personality);
+      const aiCareerReport = wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
+      if (aiCareerReport) personality = { ...personality, aiCareerReport };
+    }
     if (!personality) {
       wx.showModal({
         title: '请先完成性格测评',

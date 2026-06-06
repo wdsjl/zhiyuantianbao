@@ -1,7 +1,7 @@
 <view class="container">
   <view class="card hero-personality">
-    <view class="section-title">性格测评与专业匹配</view>
-    <view class="sub-text">填报志愿前，先通过 12 道题了解你的兴趣特质，系统会给出更适合的专业方向建议。</view>
+    <view class="section-title">霍兰德职业兴趣测评</view>
+    <view class="sub-text">基于 RIASEC 六维模型，通过 30 道题了解你的兴趣特质，生成专业与职业方向报告，并作为 AI 志愿建议的数据基础。</view>
     <view wx:if="{{!result}}" class="progress-wrap">
       <view class="progress-text">完成度 {{progress}}%</view>
       <view class="progress-bar"><view class="progress-inner" style="width: {{progress}}%;"></view></view>
@@ -17,24 +17,26 @@
         </view>
       </view>
     </view>
-    <button class="primary-btn submit-btn" bindtap="submitTest">生成专业匹配结果</button>
+    <button class="primary-btn submit-btn" bindtap="submitTest" loading="{{syncing}}">生成职业兴趣报告</button>
   </block>
 
   <block wx:else>
     <view class="card result-card">
-      <view class="section-title">你的测评结果：{{result.code}}</view>
-      <view class="result-main">{{result.primaryType.name}}</view>
-      <view class="sub-text">{{result.primaryType.desc}}</view>
+      <view class="section-title">你的霍兰德代码：{{result.code}}</view>
+      <view class="result-main">{{result.primaryType.name}} · {{result.secondaryType.name}} · {{result.tertiaryType.name}}</view>
+      <view class="sub-text">{{result.careerReport.summary}}</view>
     </view>
 
     <view class="card">
-      <view class="section-title">核心性格类型</view>
-      <view wx:for="{{result.typeDetails}}" wx:key="code" class="type-row">
-        <view>
+      <view class="section-title">六维兴趣得分</view>
+      <view wx:for="{{result.typeDetails}}" wx:key="code" class="score-row">
+        <view class="score-head">
           <text class="type-code">{{item.code}}</text>
           <text class="type-name">{{item.name}}</text>
+          <text class="type-score">{{item.percent}}%</text>
         </view>
-        <text class="type-score">{{item.score}}分</text>
+        <view class="score-bar"><view class="score-inner" style="width: {{item.percent}}%;"></view></view>
+        <view class="score-desc">{{item.workStyle}}</view>
       </view>
     </view>
 
@@ -50,8 +52,29 @@
       <view class="major-list">
         <view wx:for="{{result.majors}}" wx:key="*this" class="major-item">{{item}}</view>
       </view>
-      <view class="warn-box">性格测评只用于辅助判断专业适配度，最终仍需结合分数位次、选科要求、家庭预算、城市偏好和就业趋势综合决策。</view>
     </view>
+
+    <view class="card">
+      <view class="section-title">可参考的职业方向</view>
+      <view class="tag-row">
+        <text wx:for="{{result.careers}}" wx:key="*this" class="tag">{{item}}</text>
+      </view>
+    </view>
+
+    <view wx:for="{{result.careerReport.sections}}" wx:key="key" class="card">
+      <view class="section-title">{{item.title}}</view>
+      <view wx:for="{{item.items}}" wx:for-item="line" wx:key="*this" class="bullet-item">· {{line}}</view>
+    </view>
+
+    <view class="card ai-report-card">
+      <view class="section-title">AI 深度职业报告</view>
+      <view class="sub-text">结合你的霍兰德结果、分数位次与批次，生成更具体的填报策略建议。该报告会同步作为志愿方案 AI 解读的数据基础。</view>
+      <button class="primary-btn" bindtap="generateAiReport" loading="{{aiLoading}}">{{aiCareerReport ? '重新生成深度报告' : '生成 AI 深度报告'}}</button>
+      <view wx:if="{{aiCareerReport}}" class="ai-report-box">{{aiCareerReport}}</view>
+      <button wx:if="{{aiCareerReport}}" class="secondary-btn copy-btn" bindtap="copyAiReport">复制报告</button>
+    </view>
+
+    <view class="warn-box card">霍兰德职业兴趣测评仅用于辅助专业方向筛选，不能替代分数位次、选科要求、招生计划与家庭实际情况。AI 报告仅供参考，请以官方信息为准。</view>
 
     <view class="bottom-actions personality-actions">
       <button class="secondary-btn" bindtap="retest">重新测评</button>

@@ -93,6 +93,20 @@ class PlanExplainRequest(BaseModel):
     items: list[dict] = Field(default_factory=list)
 
 
+class PersonalityAssessmentRequest(BaseModel):
+    student_id: Optional[int] = None
+    user_id: Optional[int] = None
+    report: dict = Field(default_factory=dict)
+
+
+class CareerReportRequest(BaseModel):
+    student_id: Optional[int] = None
+    user_id: Optional[int] = None
+    profile: dict = Field(default_factory=dict)
+    personality: dict = Field(default_factory=dict)
+    assessment_id: Optional[int] = None
+
+
 
 class OpenRequestCreate(BaseModel):
     user_id: int

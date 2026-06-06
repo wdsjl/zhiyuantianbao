@@ -6,7 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from db import get_connection, rows_to_dicts, row_to_dict
-from schemas import RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest, ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate
+from schemas import (
+    RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
+    ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate,
+    PersonalityAssessmentRequest, CareerReportRequest,
+)
+from personality_service import (
+    ensure_personality_tables, save_assessment, get_latest_assessment, save_ai_career_report,
+    build_personality_ai_context, build_career_report_prompt,
+)
 from services import get_gradient_type, get_risk_level, get_risk_reason, inspect_plan_risk, matches_subject_requirement
 from import_service import parse_import_file, import_admission_rows
 from admin_views import (
@@ -75,6 +83,7 @@ ensure_membership_tables()
 ensure_payment_tables()
 ensure_admin_auth()
 ensure_crawl_tables()
+ensure_personality_tables()
 expire_overdue_memberships()
 
 
@@ -1371,10 +1380,8 @@ def ai_plan_explain(request: PlanExplainRequest):
 分数：{profile.get('score', '')}
 位次：{profile.get('rank', '')}
 
-性格测评：
-代码：{personality.get('code', '')}
-主类型：{(personality.get('primaryType') or {}).get('name', '')}
-推荐专业大类：{', '.join(personality.get('majorTypes') or [])}
+霍兰德职业兴趣测评（供专业适配参考）：
+{build_personality_ai_context(personality)}
 
 风险结果：
 综合风险：{risk.get('level', '未排查')}
@@ -1389,6 +1396,43 @@ def ai_plan_explain(request: PlanExplainRequest):
             {'role': 'user', 'content': prompt}
         ], max_tokens=900)
         return {'explain': content}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/personality/assessment')
+def save_personality_assessment(request: PersonalityAssessmentRequest):
+    if not request.report:
+        raise HTTPException(status_code=400, detail='测评结果不能为空')
+    assessment_id = save_assessment(request.student_id, request.user_id, request.report)
+    return {'assessment_id': assessment_id, 'message': '测评报告已保存'}
+
+
+@app.get('/api/personality/assessment')
+def get_personality_assessment(student_id: int):
+    assessment = get_latest_assessment(student_id)
+    if not assessment:
+        return {'assessment': None}
+    return {'assessment': assessment}
+
+
+@app.post('/api/ai/career-report')
+def ai_career_report(request: CareerReportRequest):
+    if not request.personality:
+        raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
+    prompt = build_career_report_prompt(request.profile or {}, request.personality)
+    try:
+        content = chat_completion([
+            {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将霍兰德职业兴趣测评与分数位次结合分析。所有建议必须提示以官方信息为准。'},
+            {'role': 'user', 'content': prompt}
+        ], max_tokens=1200)
+        assessment_id = request.assessment_id
+        if not assessment_id and request.student_id:
+            latest = get_latest_assessment(request.student_id)
+            assessment_id = latest.get('assessment_id') if latest else None
+        if assessment_id:
+            save_ai_career_report(assessment_id, content)
+        return {'report': content, 'assessment_id': assessment_id}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
