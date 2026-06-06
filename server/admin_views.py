@@ -15,7 +15,8 @@ from admin_data_service import (
     search_students, get_student, search_province_rules, get_province_rule,
     get_import_log, list_school_options, list_major_options,
 )
-from crawler_service import PROVINCE_IDS, list_crawl_logs, get_crawl_log, default_recent_years
+from crawler_config import PROVINCE_IDS, REGION_ORDER, CRAWL_PRESETS
+from crawler_service import list_crawl_logs, get_crawl_log, default_recent_years, get_province_data_overview, has_running_crawl
 
 
 def render_page(title: str, body: str) -> HTMLResponse:
@@ -295,15 +296,67 @@ def admin_home():
 def admin_crawler(message: str = '', crawl_id: int | None = None):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     recent_years = default_recent_years(3)
+    overview = get_province_data_overview()
+    configured_count = len(overview)
+    ready_count = sum(1 for item in overview if item['admission_count'] > 0)
+    running_any = has_running_crawl()
     province_options = ''.join(
-        f'<option value="{escape(name)}"{" selected" if name == "河南" else ""}>{escape(name)}</option>'
-        for name in PROVINCE_IDS
+        f'<option value="{escape(name)}">{escape(name)}</option>' for name in PROVINCE_IDS
     )
     year_checks = ''.join(
         f'<label style="display:inline-flex;align-items:center;gap:6px;margin-right:14px">'
         f'<input type="checkbox" name="years" value="{year}"{" checked" if year in recent_years else ""} /> {year}年</label>'
         for year in sorted(recent_years + [2022, 2021], reverse=True)
     )
+    province_sections = ''
+    for region in REGION_ORDER:
+        region_rows = ''
+        for item in overview:
+            if item['region'] != region:
+                continue
+            status_tag = '<span class="tag">采集中</span>' if item['is_running'] else (
+                '<span class="tag" style="background:#e8fff3;color:#12b76a">已有数据</span>' if item['admission_count'] else '<span class="tag" style="background:#f2f4f7;color:#667085">未采集</span>'
+            )
+            years_text = escape(str(item.get('years') or '—'))
+            last_crawl = escape(str(item.get('last_success_at') or item.get('last_crawl_at') or '—'))
+            disabled = 'disabled' if item['is_running'] else ''
+            region_rows += f'''
+              <tr>
+                <td><strong>{escape(item["name"])}</strong><br><span class="muted">ID {escape(item["source_id"])}</span></td>
+                <td>{status_tag}</td>
+                <td>{item["admission_count"]}</td>
+                <td>{item["plan_count"]}</td>
+                <td>{item["rank_count"]}</td>
+                <td>{years_text}</td>
+                <td>{last_crawl}</td>
+                <td class="toolbar" style="margin:0">
+                  <form method="post" action="/admin/crawler/quick" style="display:inline">
+                    <input type="hidden" name="province" value="{escape(item["name"])}" />
+                    <input type="hidden" name="preset" value="trial" />
+                    <button type="submit" class="btn-sm btn-muted" {disabled}>试跑</button>
+                  </form>
+                  <form method="post" action="/admin/crawler/quick" style="display:inline">
+                    <input type="hidden" name="province" value="{escape(item["name"])}" />
+                    <input type="hidden" name="preset" value="full_recent_3y" />
+                    <button type="submit" class="btn-sm" {disabled}>近三年全量</button>
+                  </form>
+                  <a class="button btn-sm btn-muted" href="/admin/admissions?province={escape(item["name"])}">查看数据</a>
+                </td>
+              </tr>
+            '''
+        province_sections += f'''
+          <div class="card">
+            <h3>{escape(region)}</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>省份</th><th>状态</th><th>录取记录</th><th>招生计划</th><th>含位次</th><th>年份覆盖</th><th>最近采集</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody>{region_rows}</tbody>
+            </table>
+          </div>
+        '''
     detail_html = ''
     if crawl_id:
         log = get_crawl_log(crawl_id)
@@ -342,34 +395,50 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
         '''
     if not log_rows:
         log_rows = '<tr><td colspan="10" class="muted">暂无采集记录</td></tr>'
+    running_hint = '<p class="muted">当前有采集任务在后台运行，相关省份按钮已暂时禁用。</p>' if running_any else ''
     body = f'''
       {detail_html}
       <div class="card">
-        <h2>高考数据采集</h2>
+        <h2>全国省份采集配置</h2>
         {message_html}
+        {running_hint}
+        <div class="grid">
+          <div><div class="muted">已配置省份</div><div class="stat">{configured_count}</div></div>
+          <div><div class="muted">已有本地数据</div><div class="stat">{ready_count}</div></div>
+          <div><div class="muted">预设方案</div><div class="stat" style="font-size:18px">试跑 / 近三年全量 / 最近一年全量</div></div>
+        </div>
+        <p class="muted" style="margin-top:16px">
+          已为全国 <strong>31 个生源省份</strong> 预置采集参数。需要哪个省的数据，在下方表格直接点「试跑」或「近三年全量」即可。
+          全量采集约 3000 校 × 3 年，会在<strong>后台执行</strong>，可在采集日志查看进度。
+        </p>
+        <form method="post" action="/admin/crawler/quick" class="toolbar" style="margin-top:12px">
+          <input type="hidden" name="preset" value="full_recent_3y" />
+          <button type="submit" class="btn-muted" {"disabled" if running_any else ""}>全国 31 省近三年全量（依次后台执行）</button>
+        </form>
+        <p class="muted">命令行单省全量：<code>cd server && python crawler_service.py --province 河南 --preset full_recent_3y</code></p>
+        <p class="muted">命令行全国全量：<code>cd server && python crawler_service.py --all-provinces --preset full_recent_3y</code></p>
+      </div>
+      {province_sections}
+      <div class="card">
+        <h2>自定义采集</h2>
         <p class="muted">
-          数据来源：<strong>掌上高考 static-data.gaokao.cn</strong>（教育部阳光高考合作数据服务）。
-          采集内容包括全国院校库、分省专业录取分数线、<strong>录取位次</strong>、招生计划与选科要求，并自动写入本地数据库。
-          志愿填报核心参考字段：最低分、最低位次、平均分、招生人数、选科要求。
-          建议先用较小「院校数量」试跑；全量约 3000 校 × 多年份，耗时较长，可用命令行后台执行。
+          数据来源：<strong>掌上高考 static-data.gaokao.cn</strong>。采集字段含最低分、最低位次、招生计划、选科要求等。
         </p>
         <form method="post" action="/admin/crawler/run">
           <div class="toolbar">
             <select name="province">{province_options}</select>
-            <input name="school_limit" type="number" value="20" min="1" max="3000" placeholder="院校数量" style="min-width:120px" />
-            <button type="submit">采集分数线并导入</button>
+            <input name="school_limit" type="number" value="0" min="0" max="3000" placeholder="院校数量，0=全量" style="min-width:140px" />
+            <button type="submit">自定义采集并导入</button>
           </div>
-          <p style="margin:12px 0 8px"><strong>录取年份（可多选，建议勾选近三年）：</strong></p>
+          <p style="margin:12px 0 8px"><strong>录取年份（可多选）：</strong></p>
           <div class="toolbar">{year_checks}</div>
         </form>
         <form method="post" action="/admin/crawler/schools" style="margin-top:12px">
           <div class="toolbar">
-            <input name="school_limit" type="number" value="50" min="1" max="3000" placeholder="院校数量" style="min-width:120px" />
-            <button type="submit" class="btn-muted">仅同步院校库</button>
+            <input name="school_limit" type="number" value="0" min="0" max="3000" placeholder="院校数量，0=全量" style="min-width:140px" />
+            <button type="submit" class="btn-muted">仅同步全国院校库</button>
           </div>
-          <p class="muted">仅同步院校基础信息（名称、代码、985/211 等），不采集录取分数线。</p>
         </form>
-        <p class="muted">命令行河南近三年全量采集：<code>cd server && python crawler_service.py --province 河南 --recent-years 3 --limit 0</code></p>
       </div>
       <div class="card">
         <h2>采集日志</h2>

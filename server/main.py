@@ -1,6 +1,6 @@
 from urllib.parse import quote
 
-from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request
+from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.responses import Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -15,7 +15,11 @@ from admin_views import (
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
 )
-from crawler_service import crawl_and_import, crawl_and_import_years, import_schools_only, ensure_crawl_tables, default_recent_years
+from crawler_service import (
+    crawl_and_import, crawl_and_import_years, import_schools_only, ensure_crawl_tables,
+    default_recent_years, run_crawl_job, crawl_all_provinces, has_running_crawl,
+)
+from crawler_config import get_preset
 from admin_auth_service import (
     ensure_admin_auth, verify_session_token, verify_admin_credentials,
     create_session_token, session_cookie_options, ADMIN_SESSION_COOKIE, change_admin_password,
@@ -133,37 +137,80 @@ def admin_crawler_page(crawl_id: int | None = None, message: str = ''):
     return admin_crawler(message, crawl_id)
 
 
-@app.post('/admin/crawler/run')
-def admin_crawler_run(
-    province: str = Form('河南'),
-    years: list[int] = Form(default=[]),
-    school_limit: int = Form(20),
+def _background_crawl_single(province: str, preset_key: str) -> None:
+    try:
+        run_crawl_job(province, preset_key)
+    except Exception:
+        pass
+
+
+def _background_crawl_all(preset_key: str) -> None:
+    try:
+        crawl_all_provinces(preset_key)
+    except Exception:
+        pass
+
+
+@app.post('/admin/crawler/quick')
+def admin_crawler_quick(
+    background_tasks: BackgroundTasks,
+    province: str = Form(''),
+    preset: str = Form('trial'),
 ):
     try:
-        selected_years = years or default_recent_years(3)
-        if len(selected_years) == 1:
-            result = crawl_and_import(province, selected_years[0], school_limit or 20)
+        preset_config = get_preset(preset)
+        if province:
+            if has_running_crawl(province):
+                return RedirectResponse(f'/admin/crawler?message={quote(f"{province} 已有采集任务在运行")}', status_code=303)
+            background_tasks.add_task(_background_crawl_single, province, preset)
+            message = f'{province}「{preset_config["label"]}」采集任务已在后台启动，请在采集日志查看进度'
         else:
-            result = crawl_and_import_years(province, selected_years, school_limit or 20)
+            if has_running_crawl():
+                return RedirectResponse('/admin/crawler?message=已有全国采集任务在运行', status_code=303)
+            background_tasks.add_task(_background_crawl_all, preset)
+            message = f'全国 31 省「{preset_config["label"]}」采集任务已在后台依次启动，耗时较长，请查看采集日志'
+        return RedirectResponse(f'/admin/crawler?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/crawler?message={quote(f"启动失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/crawler/run')
+def admin_crawler_run(
+    background_tasks: BackgroundTasks,
+    province: str = Form('河南'),
+    years: list[int] = Form(default=[]),
+    school_limit: int = Form(0),
+):
+    try:
+        if has_running_crawl(province):
+            return RedirectResponse(f'/admin/crawler?message={quote(f"{province} 已有采集任务在运行")}', status_code=303)
+        selected_years = years or default_recent_years(3)
+        limit = None if school_limit == 0 else school_limit
+
+        def job() -> None:
+            try:
+                if len(selected_years) == 1:
+                    crawl_and_import(province, selected_years[0], limit)
+                else:
+                    crawl_and_import_years(province, selected_years, limit)
+            except Exception:
+                pass
+
+        background_tasks.add_task(job)
         year_text = '、'.join(str(year) for year in sorted(selected_years, reverse=True))
-        message = (
-            f"采集完成（{province} {year_text}）：处理 {result.get('school_processed', 0)} 所院校，"
-            f"共 {result['total_count']} 条记录，成功 {result['success_count']} 条，失败 {result['fail_count']} 条"
-        )
-        crawl_id = result.get('crawl_id') or (result.get('crawl_ids') or [None])[-1]
-        target = f'/admin/crawler?crawl_id={crawl_id}&message={quote(message)}' if crawl_id else f'/admin/crawler?message={quote(message)}'
-        return RedirectResponse(target, status_code=303)
+        limit_text = '全量' if limit is None else f'{limit} 所院校'
+        message = f'{province}（{year_text}，{limit_text}）采集任务已在后台启动'
+        return RedirectResponse(f'/admin/crawler?message={quote(message)}', status_code=303)
     except Exception as exc:
         return RedirectResponse(f'/admin/crawler?message={quote(f"采集失败：{exc}")}', status_code=303)
 
 
 @app.post('/admin/crawler/schools')
-def admin_crawler_schools(school_limit: int = Form(50)):
+def admin_crawler_schools(background_tasks: BackgroundTasks, school_limit: int = Form(0)):
     try:
-        result = import_schools_only(school_limit or 50)
-        message = f"院校同步完成：共 {result['total']} 所，成功 {result['success']} 所"
-        if result.get('errors'):
-            message += f"，部分失败：{result['errors'][0]}"
+        limit = None if school_limit == 0 else school_limit
+        background_tasks.add_task(import_schools_only, limit)
+        message = '全国院校库同步任务已在后台启动'
         return RedirectResponse(f'/admin/crawler?message={quote(message)}', status_code=303)
     except Exception as exc:
         return RedirectResponse(f'/admin/crawler?message={quote(f"同步失败：{exc}")}', status_code=303)

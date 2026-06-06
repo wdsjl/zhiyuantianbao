@@ -13,22 +13,13 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable
 
-from db import get_connection, row_to_dict
+from crawler_config import PROVINCE_IDS, PROVINCE_CONFIGS, REGION_ORDER, get_preset, resolve_preset_options, cli_command
+from db import get_connection, row_to_dict, rows_to_dicts
 from import_service import import_admission_rows, get_or_create_school, get_or_create_major, upsert_plan, upsert_admission, insert_import_log
 
 BASE_URL = 'https://static-data.gaokao.cn/www/2.0'
 USER_AGENT = 'Mozilla/5.0 ZhiyuanGaokaoCrawler/1.0 (+local research)'
 REQUEST_INTERVAL = 0.2
-
-# 掌上高考「生源省份」ID（用于 schoolspecialscore / schoolspecialplan）
-PROVINCE_IDS: dict[str, str] = {
-    '北京': '11', '天津': '12', '河北': '13', '山西': '14', '内蒙古': '15',
-    '辽宁': '21', '吉林': '22', '黑龙江': '23', '上海': '31', '江苏': '32',
-    '浙江': '33', '安徽': '34', '福建': '35', '江西': '36', '山东': '37',
-    '河南': '41', '湖北': '42', '湖南': '43', '广东': '44', '广西': '45',
-    '海南': '46', '重庆': '50', '四川': '51', '贵州': '52', '云南': '53',
-    '西藏': '54', '陕西': '61', '甘肃': '62', '青海': '63', '宁夏': '64', '新疆': '65',
-}
 
 
 def ensure_crawl_tables() -> None:
@@ -240,6 +231,117 @@ def finish_crawl_log(crawl_id: int, processed: int, row_total: int, success: int
         connection.commit()
 
 
+def get_province_data_overview() -> list[dict[str, Any]]:
+    ensure_crawl_tables()
+    admission_stats: dict[str, dict[str, Any]] = {}
+    plan_stats: dict[str, int] = {}
+    crawl_stats: dict[str, dict[str, Any]] = {}
+    with get_connection() as connection:
+        for row in rows_to_dicts(connection.execute(
+            '''
+            SELECT province,
+                   COUNT(*) AS admission_count,
+                   COUNT(DISTINCT year) AS year_count,
+                   SUM(CASE WHEN min_rank IS NOT NULL THEN 1 ELSE 0 END) AS rank_count,
+                   GROUP_CONCAT(DISTINCT year) AS years
+            FROM admission_records
+            GROUP BY province
+            '''
+        ).fetchall()):
+            admission_stats[row['province']] = row
+        for row in rows_to_dicts(connection.execute(
+            'SELECT province, COUNT(*) AS plan_count FROM enrollment_plans GROUP BY province'
+        ).fetchall()):
+            plan_stats[row['province']] = row['plan_count']
+        for row in rows_to_dicts(connection.execute(
+            '''
+            SELECT province,
+                   MAX(finished_at) AS last_crawl_at,
+                   SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running_count,
+                   MAX(CASE WHEN status IN ('success', 'partial') THEN finished_at END) AS last_success_at
+            FROM crawl_logs
+            GROUP BY province
+            '''
+        ).fetchall()):
+            crawl_stats[row['province']] = row
+
+    overview: list[dict[str, Any]] = []
+    for config in PROVINCE_CONFIGS:
+        name = config['name']
+        admission = admission_stats.get(name, {})
+        crawl = crawl_stats.get(name, {})
+        overview.append({
+            **config,
+            'admission_count': admission.get('admission_count', 0) or 0,
+            'plan_count': plan_stats.get(name, 0) or 0,
+            'year_count': admission.get('year_count', 0) or 0,
+            'rank_count': admission.get('rank_count', 0) or 0,
+            'years': admission.get('years') or '',
+            'last_crawl_at': crawl.get('last_crawl_at'),
+            'last_success_at': crawl.get('last_success_at'),
+            'is_running': bool(crawl.get('running_count', 0)),
+            'cli_full': cli_command(name, 'full_recent_3y'),
+            'cli_trial': cli_command(name, 'trial'),
+        })
+    return overview
+
+
+def has_running_crawl(province: str | None = None) -> bool:
+    ensure_crawl_tables()
+    with get_connection() as connection:
+        if province:
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM crawl_logs WHERE province = ? AND status = 'running'",
+                [province]
+            ).fetchone()
+        else:
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM crawl_logs WHERE status = 'running'"
+            ).fetchone()
+        return bool(row and row['count'])
+
+
+def run_crawl_job(province: str, preset_key: str, years: list[int] | None = None) -> dict[str, Any]:
+    options = resolve_preset_options(preset_key, years)
+    selected_years = options['years']
+    school_limit = options['school_limit']
+    if len(selected_years) == 1:
+        return crawl_and_import(province, selected_years[0], school_limit)
+    return crawl_and_import_years(province, selected_years, school_limit)
+
+
+def crawl_all_provinces(
+    preset_key: str = 'full_recent_3y',
+    provinces: list[str] | None = None,
+    on_progress: Callable[[str, int, int], None] | None = None,
+) -> dict[str, Any]:
+    target_provinces = provinces or [item['name'] for item in PROVINCE_CONFIGS]
+    unknown = [name for name in target_provinces if name not in PROVINCE_IDS]
+    if unknown:
+        raise ValueError(f'不支持的省份：{", ".join(unknown)}')
+
+    combined: dict[str, Any] = {
+        'preset': preset_key,
+        'provinces': target_provinces,
+        'results': [],
+        'total_count': 0,
+        'success_count': 0,
+        'fail_count': 0,
+    }
+    for index, province in enumerate(target_provinces, start=1):
+        if on_progress:
+            on_progress(province, index, len(target_provinces))
+        try:
+            result = run_crawl_job(province, preset_key)
+            combined['results'].append({'province': province, 'status': 'success', **result})
+            combined['total_count'] += result.get('total_count', 0)
+            combined['success_count'] += result.get('success_count', 0)
+            combined['fail_count'] += result.get('fail_count', 0)
+        except Exception as exc:
+            combined['results'].append({'province': province, 'status': 'failed', 'error': str(exc)})
+    return combined
+
+
 def list_crawl_logs(limit: int = 20) -> list[dict[str, Any]]:
     ensure_crawl_tables()
     with get_connection() as connection:
@@ -395,31 +497,53 @@ def crawl_and_import(
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='采集掌上高考数据并导入数据库')
-    parser.add_argument('--province', default='浙江', help='生源省份，例如 浙江')
+    parser.add_argument('--province', help='生源省份，例如 浙江；多个省份用逗号分隔')
+    parser.add_argument('--all-provinces', action='store_true', help='采集全部 31 个生源省份')
+    parser.add_argument('--preset', choices=list(__import__('crawler_config').CRAWL_PRESETS.keys()), help='使用预设方案')
     parser.add_argument('--year', type=int, help='单个录取年份')
     parser.add_argument('--years', help='多个年份，逗号分隔，如 2024,2023,2022')
     parser.add_argument('--recent-years', type=int, default=0, help='采集最近 N 年（默认从昨年起算）')
     parser.add_argument('--limit', type=int, default=20, help='最多采集院校数量，0 表示全部')
     parser.add_argument('--schools-only', action='store_true', help='仅同步院校库，不采集分数线')
+    parser.add_argument('--list-provinces', action='store_true', help='列出已配置的全部省份')
     args = parser.parse_args()
+
+    if args.list_provinces:
+        for region in REGION_ORDER:
+            names = [item['name'] for item in PROVINCE_CONFIGS if item['region'] == region]
+            print(f'{region}: {"、".join(names)}')
+        raise SystemExit(0)
+
     limit = None if args.limit == 0 else args.limit
     if args.schools_only:
         print(import_schools_only(limit))
+    elif args.all_provinces or (args.province and ',' in args.province):
+        preset_key = args.preset or 'full_recent_3y'
+        provinces = None if args.all_provinces else [item.strip() for item in args.province.split(',') if item.strip()]
+
+        def province_progress(name, index, total):
+            print(f'[{index}/{total}] 开始采集 {name}')
+
+        print(crawl_all_provinces(preset_key, provinces, province_progress))
     else:
-        if args.years:
-            years = [int(item.strip()) for item in args.years.split(',') if item.strip()]
-        elif args.recent_years:
-            years = default_recent_years(args.recent_years)
-        elif args.year:
-            years = [args.year]
+        province = args.province or '浙江'
+        if args.preset:
+            print(run_crawl_job(province, args.preset))
         else:
-            years = [2024]
+            if args.years:
+                years = [int(item.strip()) for item in args.years.split(',') if item.strip()]
+            elif args.recent_years:
+                years = default_recent_years(args.recent_years)
+            elif args.year:
+                years = [args.year]
+            else:
+                years = default_recent_years(3)
 
-        def progress(done, total, name, year=None):
-            prefix = f'[{year}] ' if year else ''
-            print(f'{prefix}[{done + 1}/{total}] {name}')
+            def progress(done, total, name, year=None):
+                prefix = f'[{year}] ' if year else ''
+                print(f'{prefix}[{done + 1}/{total}] {name}')
 
-        if len(years) == 1:
-            print(crawl_and_import(args.province, years[0], limit, progress))
-        else:
-            print(crawl_and_import_years(args.province, years, limit, progress))
+            if len(years) == 1:
+                print(crawl_and_import(province, years[0], limit, progress))
+            else:
+                print(crawl_and_import_years(province, years, limit, progress))
