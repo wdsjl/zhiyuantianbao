@@ -2,6 +2,7 @@ const { request, BASE_URL } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
 const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
+const { getGradientClass } = require('../../utils/volunteer');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -33,6 +34,7 @@ function normalizePlan(items) {
     id: `${item.school_id}-${item.major_id}-${index}`,
     sortOrder: item.sort_order,
     gradientType: item.gradient_type,
+    gradientClass: getGradientClass(item.gradient_type || item.gradientType),
     schoolId: item.school_id,
     schoolName: item.school_name,
     schoolCode: item.school_code,
@@ -108,7 +110,11 @@ Page({
     this.setData({ personality });
     const currentPlan = wx.getStorageSync('currentPlan') || [];
     if (currentPlan.length) {
-      this.setData({ plan: currentPlan, aiExplain: wx.getStorageSync('currentAiExplain') || '' });
+      const plan = currentPlan.map((item) => ({
+        ...item,
+        gradientClass: item.gradientClass || getGradientClass(item.gradientType)
+      }));
+      this.setData({ plan, aiExplain: wx.getStorageSync('currentAiExplain') || '' });
     }
     fetchEntitlements();
   },
@@ -124,6 +130,7 @@ Page({
       ...item,
       id: `${item.schoolId}-${item.majorId}-${Date.now()}`,
       sortOrder: plan.length + 1,
+      gradientClass: item.gradientClass || getGradientClass(item.gradientType),
       personalityMatched: false
     });
     this.setData({ plan, riskResult: null, aiExplain: '' });

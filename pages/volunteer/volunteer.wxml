@@ -42,7 +42,7 @@
   <view wx:for="{{plan}}" wx:key="id" class="card volunteer-card">
     <view class="volunteer-head">
       <view>
-        <text class="gradient gradient-{{item.gradientType}}">{{item.gradientType}}</text>
+        <text class="gradient gradient-{{item.gradientClass}}">{{item.gradientType}}</text>
         <text class="school-name">{{item.schoolName}}</text>
       </view>
       <text class="{{item.riskLevel === '高' ? 'risk-high' : item.riskLevel === '中' ? 'risk-mid' : 'risk-low'}}">{{item.riskLevel}}风险</text>
