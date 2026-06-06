@@ -1,4 +1,4 @@
-const { request } = require('../../utils/request');
+const { request, formatRequestError, BASE_URL } = require('../../utils/request');
 const { fetchEntitlements, getCurrentUserId } = require('../../utils/membership');
 
 const PLAN_FEATURES = {
@@ -24,39 +24,78 @@ Page({
     entitlements: null,
     currentPlanCode: 'free',
     orders: [],
-    membershipNotice: null
+    membershipNotice: null,
+    loadError: ''
   },
   onShow() {
     this.loadData();
   },
+  mapPlans(list) {
+    return (list || []).map((plan) => ({
+      ...plan,
+      priceText: Number(plan.price) === 0 ? '免费' : `¥${plan.price}`,
+      durationText: Number(plan.duration_days) > 0 ? `${plan.duration_days}天` : '长期',
+      features: PLAN_FEATURES[plan.plan_code] || [],
+      canPay: Number(plan.price) > 0
+    }));
+  },
   loadData() {
-    this.setData({ loading: true });
+    this.setData({ loading: true, loadError: '' });
     const userId = getCurrentUserId();
-    Promise.all([
-      request({ url: '/api/membership/plans' }),
-      fetchEntitlements(),
+    const tasks = [
+      request({ url: '/api/membership/plans' }).catch((error) => ({ error })),
+      fetchEntitlements().catch((error) => ({ error })),
       request({ url: '/api/payments/wechat/status' }).catch(() => ({ enabled: false })),
       this.fetchMyOrders(userId)
-    ])
-      .then(([plansRes, entitlements, payStatus, orders]) => {
+    ];
+    Promise.all(tasks)
+      .then(([plansRes, entitlementsRes, payStatus, orders]) => {
+        const errors = [];
+        if (plansRes && plansRes.error) errors.push(`套餐列表：${formatRequestError(plansRes.error)}`);
+        if (entitlementsRes && entitlementsRes.error) errors.push(`会员状态：${formatRequestError(entitlementsRes.error)}`);
+
+        const entitlements = entitlementsRes && entitlementsRes.error
+          ? { plan: { plan_name: '免费版', plan_code: 'free' }, membership: null, latest_membership: null, permissions: {} }
+          : entitlementsRes;
+        const plans = plansRes && !plansRes.error
+          ? this.mapPlans(plansRes.list)
+          : this.mapPlans([
+            { plan_code: 'free', plan_name: '免费版', price: 0, duration_days: 0, description: '基础永久免费，引流体验' },
+            { plan_code: 'trial', plan_name: '体验月卡', price: 19.9, duration_days: 30, description: '30 天体验核心能力' },
+            { plan_code: 'standard', plan_name: '标准年卡', price: 99, duration_days: 365, description: '主推款，智能推荐、风险检测、AI 解读、PDF 导出' },
+            { plan_code: 'premium', plan_name: '尊享年卡', price: 168, duration_days: 365, description: '深度对比、提醒、答疑通道' }
+          ]);
+
         const currentPlanCode = entitlements.plan ? entitlements.plan.plan_code : 'free';
-        const plans = (plansRes.list || []).map((plan) => ({
-          ...plan,
-          priceText: Number(plan.price) === 0 ? '免费' : `¥${plan.price}`,
-          durationText: Number(plan.duration_days) > 0 ? `${plan.duration_days}天` : '长期',
-          features: PLAN_FEATURES[plan.plan_code] || [],
-          canPay: Number(plan.price) > 0
-        }));
+        const loadError = errors.length
+          ? `${errors.join('；')}。请确认已更新代码且接口地址为 ${BASE_URL}`
+          : '';
+
         this.setData({
           plans,
           entitlements,
           currentPlanCode,
           wechatPayEnabled: !!payStatus.enabled,
           orders,
-          membershipNotice: this.buildMembershipNotice(entitlements, plans)
+          membershipNotice: this.buildMembershipNotice(entitlements, plans),
+          loadError
         });
+
+        if (loadError) {
+          wx.showToast({ title: '部分会员信息加载失败', icon: 'none', duration: 3000 });
+        }
       })
-      .catch(() => {
+      .catch((error) => {
+        const message = formatRequestError(error) || '会员信息加载失败';
+        this.setData({
+          loadError: `${message}。请确认接口地址为 ${BASE_URL}`,
+          plans: this.mapPlans([
+            { plan_code: 'trial', plan_name: '体验月卡', price: 19.9, duration_days: 30, description: '30 天体验核心能力' },
+            { plan_code: 'standard', plan_name: '标准年卡', price: 99, duration_days: 365, description: '主推款，智能推荐、风险检测、AI 解读、PDF 导出' },
+            { plan_code: 'premium', plan_name: '尊享年卡', price: 168, duration_days: 365, description: '深度对比、提醒、答疑通道' }
+          ]),
+          entitlements: { plan: { plan_name: '免费版', plan_code: 'free' }, membership: null, permissions: {} }
+        });
         wx.showToast({ title: '会员信息加载失败', icon: 'none' });
       })
       .finally(() => {
