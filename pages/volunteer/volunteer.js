@@ -1,6 +1,7 @@
 const { request, BASE_URL } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
 const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
+const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -87,16 +88,21 @@ Page({
       const { migrateLegacyResult } = require('../../utils/personality');
       personality = migrateLegacyResult(personality);
       const aiCareerReport = wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
-      if (aiCareerReport) personality = { ...personality, aiCareerReport };
+      const studentAiReport = wx.getStorageSync('studentAiReport') || '';
+      if (aiCareerReport || studentAiReport) {
+        personality = { ...personality, aiCareerReport, aiCareerReport: studentAiReport || aiCareerReport };
+      }
     }
     if (!personality) {
+      const profile = this.data.profile || loadActiveProfileSync();
+      const flow = getFlowStatus(profile);
       wx.showModal({
-        title: '请先完成性格测评',
-        content: '系统会先根据你的兴趣性格匹配适合专业方向，再辅助生成志愿方案。',
-        confirmText: '去测评',
-        showCancel: false,
-        success: () => {
-          wx.navigateTo({ url: '/pages/personality/personality' });
+        title: '请先完成前置流程',
+        content: `当前进度 ${flow.completedCount}/${flow.totalCount}。建议先完成：${flow.currentStep.title}，再生成志愿方案。`,
+        confirmText: '继续流程',
+        cancelText: '知道了',
+        success: (res) => {
+          if (res.confirm) goNextStep(profile);
         }
       });
       return;

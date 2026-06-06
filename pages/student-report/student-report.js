@@ -74,8 +74,13 @@ Page({
     const aiCareerReport = wx.getStorageSync('personalityAiCareerReport') || '';
     if (aiCareerReport) personality = { ...personality, aiCareerReport };
     const savedPrefs = wx.getStorageSync(PREF_STORAGE_KEY) || defaultPreferences();
+    const mergedPrefs = { ...defaultPreferences(), ...savedPrefs };
+    if (!mergedPrefs.preferredMajorTypesText && personality.majorTypes && personality.majorTypes.length) {
+      mergedPrefs.preferredMajorTypesText = personality.majorTypes.join('、');
+      wx.setStorageSync(PREF_STORAGE_KEY, mergedPrefs);
+    }
     const savedReport = wx.getStorageSync('studentAiReport') || '';
-    this.setData({ personality, preferences: { ...defaultPreferences(), ...savedPrefs }, report: savedReport });
+    this.setData({ personality, preferences: mergedPrefs, report: savedReport });
   },
   loadServerReport() {
     const profile = this.data.profile || loadActiveProfileSync();
@@ -155,6 +160,17 @@ Page({
         wx.setStorageSync('studentAiReport', report);
         this.setData({ report });
         wx.showToast({ title: '报告已生成', icon: 'success' });
+        setTimeout(() => {
+          wx.showModal({
+            title: '报告已生成',
+            content: '下一步可进入志愿填报页，结合报告结果智能生成冲稳保方案。',
+            confirmText: '去填报志愿',
+            cancelText: '稍后',
+            success: (modalRes) => {
+              if (modalRes.confirm) wx.switchTab({ url: '/pages/volunteer/volunteer' });
+            }
+          });
+        }, 600);
       })
       .catch((error) => {
         wx.showToast({ title: error.message || '生成失败', icon: 'none' });

@@ -2,9 +2,29 @@
   <view class="hero-card">
     <view>
       <view class="hello">{{profile.name ? profile.name + '，你好' : '欢迎使用智愿填报'}}</view>
-      <view class="sub-text">基于分数、位次、性格测评和偏好，生成冲稳保垫志愿方案</view>
+      <view class="sub-text">按流程完成测评与报告，再生成更适合自己的志愿方案</view>
     </view>
     <button class="profile-btn" bindtap="goProfile">完善信息</button>
+  </view>
+
+  <view class="card flow-card">
+    <view class="flow-header">
+      <view>
+        <view class="section-title">填报流程</view>
+        <view class="sub-text">已完成 {{flow.completedCount}} / {{flow.totalCount}} 步</view>
+      </view>
+      <view class="flow-percent">{{flow.progressPercent}}%</view>
+    </view>
+    <view class="flow-bar"><view class="flow-inner" style="width: {{flow.progressPercent}}%;"></view></view>
+    <view wx:for="{{flow.steps}}" wx:key="key" class="flow-step {{item.done ? 'done' : (item.key === flow.currentStep.key ? 'current' : '')}}" data-key="{{item.key}}" bindtap="openStep">
+      <view class="step-index">{{item.index}}</view>
+      <view class="step-body">
+        <view class="step-title">{{item.title}}</view>
+        <view class="sub-text">{{item.desc}}</view>
+      </view>
+      <view class="step-status">{{item.done ? '已完成' : (item.key === flow.currentStep.key ? '进行中' : '待完成')}}</view>
+    </view>
+    <button class="primary-btn flow-btn" bindtap="continueFlow">{{flow.allDone ? '查看志愿方案' : '继续下一步：' + flow.currentStep.title}}</button>
   </view>
 
   <view class="card score-card">
@@ -23,41 +43,37 @@
   </view>
 
   <view wx:if="{{personality.code}}" class="card">
-    <view class="section-title">性格与专业匹配</view>
-    <view class="sub-text">测评结果：{{personality.code}} · {{personality.primaryType.name}}</view>
+    <view class="section-title">霍兰德测评结果</view>
+    <view class="sub-text">{{personality.code}} · {{personality.primaryType.name}}</view>
     <view class="tag-row personality-tags">
       <text wx:for="{{personality.majorTypes}}" wx:key="*this" class="tag active">{{item}}</text>
     </view>
   </view>
 
   <view class="grid-actions">
-    <view class="action-card" bindtap="goPersonality">
-      <view class="action-title">霍兰德测评</view>
-      <view class="sub-text">先测评，再匹配适合专业</view>
+    <view class="action-card highlight-action" bindtap="continueFlow">
+      <view class="action-title">继续当前流程</view>
+      <view class="sub-text">{{flow.currentStep.title}}</view>
     </view>
-    <view class="action-card highlight-action" bindtap="goStudentReport">
+    <view class="action-card" bindtap="goStudentReport">
       <view class="action-title">个性化报告</view>
       <view class="sub-text">分数+性格+需求，AI 专属报告</view>
     </view>
     <view class="action-card" bindtap="goVolunteer">
       <view class="action-title">智能生成志愿</view>
-      <view class="sub-text">结合性格与分数位次推荐</view>
+      <view class="sub-text">结合报告与位次推荐</view>
     </view>
-    <view class="action-card" bindtap="goVolunteer">
-      <view class="action-title">一键风险排查</view>
-      <view class="sub-text">识别滑档、退档风险</view>
+    <view class="action-card" bindtap="goSchools">
+      <view class="action-title">院校筛选</view>
+      <view class="sub-text">城市、类型、学费筛选</view>
     </view>
     <view class="action-card" bindtap="goDrafts">
       <view class="action-title">我的草稿箱</view>
       <view class="sub-text">保存、修改、对比、导出</view>
     </view>
-    <view class="action-card" bindtap="goSchools">
-      <view class="action-title">院校筛选</view>
-      <view class="sub-text">城市、类型、学费一键筛选</view>
-    </view>
     <view class="action-card member-action" bindtap="goMembership">
       <view class="action-title">会员中心</view>
-      <view class="sub-text">解锁智能推荐、AI解读、PDF导出</view>
+      <view class="sub-text">解锁 AI 报告与志愿解读</view>
     </view>
   </view>
 

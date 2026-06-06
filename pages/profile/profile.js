@@ -99,7 +99,19 @@ Page({
         const finish = () => {
           wx.showToast({ title: '保存成功', icon: 'success' });
           setTimeout(() => {
-            wx.switchTab({ url: '/pages/home/home' });
+            wx.showModal({
+              title: '档案已保存',
+              content: '下一步建议完成霍兰德职业兴趣测评，系统才能生成更准确的个性化报告。',
+              confirmText: '去测评',
+              cancelText: '回首页',
+              success: (modalRes) => {
+                if (modalRes.confirm) {
+                  wx.navigateTo({ url: '/pages/personality/personality' });
+                  return;
+                }
+                wx.switchTab({ url: '/pages/home/home' });
+              }
+            });
           }, 500);
         };
         if (form.role === '家长' && form.bindCode && saved.userId) {

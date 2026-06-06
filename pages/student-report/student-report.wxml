@@ -1,7 +1,7 @@
 <view class="container">
   <view class="card hero-card">
     <view class="section-title">AI 个性化填报报告</view>
-    <view class="sub-text">综合你的分数位次、霍兰德测评结果和个人需求，由大模型生成专属志愿填报策略报告。</view>
+    <view class="sub-text">流程第 3～4 步：填写个人需求后，系统将分数、霍兰德测评和偏好发给大模型，生成你的专属报告。</view>
   </view>
 
   <view class="card">

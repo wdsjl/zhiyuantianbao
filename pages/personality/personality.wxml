@@ -78,7 +78,7 @@
 
     <view class="bottom-actions personality-actions">
       <button class="secondary-btn" bindtap="retest">重新测评</button>
-      <button class="primary-btn" bindtap="goVolunteer">进入志愿填报</button>
+      <button class="primary-btn" bindtap="goStudentReport">下一步：生成个性化报告</button>
     </view>
   </block>
 </view>

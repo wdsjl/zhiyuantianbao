@@ -100,6 +100,19 @@ Page({
       .finally(() => {
         this.setData({ syncing: false });
         wx.showToast({ title: '测评完成', icon: 'success' });
+        setTimeout(() => {
+          wx.showModal({
+            title: '测评完成',
+            content: '下一步请填写个人需求并生成 AI 个性化填报报告。',
+            confirmText: '去生成报告',
+            cancelText: '稍后',
+            success: (modalRes) => {
+              if (modalRes.confirm) {
+                wx.navigateTo({ url: '/pages/student-report/student-report' });
+              }
+            }
+          });
+        }, 600);
       });
   },
   generateAiReport() {
@@ -176,9 +189,32 @@ Page({
       }
     });
   },
+  goStudentReport() {
+    if (!this.data.result) {
+      wx.showToast({ title: '请先完成测评', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({ url: '/pages/student-report/student-report' });
+  },
   goVolunteer() {
     if (!this.data.result) {
       wx.showToast({ title: '请先完成测评', icon: 'none' });
+      return;
+    }
+    if (!wx.getStorageSync('studentAiReport')) {
+      wx.showModal({
+        title: '建议先生成个性化报告',
+        content: '按推荐流程，先生成 AI 个性化报告再填报志愿，策略会更完整。',
+        confirmText: '去生成报告',
+        cancelText: '直接去志愿',
+        success: (res) => {
+          if (res.confirm) {
+            wx.navigateTo({ url: '/pages/student-report/student-report' });
+            return;
+          }
+          wx.switchTab({ url: '/pages/volunteer/volunteer' });
+        }
+      });
       return;
     }
     wx.switchTab({ url: '/pages/volunteer/volunteer' });
