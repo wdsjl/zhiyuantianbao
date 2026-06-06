@@ -83,6 +83,10 @@ function getMembershipStatusMessage(entitlements) {
   return '';
 }
 
+function goMembershipPage() {
+  wx.switchTab({ url: '/pages/membership/membership' });
+}
+
 function showUpgradeModal(permissionCode, title, message) {
   const name = title || PERMISSION_LABELS[permissionCode] || '该功能';
   wx.showModal({
@@ -91,7 +95,7 @@ function showUpgradeModal(permissionCode, title, message) {
     confirmText: '查看会员',
     cancelText: '稍后再说',
     success: (res) => {
-      if (res.confirm) wx.navigateTo({ url: '/pages/membership/membership' });
+      if (res.confirm) goMembershipPage();
     }
   });
 }
@@ -101,5 +105,6 @@ module.exports = {
   getCachedEntitlements,
   hasPermission,
   requirePermission,
-  getCurrentUserId
+  getCurrentUserId,
+  goMembershipPage
 };

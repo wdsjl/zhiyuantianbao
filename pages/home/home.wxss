@@ -173,6 +173,29 @@
   margin-top: 20rpx;
 }
 
+.pay-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  background: linear-gradient(135deg, #fff7e6, #ffffff);
+  border: 2rpx solid #ffe7ba;
+}
+
+.pay-banner-title {
+  font-size: 32rpx;
+  font-weight: 800;
+  color: #b54708;
+  margin-bottom: 8rpx;
+}
+
+.pay-banner-btn {
+  width: 160rpx;
+  flex-shrink: 0;
+  margin: 0;
+  font-size: 26rpx;
+}
+
 .action-title {
   font-size: 30rpx;
   font-weight: 700;
