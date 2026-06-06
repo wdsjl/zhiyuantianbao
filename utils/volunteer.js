@@ -1,5 +1,16 @@
 const { schools } = require('./mockData');
 
+const GRADIENT_CLASS_MAP = {
+  冲: 'chong',
+  稳: 'wen',
+  保: 'bao',
+  垫: 'dian'
+};
+
+function getGradientClass(gradientType) {
+  return GRADIENT_CLASS_MAP[gradientType] || 'wen';
+}
+
 function getGradientType(userRank, schoolRank) {
   const gap = schoolRank - userRank;
   if (gap < -6000) return '冲';
@@ -47,6 +58,7 @@ function generateVolunteerPlan(profile, preferences = {}) {
       id: `${school.id}-${index}`,
       sortOrder: index + 1,
       gradientType,
+      gradientClass: getGradientClass(gradientType),
       schoolId: school.id,
       schoolName: school.name,
       schoolCode: school.code,
@@ -99,5 +111,6 @@ module.exports = {
   generateVolunteerPlan,
   inspectPlanRisk,
   getRiskLevel,
-  getRiskReason
+  getRiskReason,
+  getGradientClass
 };
