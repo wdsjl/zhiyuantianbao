@@ -356,8 +356,14 @@ def crawl_all_provinces(
     for index, province in enumerate(target_provinces, start=1):
         if on_progress:
             on_progress(province, index, len(target_provinces))
+
+        def school_progress(done: int, total: int, name: str, year: int | None = None, prov: str = province) -> None:
+            if done == 0 or (done + 1) % 10 == 0 or done + 1 == total:
+                prefix = f'[{year}] ' if year else ''
+                log_progress(f'{prov} {prefix}[{done + 1}/{total}] {name}')
+
         try:
-            result = run_crawl_job(province, preset_key)
+            result = run_crawl_job(province, preset_key, on_progress=school_progress)
             combined['results'].append({'province': province, 'status': 'success', **result})
             combined['total_count'] += result.get('total_count', 0)
             combined['success_count'] += result.get('success_count', 0)
