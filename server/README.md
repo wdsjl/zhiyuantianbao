@@ -194,3 +194,15 @@ http://192.168.1.8:8001
 6. 真机预览测试
 
 正式上线必须使用 HTTPS，并在微信公众平台配置合法 request 域名。
+
+当前生产 API 域名：
+
+```text
+https://api.zntb.lhyun.net
+```
+
+小程序 `utils/request.js` 中 `BASE_URL` 已指向该地址。微信公众平台 request 合法域名填写：
+
+```text
+api.zntb.lhyun.net
+```
