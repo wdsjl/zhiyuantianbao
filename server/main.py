@@ -26,7 +26,7 @@ from import_service import parse_import_file, import_admission_rows
 from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
-    admin_membership_users, admin_membership_usage, admin_payments,
+    admin_membership_users, admin_membership_usage, admin_payments, admin_payment_refund,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
 )
 from crawler_service import (
@@ -533,13 +533,24 @@ def admin_payment_request_cancel(request_id: int = Form(...)):
     return RedirectResponse('/admin/payments?message=开通申请已取消', status_code=303)
 
 
+@app.get('/admin/payments/{order_id}/refund')
+def admin_payment_refund_page(order_id: int, message: str = ''):
+    return admin_payment_refund(order_id, message)
+
+
 @app.post('/admin/payments/{order_id}/refund')
-def admin_payment_refund(order_id: int, remark: str = Form('')):
+def admin_payment_refund_submit(
+    order_id: int,
+    remark: str = Form(''),
+    revoke_membership: str = Form('')
+):
     try:
-        refund_order(order_id, remark)
-        return RedirectResponse('/admin/payments?message=订单已标记退款', status_code=303)
+        result = refund_order(order_id, remark, revoke=bool(revoke_membership))
+        from urllib.parse import quote
+        return RedirectResponse(f'/admin/payments?message={quote(result["message"])}', status_code=303)
     except Exception as exc:
-        return RedirectResponse(f'/admin/payments?message=退款失败：{exc}', status_code=303)
+        from urllib.parse import quote
+        return RedirectResponse(f'/admin/payments/{order_id}/refund?message={quote(f"退款失败：{exc}")}', status_code=303)
 
 
 @app.get('/admin/membership/usage')

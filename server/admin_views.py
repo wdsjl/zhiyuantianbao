@@ -1263,6 +1263,97 @@ def admin_membership_usage(keyword: str = '', message: str = ''):
 
 
 
+def pay_method_label(value: str) -> str:
+    mapping = {
+        'wechat_pay': '微信支付',
+        'wechat_private': '微信私聊',
+        'wechat_work': '企业微信',
+        'manual': '手动登记',
+        'cash': '现金',
+    }
+    return mapping.get(str(value or ''), str(value or ''))
+
+
+def pay_status_label(value: str) -> str:
+    mapping = {
+        'pending': '待支付',
+        'paid': '已支付',
+        'refunded': '已退款',
+        'cancelled': '已取消',
+    }
+    return mapping.get(str(value or ''), str(value or ''))
+
+
+def admin_payment_refund(order_id: int, message: str = ''):
+    from payment_service import get_order_by_id, is_wechat_pay_order
+    from wechat_pay_service import is_wechat_pay_ready
+
+    with get_connection() as connection:
+        row = connection.execute(
+            '''
+            SELECT po.*, u.phone, u.name AS user_name, s.name AS student_name, s.school_name, mp.plan_name
+            FROM payment_orders po
+            JOIN users u ON u.user_id = po.user_id
+            LEFT JOIN students s ON s.user_id = u.user_id
+            LEFT JOIN membership_plans mp ON mp.plan_code = po.plan_code
+            WHERE po.order_id = ?
+            ''',
+            [order_id]
+        ).fetchone()
+    order = dict(row) if row else None
+    if not order:
+        body = '<div class="card"><p class="danger">订单不存在</p><p><a class="button" href="/admin/payments">返回订单列表</a></p></div>'
+        return render_page('订单退款', body)
+
+    is_wechat = is_wechat_pay_order(order)
+    wechat_ready = is_wechat_pay_ready()
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    error_html = ''
+    if is_wechat and not wechat_ready:
+        error_html = '<p class="danger">微信支付退款配置未完成，暂无法原路退回。请先在服务器配置商户证书与 API 密钥。</p>'
+
+    refund_title = '微信原路退款' if is_wechat else '标记退款'
+    refund_hint = (
+        '确认后系统将调用微信支付接口，款项将退回用户微信零钱/银行卡，并同步撤销会员权益。'
+        if is_wechat else
+        '该订单为线下/手动登记收款，系统仅标记退款并撤销会员，请确认您已自行将款项退还给用户。'
+    )
+    submit_label = '确认原路退款' if is_wechat else '确认标记退款'
+    disabled = 'disabled' if (is_wechat and not wechat_ready) or order.get('pay_status') != 'paid' else ''
+
+    body = f'''
+      <div class="card">
+        <h2>{refund_title}</h2>
+        {message_html}
+        {error_html}
+        <p class="muted">{refund_hint}</p>
+        <table>
+          <tbody>
+            <tr><th style="width:140px">订单号</th><td>{escape(str(order.get('order_no') or ''))}</td></tr>
+            <tr><th>用户</th><td>{escape(str(order.get('student_name') or order.get('user_name') or ''))}（{escape(str(order.get('phone') or ''))}）</td></tr>
+            <tr><th>套餐</th><td>{escape(str(order.get('plan_name') or order.get('plan_code') or ''))}</td></tr>
+            <tr><th>金额</th><td><strong style="font-size:22px;color:#f04438">¥{escape(str(order.get('amount') or 0))}</strong></td></tr>
+            <tr><th>支付方式</th><td>{escape(pay_method_label(order.get('pay_method')))}</td></tr>
+            <tr><th>支付状态</th><td>{escape(pay_status_label(order.get('pay_status')))}</td></tr>
+            <tr><th>支付时间</th><td>{escape(str(order.get('paid_at') or ''))}</td></tr>
+            <tr><th>微信流水号</th><td>{escape(str(order.get('wx_transaction_id') or '—'))}</td></tr>
+          </tbody>
+        </table>
+        <form method="post" action="/admin/payments/{order_id}/refund" style="margin-top:20px" onsubmit="return confirm('确认执行{refund_title}？此操作不可撤销。');">
+          <div class="toolbar" style="align-items:flex-start">
+            <textarea name="remark" placeholder="退款原因（选填，例如：用户申请退款、误开通等）" style="min-width:360px">{escape(str(order.get('remark') or ''))}</textarea>
+            <label class="muted" style="display:flex;align-items:center;gap:8px;height:40px">
+              <input type="checkbox" name="revoke_membership" value="1" checked /> 同步撤销会员权益
+            </label>
+            <button type="submit" class="btn-danger" {disabled}>{submit_label}</button>
+            <a class="button btn-muted" href="/admin/payments">取消</a>
+          </div>
+        </form>
+      </div>
+    '''
+    return render_page(refund_title, body)
+
+
 def admin_payments(keyword: str = '', message: str = ''):
     orders = list_orders(keyword)
     open_requests = list_open_requests('pending')
@@ -1276,6 +1367,14 @@ def admin_payments(keyword: str = '', message: str = ''):
     rows = ''
     for order in orders:
         order_type_text = '续费' if order.get('order_type') == 'renew' else ('开通' if order.get('order_type') == 'open' else '手动')
+        pay_method = pay_method_label(order.get('pay_method'))
+        pay_status = pay_status_label(order.get('pay_status'))
+        refund_action = ''
+        if order.get('pay_status') == 'paid':
+            refund_label = '原路退款' if str(order.get('pay_method') or '') == 'wechat_pay' else '退款'
+            refund_action = f'<a class="button btn-sm btn-danger" href="/admin/payments/{order.get("order_id")}/refund">{refund_label}</a>'
+        elif order.get('pay_status') == 'refunded':
+            refund_action = '<span class="muted">已退</span>'
         rows += f'''
           <tr>
             <td>{order.get('order_id', '')}</td>
@@ -1285,14 +1384,12 @@ def admin_payments(keyword: str = '', message: str = ''):
             <td>{escape(str(order.get('plan_name') or order.get('plan_code') or ''))}</td>
             <td>¥{escape(str(order.get('amount') or 0))}</td>
             <td><span class="tag">{order_type_text}</span></td>
-            <td>{escape(str(order.get('pay_method') or ''))}</td>
-            <td><span class="tag">{escape(str(order.get('pay_status') or ''))}</span></td>
+            <td>{escape(pay_method)}</td>
+            <td><span class="tag">{escape(pay_status)}</span></td>
             <td>{escape(str(order.get('payer_contact') or ''))}</td>
             <td>{escape(str(order.get('paid_at') or ''))}</td>
             <td>{escape(str(order.get('remark') or ''))}</td>
-            <td>
-              {f'<form method="post" action="/admin/payments/{order.get("order_id")}/refund" style="display:inline" onsubmit="return confirm(\'确认退款？\')"><button type="submit" class="btn-sm btn-danger">退款</button></form>' if order.get('pay_status') == 'paid' else ''}
-            </td>
+            <td>{refund_action}</td>
           </tr>
         '''
     if not rows:

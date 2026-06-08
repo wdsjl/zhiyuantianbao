@@ -229,6 +229,46 @@ def _decrypt_notify_resource(resource: dict[str, Any]) -> dict[str, Any]:
     return json.loads(plain.decode('utf-8'))
 
 
+def make_refund_no(order_id: int) -> str:
+    return f'R{time.strftime("%Y%m%d%H%M%S")}{order_id}'
+
+
+def create_wechat_refund(order: dict[str, Any], reason: str = '') -> dict[str, Any]:
+    if not is_wechat_pay_ready():
+        raise ValueError('微信支付未配置完成，无法原路退款。请检查商户证书与 API 密钥。')
+
+    order_no = str(order.get('order_no') or '').strip()
+    if not order_no:
+        raise ValueError('订单号缺失，无法发起微信退款')
+
+    amount_fen = _amount_to_fen(order.get('amount') or 0)
+    if amount_fen <= 0:
+        raise ValueError('订单金额无效，无法退款')
+
+    refund_no = make_refund_no(int(order.get('order_id') or 0))
+    payload: dict[str, Any] = {
+        'out_refund_no': refund_no,
+        'reason': (reason or '管理员退款')[:80],
+        'amount': {
+            'refund': amount_fen,
+            'total': amount_fen,
+            'currency': 'CNY',
+        },
+    }
+    transaction_id = str(order.get('wx_transaction_id') or '').strip()
+    if transaction_id:
+        payload['transaction_id'] = transaction_id
+    else:
+        payload['out_trade_no'] = order_no
+
+    result = _request_wechat_pay('POST', '/v3/refund/domestic/refunds', payload)
+    status = str(result.get('status') or '').upper()
+    if status not in {'SUCCESS', 'PROCESSING'}:
+        raise ValueError(f'微信退款未成功：{status or "未知状态"}')
+    result['out_refund_no'] = refund_no
+    return result
+
+
 def handle_wechat_pay_notify(headers: dict[str, str], body: str) -> dict[str, str]:
     payload = json.loads(body or '{}')
     if payload.get('event_type') != 'TRANSACTION.SUCCESS':

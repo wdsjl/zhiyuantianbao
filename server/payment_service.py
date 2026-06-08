@@ -38,6 +38,12 @@ def ensure_payment_tables() -> None:
             connection.execute('ALTER TABLE payment_orders ADD COLUMN wx_prepay_id TEXT')
         if 'wx_notify_raw' not in order_columns:
             connection.execute('ALTER TABLE payment_orders ADD COLUMN wx_notify_raw TEXT')
+        if 'wx_refund_id' not in order_columns:
+            connection.execute('ALTER TABLE payment_orders ADD COLUMN wx_refund_id TEXT')
+        if 'wx_refund_no' not in order_columns:
+            connection.execute('ALTER TABLE payment_orders ADD COLUMN wx_refund_no TEXT')
+        if 'refunded_at' not in order_columns:
+            connection.execute('ALTER TABLE payment_orders ADD COLUMN refunded_at TEXT')
         connection.execute('CREATE INDEX IF NOT EXISTS idx_payment_orders_user ON payment_orders(user_id, paid_at)')
         connection.execute('''CREATE TABLE IF NOT EXISTS membership_open_requests (request_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, plan_code TEXT NOT NULL, contact_name TEXT, contact_phone TEXT, message TEXT, request_status TEXT NOT NULL DEFAULT 'pending' CHECK(request_status IN ('pending', 'processed', 'cancelled')), created_order_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE, FOREIGN KEY (plan_code) REFERENCES membership_plans(plan_code) ON DELETE CASCADE)''')
         columns = [row['name'] for row in connection.execute('PRAGMA table_info(membership_open_requests)').fetchall()]
@@ -165,7 +171,17 @@ def update_order_status(order_id: int, pay_status: str) -> None:
         connection.commit()
 
 
-def refund_order(order_id: int, remark: str = '') -> None:
+def get_order_by_id(order_id: int) -> dict[str, Any] | None:
+    ensure_payment_tables()
+    with get_connection() as connection:
+        return row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_id = ?', [order_id]).fetchone())
+
+
+def is_wechat_pay_order(order: dict[str, Any]) -> bool:
+    return str(order.get('pay_method') or '') == 'wechat_pay'
+
+
+def refund_order(order_id: int, remark: str = '', revoke: bool = True) -> dict[str, Any]:
     ensure_payment_tables()
     with get_connection() as connection:
         order = row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_id = ?', [order_id]).fetchone())
@@ -173,12 +189,45 @@ def refund_order(order_id: int, remark: str = '') -> None:
             raise ValueError('订单不存在')
         if order.get('pay_status') != 'paid':
             raise ValueError('仅已支付订单可退款')
+
+    refund_note = (remark or '').strip() or '管理员退款'
+    wechat_refund: dict[str, Any] | None = None
+    if is_wechat_pay_order(order):
+        from wechat_pay_service import create_wechat_refund, is_wechat_pay_ready
+        if not is_wechat_pay_ready():
+            raise ValueError('该订单为微信支付，但商户退款配置未完成，无法原路退回')
+        wechat_refund = create_wechat_refund(order, refund_note)
+
+    with get_connection() as connection:
         connection.execute(
-            'UPDATE payment_orders SET pay_status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE order_id = ?',
-            ['refunded', remark or order.get('remark') or '管理员退款', order_id]
+            '''
+            UPDATE payment_orders
+            SET pay_status = 'refunded',
+                remark = ?,
+                wx_refund_id = ?,
+                wx_refund_no = ?,
+                refunded_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE order_id = ?
+            ''',
+            [
+                refund_note,
+                (wechat_refund or {}).get('refund_id') or '',
+                (wechat_refund or {}).get('out_refund_no') or '',
+                order_id,
+            ]
         )
         connection.commit()
-    revoke_membership(int(order['user_id']), remark or '订单退款，会员已撤销')
+
+    if revoke:
+        revoke_membership(int(order['user_id']), f'{refund_note}，会员已撤销')
+
+    return {
+        'order_id': order_id,
+        'wechat_refunded': bool(wechat_refund),
+        'wx_refund_id': (wechat_refund or {}).get('refund_id') or '',
+        'message': '已发起微信原路退款，款项将退回用户支付账户' if wechat_refund else '订单已标记退款（线下收款请自行转账）',
+    }
 
 
 def get_order_stats() -> dict[str, Any]:
@@ -348,7 +397,9 @@ def export_orders_csv(keyword: str = '') -> str:
     output = io.StringIO()
     output.write('\ufeff')
     writer = csv.writer(output)
-    writer.writerow(['订单ID', '订单号', '用户ID', '手机号', '姓名', '学校', '套餐', '订单类型', '金额', '支付方式', '支付状态', '联系方式', '支付时间', '备注'])
+    status_map = {'pending': '待支付', 'paid': '已支付', 'refunded': '已退款', 'cancelled': '已取消'}
+    method_map = {'wechat_pay': '微信支付', 'wechat_private': '微信私聊', 'wechat_work': '企业微信', 'manual': '手动登记', 'cash': '现金'}
+    writer.writerow(['订单ID', '订单号', '用户ID', '手机号', '姓名', '学校', '套餐', '订单类型', '金额', '支付方式', '支付状态', '联系方式', '支付时间', '退款时间', '微信退款单号', '备注'])
     for order in orders:
         writer.writerow([
             order.get('order_id', ''),
@@ -360,10 +411,12 @@ def export_orders_csv(keyword: str = '') -> str:
             order.get('plan_name') or order.get('plan_code') or '',
             type_map.get(order.get('order_type'), order.get('order_type') or ''),
             order.get('amount', 0),
-            order.get('pay_method', ''),
-            order.get('pay_status', ''),
+            method_map.get(order.get('pay_method'), order.get('pay_method') or ''),
+            status_map.get(order.get('pay_status'), order.get('pay_status') or ''),
             order.get('payer_contact', ''),
             order.get('paid_at', ''),
+            order.get('refunded_at', ''),
+            order.get('wx_refund_no', ''),
             order.get('remark', '')
         ])
     return output.getvalue()
