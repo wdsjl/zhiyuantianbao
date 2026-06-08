@@ -264,3 +264,13 @@ WECHAT_VIRTUAL_PRODUCT_PREMIUM=道具ID
 2. 配置发货推送 URL：`https://api.zntb.lhyun.net/api/payments/virtual/deliver-notify`
 3. 重启：`pm2 restart zhiyuan-backend --update-env`
 4. 访问 `GET /api/payments/wechat/status`，返回 `{"enabled": true}` 表示虚拟支付就绪
+
+## 后台原路退款
+
+管理后台「收款订单」页点击退款时：
+
+- **虚拟支付订单**（`pay_method=virtual_pay`）：调用 `/xpay/refund_order` 原路退回
+- **历史微信支付订单**（`pay_method=wechat_pay`）：仍走微信 V3 `/v3/refund/domestic/refunds`
+- **线下/人工订单**：仅标记退款并撤销会员
+
+历史微信退款仍需配置 `WECHAT_PAY_API_V3_KEY`、`WECHAT_PAY_SERIAL_NO` 与商户私钥。

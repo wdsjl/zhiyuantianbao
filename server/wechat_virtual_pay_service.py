@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import os
+import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -262,3 +263,45 @@ def handle_virtual_deliver_notify(body: str) -> dict[str, Any]:
         transaction_id = wechat_pay_info.get('TransactionId') or ''
     fulfill_wechat_order(order_no, transaction_id, body, pay_method='virtual_pay')
     return {'ErrCode': 0, 'ErrMsg': 'success'}
+
+
+def make_refund_no(order_id: int) -> str:
+    return f'R{time.strftime("%Y%m%d%H%M%S")}{order_id}'
+
+
+def create_virtual_refund(order: dict[str, Any], reason: str = '') -> dict[str, Any]:
+    if not is_virtual_pay_ready():
+        raise ValueError('虚拟支付未配置完成，无法原路退款')
+
+    order_no = str(order.get('order_no') or '').strip()
+    if not order_no:
+        raise ValueError('订单号缺失，无法发起退款')
+
+    openid = _get_user_openid(int(order['user_id']))
+    config = get_virtual_pay_config()
+    remote = query_virtual_order(order_no, openid)
+    remote_order = remote.get('order') or {}
+    left_fee = int(remote_order.get('left_fee') or 0)
+    if left_fee <= 0:
+        left_fee = int(round(float(order.get('amount') or 0) * 100))
+    if left_fee <= 0:
+        raise ValueError('订单可退金额无效，无法退款')
+
+    refund_order_id = make_refund_no(int(order.get('order_id') or 0))
+    refund_note = (reason or '管理员退款')[:1024]
+    result = _request_xpay_api('/xpay/refund_order', {
+        'openid': openid,
+        'order_id': order_no,
+        'refund_order_id': refund_order_id,
+        'left_fee': left_fee,
+        'refund_fee': left_fee,
+        'biz_meta': refund_note,
+        'refund_reason': '5',
+        'req_from': '1',
+        'env': config['env'],
+    })
+    return {
+        'refund_id': result.get('refund_wx_order_id') or '',
+        'out_refund_no': result.get('refund_order_id') or refund_order_id,
+        'raw': result,
+    }

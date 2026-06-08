@@ -539,8 +539,8 @@ def admin_payment_request_cancel(request_id: int = Form(...)):
 @app.post('/admin/payments/{order_id}/refund')
 def admin_payment_refund(order_id: int, remark: str = Form('')):
     try:
-        refund_order(order_id, remark)
-        return RedirectResponse('/admin/payments?message=订单已标记退款', status_code=303)
+        result = refund_order(order_id, remark)
+        return RedirectResponse(f'/admin/payments?message={result.get("message", "订单已退款")}', status_code=303)
     except Exception as exc:
         return RedirectResponse(f'/admin/payments?message=退款失败：{exc}', status_code=303)
 
