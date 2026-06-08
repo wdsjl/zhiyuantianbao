@@ -203,9 +203,11 @@ Page({
     }
 
     if (!this.data.virtualPayEnabled) {
+      const status = this.data.payStatusDetail || {};
+      const missing = (status.missing || []).join('、') || 'WECHAT_SECRET / WECHAT_VIRTUAL_PAY_APP_KEY';
       wx.showModal({
-        title: '支付未就绪',
-        content: '虚拟支付尚未完成服务端配置，请联系管理员检查 OfferID 与 AppKey。',
+        title: '虚拟支付未就绪',
+        content: `服务端尚未完成虚拟支付配置，无需商户证书。\n\n请管理员在 ecosystem.secrets.js 填写：\n${missing}\n\n配置后执行：pm2 restart zhiyuan-backend --update-env\n\n${status.hint || ''}`,
         showCancel: false
       });
       return;
