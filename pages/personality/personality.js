@@ -8,7 +8,7 @@ const {
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
 const { formatReportContent } = require('../../utils/reportFormat');
-const { confirmReportBeanDeduction } = require('../../utils/reportBean');
+const { confirmReportBeanDeduction, consumeReportBeans } = require('../../utils/reportBean');
 const { loadActiveProfileSync, resolveStudentId } = require('../../utils/profileHelper');
 
 function buildQuestions(answers = {}) {
@@ -138,10 +138,15 @@ Page({
     }
     confirmReportBeanDeduction('AI 深度职业报告').then((confirmed) => {
       if (!confirmed) return;
-      requirePermission('personality_deep', '深度职业兴趣报告', { consume: true }).then((allowed) => {
-        if (!allowed) return;
-        this.doGenerateAiReport();
-      });
+      consumeReportBeans('AI 深度职业报告')
+        .then(() => requirePermission('personality_deep', '深度职业兴趣报告', { consume: false }))
+        .then((allowed) => {
+          if (!allowed) return;
+          this.doGenerateAiReport();
+        })
+        .catch((error) => {
+          wx.showToast({ title: error.message || '星鼎豆扣除失败', icon: 'none' });
+        });
     });
   },
   doGenerateAiReport() {

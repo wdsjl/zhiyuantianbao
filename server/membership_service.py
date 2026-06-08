@@ -5,9 +5,9 @@ from db import get_connection, row_to_dict, rows_to_dicts
 
 DEFAULT_PLANS = [
     ('free', '免费版', 0, 0, 1, '基础永久免费，引流体验'),
-    ('trial', '体验月卡', 19.9, 30, 2, '30 天体验核心能力'),
-    ('standard', '标准年卡', 99, 365, 3, '主推款，智能推荐、风险检测、AI 解读、PDF 导出'),
-    ('premium', '尊享年卡', 168, 365, 4, '利润款，深度对比、提醒、答疑通道'),
+    ('trial', '普通卡', 19.9, 30, 2, '一次充值 ¥19.9，到账 2000 星鼎豆'),
+    ('standard', '金卡', 99, 365, 3, '起充 ¥99，到账 12000 星鼎豆'),
+    ('premium', '白金卡', 168, 365, 4, '起充 ¥168，到账 24000 星鼎豆'),
 ]
 
 DEFAULT_PERMISSIONS = [
@@ -48,6 +48,15 @@ def seed_membership_defaults() -> None:
     with get_connection() as c:
         for plan in DEFAULT_PLANS:
             c.execute('INSERT OR IGNORE INTO membership_plans (plan_code, plan_name, price, duration_days, sort_order, description) VALUES (?, ?, ?, ?, ?, ?)', plan)
+        for plan in DEFAULT_PLANS:
+            c.execute(
+                '''
+                UPDATE membership_plans
+                SET plan_name = ?, description = ?, price = ?, duration_days = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE plan_code = ?
+                ''',
+                [plan[1], plan[5], plan[2], plan[3], plan[4], plan[0]],
+            )
         for code, name, category in DEFAULT_PERMISSIONS:
             c.execute('INSERT OR IGNORE INTO membership_permissions (permission_code, permission_name, category) VALUES (?, ?, ?)', [code, name, category])
         for plan_code, permissions in DEFAULT_PLAN_PERMISSIONS.items():

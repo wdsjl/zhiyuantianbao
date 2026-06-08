@@ -55,7 +55,7 @@
   <view class="card">
     <ai-generated-label />
     <button class="primary-btn" bindtap="generateReport" loading="{{loading}}">生成个性化报告</button>
-    <view class="sub-text">每次生成将扣除星鼎豆：体验月卡 1990、标准年卡 9900、尊享年卡 16800（按当前套餐计费）</view>
+    <view class="sub-text">每次生成扣除 500 星鼎豆；普通卡充 2000 豆、金卡 12000 豆、白金卡 24000 豆。星鼎豆充值后不退，已消费不退还。</view>
     <view class="warn-box">报告由大模型基于你填写的数据生成，仅供参考，不构成录取承诺。</view>
   </view>
 

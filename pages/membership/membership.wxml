@@ -2,8 +2,9 @@
   <view class="card member-hero">
     <view class="section-title">会员中心</view>
     <view class="sub-text">当前套餐：{{entitlements && entitlements.plan ? entitlements.plan.plan_name : '免费版'}}</view>
+    <view wx:if="{{beanBalance > 0}}" class="sub-text">星鼎豆余额：{{beanBalance}}（每次生成报告扣 500 豆）</view>
     <view wx:if="{{entitlements.membership && entitlements.membership.expires_at}}" class="sub-text">到期时间：{{entitlements.membership.expires_at}}</view>
-    <view wx:else class="sub-text">免费功能长期可用，升级会员解锁更多智能填报能力。</view>
+    <view wx:else class="sub-text">免费功能长期可用，充值星鼎豆解锁更多智能填报能力。</view>
   </view>
 
   <view wx:if="{{loadError}}" class="card error-card">
@@ -53,8 +54,9 @@
 
   <view class="card">
     <view class="section-title">支付说明</view>
-    <view class="warn-box">会员为虚拟服务，通过小程序虚拟支付购买。价格以星鼎豆展示，1 元 = 10 星鼎豆（如 19.9 元 = 199 星鼎豆）。</view>
-    <view class="warn-box">支付成功后系统将自动开通会员。若未及时到账，请稍后在会员中心查看订单状态。</view>
+    <view class="warn-box">普通卡 ¥19.9 到账 2000 星鼎豆；金卡 ¥99 到账 12000 星鼎豆；白金卡 ¥168 到账 24000 星鼎豆。</view>
+    <view class="warn-box">每次生成 AI 报告扣除 500 星鼎豆。星鼎豆充值后不支持退款，已消费不退还。</view>
+    <view class="warn-box">支付成功后系统将自动开通会员并到账星鼎豆。若未及时到账，请稍后在会员中心查看订单状态。</view>
     <view class="warn-box">所有推荐、风险检测和 AI 解读仅供参考，不构成录取承诺，最终以官方招生政策和正式填报系统为准。</view>
   </view>
 </view>

@@ -10,6 +10,7 @@ from schemas import (
     RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
+    BeanConsumeReportRequest,
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
@@ -95,6 +96,9 @@ ensure_admin_auth()
 ensure_crawl_tables()
 ensure_personality_tables()
 ensure_student_report_tables()
+from bean_service import ensure_bean_tables, sync_plan_catalog
+ensure_bean_tables()
+sync_plan_catalog()
 expire_overdue_memberships()
 
 
@@ -678,7 +682,31 @@ def api_membership_permission_check(permission_code: str, user_id: int | None = 
 
 @app.get('/api/membership/entitlements')
 def api_membership_entitlements(user_id: int | None = None):
-    return get_user_entitlements(user_id)
+    entitlements = get_user_entitlements(user_id)
+    if user_id:
+        from bean_service import get_bean_balance
+        entitlements['beans'] = get_bean_balance(user_id)
+    return entitlements
+
+
+@app.get('/api/membership/beans')
+def api_membership_beans(user_id: int):
+    from bean_service import get_bean_balance, PLAN_BEAN_GRANT, REPORT_BEAN_COST
+    balance = get_bean_balance(user_id)
+    return {
+        **balance,
+        'plan_grants': PLAN_BEAN_GRANT,
+        'non_refundable_notice': '星鼎豆充值后不支持退款，已消费的星鼎豆不退还。',
+    }
+
+
+@app.post('/api/membership/beans/consume-report')
+def api_membership_consume_report_beans(payload: BeanConsumeReportRequest):
+    from bean_service import consume_report_beans
+    try:
+        return consume_report_beans(payload.user_id, payload.report_title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get('/admin/admissions')

@@ -7,7 +7,7 @@ const {
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
 const { formatReportContent } = require('../../utils/reportFormat');
-const { confirmReportBeanDeduction } = require('../../utils/reportBean');
+const { confirmReportBeanDeduction, consumeReportBeans } = require('../../utils/reportBean');
 const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
@@ -152,10 +152,15 @@ Page({
     if (!this.validateBeforeGenerate()) return;
     confirmReportBeanDeduction('个性化填报报告').then((confirmed) => {
       if (!confirmed) return;
-      requirePermission('personality_deep', '个性化填报报告', { consume: true }).then((allowed) => {
-        if (!allowed) return;
-        this.doGenerateReport();
-      });
+      consumeReportBeans('个性化填报报告')
+        .then(() => requirePermission('personality_deep', '个性化填报报告', { consume: false }))
+        .then((allowed) => {
+          if (!allowed) return;
+          this.doGenerateReport();
+        })
+        .catch((error) => {
+          wx.showToast({ title: error.message || '星鼎豆扣除失败', icon: 'none' });
+        });
     });
   },
   doGenerateReport() {

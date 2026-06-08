@@ -2,11 +2,17 @@ const { request, formatRequestError, BASE_URL } = require('../../utils/request')
 const { getCurrentUserId, syncUserIdentity, fetchEntitlements } = require('../../utils/membership');
 const { requestVirtualPayment, getLoginCode } = require('../../utils/virtualPayment');
 
+const PLAN_BEAN_GRANT = {
+  trial: 2000,
+  standard: 12000,
+  premium: 24000
+};
+
 const PLAN_FEATURES = {
   free: ['完整测评流程', '基础院校专业查询', '近2年分数线', '手动志愿模拟'],
-  trial: ['完整历年分数线', '深度测评报告', '智能推荐3次', 'AI解读3次', 'PDF导出1次'],
-  standard: ['智能推荐不限次', '风险检测不限次', 'AI解读', '草稿保存', 'PDF导出', '专业避坑指南'],
-  premium: ['标准年卡全部功能', '同分段往届参考', '院校深度对比', '地域就业规划', '专属答疑通道', '征集志愿提醒']
+  trial: ['到账 2000 星鼎豆', '完整历年分数线', '深度测评报告', '智能推荐', 'AI 解读', 'PDF 导出'],
+  standard: ['到账 12000 星鼎豆', '智能推荐不限次', '风险检测不限次', 'AI 解读', '草稿保存', 'PDF 导出'],
+  premium: ['到账 24000 星鼎豆', '金卡全部功能', '同分段往届参考', '院校深度对比', '地域就业规划', '专属答疑通道']
 };
 
 const ORDER_STATUS_TEXT = {
@@ -26,6 +32,7 @@ Page({
     currentPlanCode: 'free',
     orders: [],
     membershipNotice: null,
+    beanBalance: 0,
     loadError: ''
   },
   onShow() {
@@ -35,12 +42,13 @@ Page({
   mapPlans(list) {
     return (list || []).map((plan) => {
       const price = Number(plan.price) || 0;
-      const beanPrice = Math.round(price * 10);
+      const beanGrant = PLAN_BEAN_GRANT[plan.plan_code] || 0;
       return {
         ...plan,
         priceText: price === 0 ? '免费' : `¥${plan.price}`,
-        beanPriceText: price === 0 ? '免费' : `${beanPrice}星鼎豆`,
-        displayPriceText: price === 0 ? '免费' : `${beanPrice}星鼎豆（¥${plan.price}）`,
+        beanGrant,
+        beanPriceText: beanGrant > 0 ? `${beanGrant}星鼎豆` : '免费',
+        displayPriceText: beanGrant > 0 ? `¥${plan.price} · ${beanGrant}星鼎豆` : '免费',
         durationText: Number(plan.duration_days) > 0 ? `${plan.duration_days}天` : '长期',
         features: PLAN_FEATURES[plan.plan_code] || [],
         canPay: price > 0
@@ -56,10 +64,13 @@ Page({
       request({ url: '/api/payments/wechat/status' }).catch(() => ({ enabled: false })),
       userId
         ? request({ url: '/api/membership/my-status', data: { user_id: Number(userId) } }).catch(() => ({}))
-        : Promise.resolve({})
+        : Promise.resolve({}),
+      userId
+        ? request({ url: '/api/membership/beans', data: { user_id: Number(userId) } }).catch(() => ({ balance: 0 }))
+        : Promise.resolve({ balance: 0 })
     ];
     Promise.all(tasks)
-      .then(([plansRes, entitlementsRes, payStatus, statusRes]) => {
+      .then(([plansRes, entitlementsRes, payStatus, statusRes, beanRes]) => {
         const errors = [];
         if (plansRes && plansRes.error) errors.push(`套餐列表：${formatRequestError(plansRes.error)}`);
         if (entitlementsRes && entitlementsRes.error) errors.push(`会员状态：${formatRequestError(entitlementsRes.error)}`);
@@ -71,9 +82,9 @@ Page({
           ? this.mapPlans(plansRes.list)
           : this.mapPlans([
             { plan_code: 'free', plan_name: '免费版', price: 0, duration_days: 0, description: '基础永久免费，引流体验' },
-            { plan_code: 'trial', plan_name: '体验月卡', price: 19.9, duration_days: 30, description: '30 天体验核心能力' },
-            { plan_code: 'standard', plan_name: '标准年卡', price: 99, duration_days: 365, description: '主推款，智能推荐、风险检测、AI 解读、PDF 导出' },
-            { plan_code: 'premium', plan_name: '尊享年卡', price: 168, duration_days: 365, description: '深度对比、提醒、答疑通道' }
+            { plan_code: 'trial', plan_name: '普通卡', price: 19.9, duration_days: 30, description: '一次充值 ¥19.9，到账 2000 星鼎豆' },
+            { plan_code: 'standard', plan_name: '金卡', price: 99, duration_days: 365, description: '起充 ¥99，到账 12000 星鼎豆' },
+            { plan_code: 'premium', plan_name: '白金卡', price: 168, duration_days: 365, description: '起充 ¥168，到账 24000 星鼎豆' }
           ]);
 
         const currentPlanCode = entitlements.plan ? entitlements.plan.plan_code : 'free';
@@ -92,6 +103,7 @@ Page({
             amountText: `¥${item.amount || 0}`
           })),
           membershipNotice: this.buildMembershipNotice(entitlements, plans),
+          beanBalance: Number(beanRes.balance) || 0,
           loadError
         });
       })
@@ -100,9 +112,9 @@ Page({
         this.setData({
           loadError: `${message}。请确认接口地址为 ${BASE_URL}`,
           plans: this.mapPlans([
-            { plan_code: 'trial', plan_name: '体验月卡', price: 19.9, duration_days: 30, description: '30 天体验核心能力' },
-            { plan_code: 'standard', plan_name: '标准年卡', price: 99, duration_days: 365, description: '主推款' },
-            { plan_code: 'premium', plan_name: '尊享年卡', price: 168, duration_days: 365, description: '深度对比、提醒、答疑通道' }
+            { plan_code: 'trial', plan_name: '普通卡', price: 19.9, duration_days: 30, description: '一次充值 ¥19.9，到账 2000 星鼎豆' },
+            { plan_code: 'standard', plan_name: '金卡', price: 99, duration_days: 365, description: '起充 ¥99，到账 12000 星鼎豆' },
+            { plan_code: 'premium', plan_name: '白金卡', price: 168, duration_days: 365, description: '起充 ¥168，到账 24000 星鼎豆' }
           ]),
           entitlements: { plan: { plan_name: '免费版', plan_code: 'free' }, membership: null, permissions: {} }
         });

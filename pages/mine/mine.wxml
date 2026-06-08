@@ -9,7 +9,7 @@
 
   <view class="card vip-card" bindtap="goMembership">
     <view>
-      <view class="vip-title">会员开通 · 星鼎豆支付</view>
+      <view class="vip-title">星鼎豆充值 · 普通卡 / 金卡 / 白金卡</view>
       <view class="sub-text">当前：{{planName}}{{expiresAt ? ' · 到期 ' + expiresAt : ''}}</view>
       <view class="sub-text">解锁智能推荐、AI 解读、PDF 导出等高级功能</view>
     </view>

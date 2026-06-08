@@ -137,3 +137,8 @@ class PaymentCreateRequest(BaseModel):
     plan_code: str
     request_type: str = 'open'
     login_code: Optional[str] = None
+
+
+class BeanConsumeReportRequest(BaseModel):
+    user_id: int
+    report_title: str = 'AI 报告'

@@ -1,72 +1,95 @@
-const { fetchEntitlements, goMembershipPage } = require('./membership');
+const { getCurrentUserId, goMembershipPage } = require('./membership');
+const { request } = require('./request');
 
-// 每次生成报告扣除的星鼎豆（与套餐标价对应：金额元 × 100）
-const REPORT_BEAN_COST = {
-  trial: 1990,
-  standard: 9900,
-  premium: 16800
+const REPORT_BEAN_COST = 500;
+const NON_REFUND_NOTICE = '星鼎豆充值后不支持退款，已消费的星鼎豆不退还。';
+
+const PLAN_GRANTS = {
+  trial: { name: '普通卡', beans: 2000, price: 19.9 },
+  standard: { name: '金卡', beans: 12000, price: 99 },
+  premium: { name: '白金卡', beans: 24000, price: 168 }
 };
 
-const PLAN_LABELS = {
-  trial: '体验月卡',
-  standard: '标准年卡',
-  premium: '尊享年卡',
-  free: '免费版'
-};
-
-function getReportBeanCost(planCode, planPrice) {
-  if (REPORT_BEAN_COST[planCode] != null) return REPORT_BEAN_COST[planCode];
-  const price = Number(planPrice) || 0;
-  if (price > 0) return Math.round(price * 100);
-  return null;
+function fetchBeanBalance() {
+  const userId = getCurrentUserId();
+  if (!userId) {
+    return Promise.reject(new Error('请先登录'));
+  }
+  return request({ url: '/api/membership/beans', data: { user_id: Number(userId) } });
 }
 
-function buildReportBeanConfirmContent(planCode, planName, beanCost, reportTitle) {
-  const title = reportTitle || 'AI 报告';
-  const label = planName || PLAN_LABELS[planCode] || '当前套餐';
-  return `生成一次${title}将扣除 ${beanCost} 星鼎豆（${label}）。\n\n确认后将开始生成，请知悉。`;
+function consumeReportBeans(reportTitle) {
+  const userId = getCurrentUserId();
+  return request({
+    url: '/api/membership/beans/consume-report',
+    method: 'POST',
+    data: {
+      user_id: Number(userId),
+      report_title: reportTitle || 'AI 报告'
+    }
+  });
+}
+
+function buildRechargeHint() {
+  return [
+    '普通卡：¥19.9 → 2000 星鼎豆',
+    '金卡：¥99 → 12000 星鼎豆',
+    '白金卡：¥168 → 24000 星鼎豆',
+    `每次生成报告扣除 ${REPORT_BEAN_COST} 星鼎豆`
+  ].join('\n');
 }
 
 function confirmReportBeanDeduction(reportTitle) {
-  return fetchEntitlements()
-    .then((entitlements) => {
-      const plan = (entitlements && entitlements.plan) || { plan_code: 'free', plan_name: '免费版' };
-      const planCode = plan.plan_code || 'free';
-      const beanCost = getReportBeanCost(planCode, plan.price);
+  return fetchBeanBalance()
+    .then((res) => {
+      const balance = Number(res.balance) || 0;
+      const cost = Number(res.report_cost) || REPORT_BEAN_COST;
+      const title = reportTitle || 'AI 报告';
 
-      if (planCode === 'free' || beanCost == null) {
+      if (balance < cost) {
         return new Promise((resolve) => {
           wx.showModal({
-            title: '需要开通会员',
-            content: '生成报告需先开通会员。\n体验月卡每次生成扣除 1990 星鼎豆，标准年卡 9900 星鼎豆，尊享年卡 16800 星鼎豆。',
-            confirmText: '去开通',
+            title: '星鼎豆不足',
+            content: `生成一次${title}需要 ${cost} 星鼎豆。\n当前余额：${balance} 星鼎豆\n\n${buildRechargeHint()}\n\n${NON_REFUND_NOTICE}`,
+            confirmText: '去充值',
             cancelText: '取消',
-            success: (res) => {
-              if (res.confirm) goMembershipPage();
+            success: (modalRes) => {
+              if (modalRes.confirm) goMembershipPage();
               resolve(false);
             }
           });
         });
       }
 
+      const afterBalance = balance - cost;
       return new Promise((resolve) => {
         wx.showModal({
-          title: '确认扣除星鼎豆',
-          content: buildReportBeanConfirmContent(planCode, plan.plan_name, beanCost, reportTitle),
+          title: '消费确认',
+          content: [
+            `生成一次${title}将扣除 ${cost} 星鼎豆。`,
+            `当前余额：${balance} 星鼎豆`,
+            `扣后余额：${afterBalance} 星鼎豆`,
+            '',
+            NON_REFUND_NOTICE,
+            '确认后继续生成？'
+          ].join('\n'),
           confirmText: '确认生成',
           cancelText: '取消',
-          success: (res) => resolve(!!res.confirm)
+          success: (modalRes) => resolve(!!modalRes.confirm)
         });
       });
     })
-    .catch(() => {
-      wx.showToast({ title: '会员信息加载失败', icon: 'none' });
+    .catch((error) => {
+      wx.showToast({ title: error.message || '星鼎豆信息加载失败', icon: 'none' });
       return false;
     });
 }
 
 module.exports = {
   REPORT_BEAN_COST,
-  getReportBeanCost,
+  PLAN_GRANTS,
+  NON_REFUND_NOTICE,
+  fetchBeanBalance,
+  consumeReportBeans,
   confirmReportBeanDeduction
 };

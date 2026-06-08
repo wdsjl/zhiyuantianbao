@@ -15,11 +15,11 @@ from payment_service import create_pending_order, fulfill_wechat_order, get_orde
 
 WECHAT_API_HOST = 'https://api.weixin.qq.com'
 
-# 套餐虚拟道具配置：goodsPrice 为分；星鼎豆 = 金额(元) × 10
+# 套餐虚拟道具配置：goodsPrice 为分；充值到账星鼎豆见 bean_service.PLAN_BEAN_GRANT
 PLAN_VIRTUAL_PRODUCTS: dict[str, dict[str, Any]] = {
-    'trial': {'product_id': 'trial', 'goods_price_fen': 1990, 'bean_price': 199},
-    'standard': {'product_id': 'standard', 'goods_price_fen': 9900, 'bean_price': 990},
-    'premium': {'product_id': 'premium', 'goods_price_fen': 16800, 'bean_price': 1680},
+    'trial': {'product_id': 'trial', 'goods_price_fen': 1990, 'bean_price': 2000},
+    'standard': {'product_id': 'standard', 'goods_price_fen': 9900, 'bean_price': 12000},
+    'premium': {'product_id': 'premium', 'goods_price_fen': 16800, 'bean_price': 24000},
 }
 
 PAID_ORDER_STATUSES = {2, 3, 4}
@@ -62,7 +62,8 @@ def _get_plan_product(plan_code: str) -> dict[str, Any]:
     env_product_id = os.getenv(f'WECHAT_VIRTUAL_PRODUCT_{plan_code.upper()}', '').strip()
     product_id = env_product_id or defaults.get('product_id') or plan_code
     goods_price_fen = int(round(price * 100))
-    bean_price = int(round(price * 10))
+    from bean_service import get_plan_bean_grant
+    bean_price = get_plan_bean_grant(plan_code) or defaults.get('bean_price') or 0
     return {
         'plan': plan,
         'product_id': product_id,
