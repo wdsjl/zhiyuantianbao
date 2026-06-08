@@ -71,7 +71,10 @@
       <view class="sub-text">结合你的霍兰德结果、分数位次与批次，生成更具体的填报策略建议。该报告会同步作为志愿方案 AI 解读的数据基础。</view>
       <button class="primary-btn" bindtap="generateAiReport" loading="{{aiLoading}}">{{aiCareerReport ? '重新生成深度报告' : '生成 AI 深度报告'}}</button>
       <view wx:if="{{aiCareerReport}}" class="ai-report-box">{{aiCareerReport}}</view>
-      <button wx:if="{{aiCareerReport}}" class="secondary-btn copy-btn" bindtap="copyAiReport">复制报告</button>
+      <view wx:if="{{aiCareerReport}}" class="report-action-row">
+        <button class="secondary-btn copy-btn" bindtap="copyAiReport">复制报告</button>
+        <button class="secondary-btn copy-btn" bindtap="exportAiReportPdf">导出 PDF</button>
+      </view>
     </view>
 
     <view class="warn-box card">霍兰德职业兴趣测评仅用于辅助专业方向筛选，不能替代分数位次、选科要求、招生计划与家庭实际情况。AI 报告仅供参考，请以官方信息为准。</view>

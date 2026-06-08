@@ -1,6 +1,7 @@
 const { questions, options, calculateResult, migrateLegacyResult } = require('../../utils/personality');
 const { request } = require('../../utils/request');
 const { requirePermission, getCurrentUserId } = require('../../utils/membership');
+const { openPdfFromUrl } = require('../../utils/pdfExport');
 const { loadActiveProfileSync } = require('../../utils/profileHelper');
 
 function buildQuestions(answers = {}) {
@@ -169,6 +170,32 @@ Page({
       return;
     }
     wx.setClipboardData({ data: this.data.aiCareerReport });
+  },
+  exportAiReportPdf() {
+    const profile = loadActiveProfileSync();
+    const studentId = profile.studentId || profile.student_id;
+    if (!this.data.aiCareerReport) {
+      wx.showToast({ title: '请先生成深度报告', icon: 'none' });
+      return;
+    }
+    if (!studentId) {
+      wx.showToast({ title: '请先完善档案', icon: 'none' });
+      return;
+    }
+    requirePermission('personality_deep', '深度职业兴趣报告', { consume: false }).then((allowed) => {
+      if (!allowed) return;
+      openPdfFromUrl(`/api/ai/career-report/pdf?student_id=${Number(studentId)}`)
+        .then(() => {
+          wx.showModal({
+            title: 'PDF 已打开',
+            content: '点击右上角「…」可转发给微信好友或保存到手机。',
+            showCancel: false
+          });
+        })
+        .catch((error) => {
+          wx.showToast({ title: error.message || '导出失败', icon: 'none' });
+        });
+    });
   },
   retest() {
     wx.showModal({

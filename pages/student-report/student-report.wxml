@@ -61,6 +61,7 @@
     <view class="report-content">{{report}}</view>
     <view class="report-actions">
       <button class="secondary-btn" bindtap="copyReport">复制报告</button>
+      <button class="secondary-btn" bindtap="exportReportPdf">导出 PDF</button>
       <button class="primary-btn" bindtap="goVolunteer">去填报志愿</button>
     </view>
   </view>

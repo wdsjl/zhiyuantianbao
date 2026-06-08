@@ -28,6 +28,42 @@ def wrap_text(value: Any, max_chars: int) -> list[str]:
     return [text[index:index + max_chars] for index in range(0, len(text), max_chars)]
 
 
+def lines_from_paragraphs(text: str, max_chars: int = 52) -> list[str]:
+    lines: list[str] = []
+    for paragraph in str(text or '').splitlines():
+        stripped = paragraph.strip()
+        if not stripped:
+            lines.append('')
+            continue
+        lines.extend(wrap_text(stripped, max_chars))
+    return lines
+
+
+def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
+    lines: list[str] = [
+        title,
+        f'导出时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+        (
+            f'姓名：{student.get("name", "")}    省份：{student.get("province", "")}    '
+            f'选科：{student.get("subject_combination", "")}'
+        ),
+        (
+            f'分数：{student.get("score", "")}    位次：{student.get("rank", "")}    '
+            f'批次：{student.get("target_batch", "")}'
+        ),
+        '提示：本报告由 AI 基于用户填写数据生成，仅供参考，不构成录取承诺。',
+        '',
+        '—— 报告正文 ——',
+    ]
+    lines.extend(lines_from_paragraphs(body, 52))
+    lines.extend([
+        '',
+        '—— 免责声明 ——',
+        '本系统基于历史数据、测评结果与用户输入进行辅助分析。请考生和家长以各省教育考试院、高校招生章程和正式填报系统为准。',
+    ])
+    return build_pdf(lines)
+
+
 def build_pdf(lines: list[str]) -> bytes:
     page_width = 595
     page_height = 842

@@ -1,5 +1,6 @@
 const { request } = require('../../utils/request');
 const { requirePermission, getCurrentUserId, fetchEntitlements } = require('../../utils/membership');
+const { openPdfFromUrl } = require('../../utils/pdfExport');
 const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
@@ -183,5 +184,31 @@ Page({
   copyReport() {
     if (!this.data.report) return;
     wx.setClipboardData({ data: this.data.report });
+  },
+  exportReportPdf() {
+    const profile = this.data.profile || loadActiveProfileSync();
+    const studentId = profile.studentId || profile.student_id;
+    if (!this.data.report) {
+      wx.showToast({ title: '请先生成报告', icon: 'none' });
+      return;
+    }
+    if (!studentId) {
+      wx.showToast({ title: '请先完善档案', icon: 'none' });
+      return;
+    }
+    requirePermission('personality_deep', '个性化填报报告', { consume: false }).then((allowed) => {
+      if (!allowed) return;
+      openPdfFromUrl(`/api/ai/student-report/pdf?student_id=${Number(studentId)}`)
+        .then(() => {
+          wx.showModal({
+            title: 'PDF 已打开',
+            content: '点击右上角「…」可转发给微信好友或保存到手机。',
+            showCancel: false
+          });
+        })
+        .catch((error) => {
+          wx.showToast({ title: error.message || '导出失败', icon: 'none' });
+        });
+    });
   }
 });

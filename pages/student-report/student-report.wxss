@@ -64,9 +64,10 @@
 
 .report-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 16rpx;
 }
 
 .report-actions button {
-  flex: 1;
+  flex: 1 1 40%;
 }
