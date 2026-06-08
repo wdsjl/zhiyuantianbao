@@ -22,7 +22,58 @@ function buildStudentPdfFileName(profile, label) {
 function resolveResponseFileName(res, fallback) {
   const headers = res.header || {};
   const fromHeader = headers['X-Pdf-Filename'] || headers['x-pdf-filename'];
-  return ensurePdfExtension(fromHeader || fallback || `export_${Date.now()}.pdf`);
+  return ensurePdfExtension(fromHeader || fallback || `学生的报告.pdf`);
+}
+
+function getFileSystem() {
+  return wx.getFileSystemManager();
+}
+
+function buildFilePath(fileName) {
+  return `${wx.env.USER_DATA_PATH}/${ensurePdfExtension(fileName)}`;
+}
+
+function writeBinaryFile(filePath, data) {
+  return new Promise((resolve, reject) => {
+    getFileSystem().writeFile({
+      filePath,
+      data,
+      success: () => resolve(filePath),
+      fail: (error) => reject(new Error(error.errMsg || 'PDF 保存失败'))
+    });
+  });
+}
+
+function readBinaryFile(filePath) {
+  return new Promise((resolve, reject) => {
+    getFileSystem().readFile({
+      filePath,
+      success: (res) => resolve(res.data),
+      fail: (error) => reject(new Error(error.errMsg || 'PDF 读取失败'))
+    });
+  });
+}
+
+function persistPdfData(data, fileName) {
+  return writeBinaryFile(buildFilePath(fileName), data);
+}
+
+function persistPdfFromTemp(tempFilePath, fileName) {
+  const destPath = buildFilePath(fileName);
+  const fs = getFileSystem();
+  return new Promise((resolve, reject) => {
+    fs.copyFile({
+      srcPath: tempFilePath,
+      destPath,
+      success: () => resolve(destPath),
+      fail: () => {
+        readBinaryFile(tempFilePath)
+          .then((data) => writeBinaryFile(destPath, data))
+          .then(resolve)
+          .catch(reject);
+      }
+    });
+  });
 }
 
 function buildDownloadError(downloadRes, failError) {
@@ -69,42 +120,50 @@ function openDocument(filePath) {
       filePath,
       fileType: 'pdf',
       showMenu: true,
-      success: () => resolve(filePath),
+      success: () => resolve({ filePath, action: 'preview' }),
       fail: (error) => reject(new Error(error.errMsg || 'PDF 打开失败'))
     });
   });
 }
 
-function writePdfBuffer(buffer, fileName) {
+function sharePdfToWeChat(filePath, fileName) {
   return new Promise((resolve, reject) => {
-    const safeName = ensurePdfExtension(fileName);
-    const filePath = `${wx.env.USER_DATA_PATH}/${safeName}`;
-    wx.getFileSystemManager().writeFile({
+    if (!wx.shareFileMessage) {
+      reject(new Error('当前微信版本较低，请升级后使用「转发给微信好友」'));
+      return;
+    }
+    wx.shareFileMessage({
       filePath,
-      data: buffer,
-      success: () => resolve(filePath),
-      fail: () => {
-        const fallbackPath = `${wx.env.USER_DATA_PATH}/export_${Date.now()}.pdf`;
-        wx.getFileSystemManager().writeFile({
-          filePath: fallbackPath,
-          data: buffer,
-          success: () => resolve(fallbackPath),
-          fail: (error) => reject(new Error(error.errMsg || 'PDF 保存失败'))
-        });
-      }
+      fileName: ensurePdfExtension(fileName),
+      success: () => resolve({ filePath, fileName, action: 'share' }),
+      fail: (error) => reject(new Error(error.errMsg || '转发失败，请重试'))
     });
   });
 }
 
-function saveTempPdf(tempFilePath, fileName) {
-  return new Promise((resolve) => {
-    const safeName = ensurePdfExtension(fileName);
-    const destPath = `${wx.env.USER_DATA_PATH}/${safeName}`;
-    wx.getFileSystemManager().copyFile({
-      srcPath: tempFilePath,
-      destPath,
-      success: () => resolve(destPath),
-      fail: () => resolve(tempFilePath)
+function presentPdfActions(filePath, fileName) {
+  const displayName = ensurePdfExtension(fileName);
+  return new Promise((resolve, reject) => {
+    wx.showActionSheet({
+      itemList: ['打开预览', `转发给微信好友（${displayName}）`],
+      success: (res) => {
+        if (res.tapIndex === 0) {
+          openDocument(filePath).then(resolve).catch(reject);
+          return;
+        }
+        if (res.tapIndex === 1) {
+          sharePdfToWeChat(filePath, displayName).then(resolve).catch(reject);
+          return;
+        }
+        reject(new Error('已取消'));
+      },
+      fail: (error) => {
+        if (error && error.errMsg && error.errMsg.includes('cancel')) {
+          reject(new Error('已取消'));
+          return;
+        }
+        reject(new Error((error && error.errMsg) || '操作失败'));
+      }
     });
   });
 }
@@ -125,8 +184,8 @@ function openPdfFromPost(path, data, options) {
           return;
         }
         const fileName = resolveResponseFileName(res, opts.fileName);
-        writePdfBuffer(res.data, fileName)
-          .then((filePath) => openDocument(filePath))
+        persistPdfData(res.data, fileName)
+          .then((filePath) => presentPdfActions(filePath, fileName))
           .then(resolve)
           .catch(reject);
       },
@@ -136,26 +195,43 @@ function openPdfFromPost(path, data, options) {
   });
 }
 
+function finishDownloadedPdf(downloadRes, fileName) {
+  if (downloadRes.statusCode !== 200) {
+    return Promise.reject(new Error(buildDownloadError(downloadRes, null)));
+  }
+  const savedPath = downloadRes.filePath || downloadRes.tempFilePath;
+  return persistPdfFromTemp(savedPath, fileName)
+    .then((finalPath) => presentPdfActions(finalPath, fileName));
+}
+
+function downloadPdfFile(path, filePath) {
+  return new Promise((resolve, reject) => {
+    const params = {
+      url: `${BASE_URL}${path}`,
+      success: resolve,
+      fail: reject
+    };
+    if (filePath) params.filePath = filePath;
+    wx.downloadFile(params);
+  });
+}
+
 function openPdfFromUrl(path, options) {
   const opts = options || {};
+  const fileName = ensurePdfExtension(opts.fileName || '学生的填报志愿.pdf');
+  const namedPath = buildFilePath(fileName);
   return new Promise((resolve, reject) => {
     wx.showLoading({ title: '生成 PDF...', mask: true });
-    wx.downloadFile({
-      url: `${BASE_URL}${path}`,
-      success: (downloadRes) => {
-        if (downloadRes.statusCode !== 200) {
-          reject(new Error(buildDownloadError(downloadRes, null)));
-          return;
-        }
-        const fileName = opts.fileName || `export_${Date.now()}.pdf`;
-        saveTempPdf(downloadRes.tempFilePath, fileName)
-          .then((filePath) => openDocument(filePath))
-          .then(resolve)
-          .catch(reject);
-      },
-      fail: (error) => reject(new Error(buildDownloadError(null, error))),
-      complete: () => wx.hideLoading()
-    });
+    const finish = (error, result) => {
+      wx.hideLoading();
+      if (error) reject(error);
+      else resolve(result);
+    };
+    downloadPdfFile(path, namedPath)
+      .catch(() => downloadPdfFile(path, ''))
+      .then((downloadRes) => finishDownloadedPdf(downloadRes, fileName))
+      .then((result) => finish(null, result))
+      .catch((error) => finish(new Error(error.message || 'PDF 下载失败')));
   });
 }
 

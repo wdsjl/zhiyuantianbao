@@ -190,12 +190,9 @@ Page({
       }, {
         fileName: buildStudentPdfFileName(profile, '霍兰德测评报告')
       })
-        .then(() => {
-          wx.showModal({
-            title: 'PDF 已打开',
-            content: '点击右上角「…」可转发给微信好友或保存到手机。',
-            showCancel: false
-          });
+        .then((result) => {
+          if (result && result.action === 'share') return;
+          wx.showToast({ title: '如需转发请选「转发给微信好友」', icon: 'none', duration: 2500 });
         })
         .catch((error) => {
           wx.showToast({ title: error.message || '导出失败', icon: 'none' });
