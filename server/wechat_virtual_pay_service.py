@@ -40,8 +40,35 @@ def get_virtual_pay_config() -> dict[str, Any]:
 
 
 def is_virtual_pay_ready() -> bool:
+    return not get_virtual_pay_status()['missing']
+
+
+def get_virtual_pay_status() -> dict[str, Any]:
     config = get_virtual_pay_config()
-    return bool(config['offer_id'] and config['app_key'] and config['appid'] and config['secret'])
+    missing: list[str] = []
+    if not config['appid']:
+        missing.append('WECHAT_APPID')
+    if not config['secret']:
+        missing.append('WECHAT_SECRET')
+    if not config['offer_id']:
+        missing.append('WECHAT_VIRTUAL_PAY_OFFER_ID')
+    if not config['app_key']:
+        key_name = 'WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY' if config['env'] == 1 else 'WECHAT_VIRTUAL_PAY_APP_KEY'
+        missing.append(key_name)
+    return {
+        'enabled': not missing,
+        'mode': 'virtual_pay',
+        'env': config['env'],
+        'offer_id': config['offer_id'],
+        'appid_configured': bool(config['appid']),
+        'secret_configured': bool(config['secret']),
+        'app_key_configured': bool(config['app_key']),
+        'missing': missing,
+        'hint': (
+            '虚拟支付无需商户证书 apiclient_key.pem；请在 ecosystem.secrets.js 配置 WECHAT_SECRET 与 WECHAT_VIRTUAL_PAY_APP_KEY 后执行 pm2 restart zhiyuan-backend --update-env'
+            if missing else '虚拟支付已就绪'
+        ),
+    }
 
 
 def _get_plan_product(plan_code: str) -> dict[str, Any]:

@@ -596,7 +596,8 @@ def api_membership_my_status(user_id: int):
 
 @app.get('/api/payments/wechat/status')
 def api_wechat_pay_status():
-    return {'enabled': is_wechat_pay_ready()}
+    from wechat_virtual_pay_service import get_virtual_pay_status
+    return get_virtual_pay_status()
 
 
 @app.post('/api/payments/wechat/create')
