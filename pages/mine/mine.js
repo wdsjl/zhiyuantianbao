@@ -1,4 +1,5 @@
 const { fetchEntitlements, goMembershipPage } = require('../../utils/membership');
+const { runNetworkDiagnostic, buildDiagnosticReport } = require('../../utils/request');
 
 Page({
   data: {
@@ -37,5 +38,21 @@ Page({
   },
   goStudentReport() {
     wx.navigateTo({ url: '/pages/student-report/student-report' });
+  },
+  runNetworkTest() {
+    wx.showLoading({ title: '检测中...', mask: true });
+    runNetworkDiagnostic()
+      .then((result) => {
+        wx.hideLoading();
+        wx.showModal({
+          title: result.ok ? '网络正常' : '网络异常',
+          content: buildDiagnosticReport(result),
+          showCancel: false
+        });
+      })
+      .catch(() => {
+        wx.hideLoading();
+        wx.showToast({ title: '检测失败', icon: 'none' });
+      });
   }
 });
