@@ -9,5 +9,6 @@
     "postcss": true,
     "minified": true
   },
-  "compileType": "miniprogram"
+  "compileType": "miniprogram",
+  "libVersion": "3.4.0"
 }

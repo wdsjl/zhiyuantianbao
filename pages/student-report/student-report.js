@@ -6,7 +6,7 @@ const {
   sharePdfToWeChat,
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
-const { ensureReportGreeting } = require('../../utils/reportFormat');
+const { formatReportContent } = require('../../utils/reportFormat');
 const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
@@ -69,7 +69,9 @@ Page({
     personality: {},
     preferences: defaultPreferences(),
     report: '',
-    loading: false
+    loading: false,
+    pdfReady: false,
+    pdfFileName: ''
   },
   onShow() {
     fetchEntitlements().catch(() => {});
@@ -88,9 +90,9 @@ Page({
       wx.setStorageSync(PREF_STORAGE_KEY, mergedPrefs);
     }
     const profile = this.data.profile || loadActiveProfileSync();
-    const savedReport = ensureReportGreeting(wx.getStorageSync('studentAiReport') || '', profile);
+    const savedReport = formatReportContent(wx.getStorageSync('studentAiReport') || '', profile);
     if (savedReport) wx.setStorageSync('studentAiReport', savedReport);
-    this.setData({ personality, preferences: mergedPrefs, report: savedReport });
+    this.setData({ personality, preferences: mergedPrefs, report: savedReport, pdfReady: false, pdfFileName: '' });
     this._pdfFilePath = '';
     this._pdfFileName = '';
   },
@@ -101,7 +103,7 @@ Page({
     request({ url: `/api/ai/student-report?student_id=${studentId}` })
       .then((res) => {
         if (res.report && res.report.report_content) {
-          const report = ensureReportGreeting(res.report.report_content, profile);
+          const report = formatReportContent(res.report.report_content, profile);
           wx.setStorageSync('studentAiReport', report);
           this.setData({ report });
         }
@@ -169,9 +171,9 @@ Page({
       }
     })
       .then((res) => {
-        const report = ensureReportGreeting(res.report || '', profile);
+        const report = formatReportContent(res.report || '', profile);
         wx.setStorageSync('studentAiReport', report);
-        this.setData({ report });
+        this.setData({ report, pdfReady: false, pdfFileName: '' });
         this._pdfFilePath = '';
         this._pdfFileName = '';
         wx.showToast({ title: '报告已生成', icon: 'success' });
@@ -198,51 +200,50 @@ Page({
     if (!this.data.report) return;
     wx.setClipboardData({ data: this.data.report });
   },
-  prepareReportPdfExport() {
+  canExportPdf() {
     const profile = this.data.profile || loadActiveProfileSync();
-    const studentId = resolveStudentId(profile);
-    const report = ensureReportGreeting(this.data.report, profile);
-    return preparePdfFromPost('/api/ai/student-report/pdf', {
-      student_id: studentId,
-      report_content: report
-    }, {
-      fileName: buildStudentPdfFileName(profile, '个性化报告')
-    });
-  },
-  shareReportPdf() {
-    const profile = this.data.profile || loadActiveProfileSync();
-    const studentId = resolveStudentId(profile);
     if (!this.data.report) {
       wx.showToast({ title: '请先生成报告', icon: 'none' });
-      return;
+      return null;
     }
-    if (!studentId) {
+    if (!resolveStudentId(profile)) {
       wx.showToast({ title: '请先保存学生档案', icon: 'none' });
-      return;
+      return null;
     }
+    return profile;
+  },
+  generateReportPdf() {
+    const profile = this.canExportPdf();
+    if (!profile) return;
     requirePermission('personality_deep', '个性化填报报告', { consume: false }).then((allowed) => {
       if (!allowed) return;
-      if (this._pdfFilePath && this._pdfFileName) {
-        sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
-          .then(() => wx.showToast({ title: '请选择聊天后发送', icon: 'none' }))
-          .catch((error) => wx.showToast({ title: error.message || '转发失败', icon: 'none' }));
-        return;
-      }
-      this.prepareReportPdfExport()
+      const studentId = resolveStudentId(profile);
+      const report = formatReportContent(this.data.report, profile);
+      preparePdfFromPost('/api/ai/student-report/pdf', {
+        student_id: studentId,
+        report_content: report
+      }, {
+        fileName: buildStudentPdfFileName(profile, '个性化报告')
+      })
         .then(({ filePath, fileName }) => {
           this._pdfFilePath = filePath;
           this._pdfFileName = fileName;
-          wx.showModal({
-            title: 'PDF 已生成',
-            content: `文件名：${fileName}\n\n请再点一次「转发PDF到微信」，选择文件传输助手发送。`,
-            showCancel: false,
-            confirmText: '知道了'
-          });
+          this.setData({ pdfReady: true, pdfFileName: fileName });
+          wx.showToast({ title: '已生成，请点②发送', icon: 'success' });
         })
         .catch((error) => {
           wx.showToast({ title: error.message || '生成失败', icon: 'none' });
         });
     });
+  },
+  sendReportPdfToWeChat() {
+    if (!this._pdfFilePath || !this._pdfFileName) {
+      wx.showToast({ title: '请先点①生成PDF', icon: 'none' });
+      return;
+    }
+    sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
+      .then(() => wx.showToast({ title: '请选择文件传输助手', icon: 'none' }))
+      .catch((error) => wx.showToast({ title: error.message || '发送失败', icon: 'none' }));
   },
   previewReportPdf() {
     const profile = this.data.profile || loadActiveProfileSync();
@@ -259,7 +260,7 @@ Page({
       if (!allowed) return;
       openPdfFromPost('/api/ai/student-report/pdf', {
         student_id: studentId,
-        report_content: ensureReportGreeting(this.data.report, profile)
+        report_content: formatReportContent(this.data.report, profile)
       }, {
         fileName: buildStudentPdfFileName(profile, '个性化报告'),
         mode: 'preview'

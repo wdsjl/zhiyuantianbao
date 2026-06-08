@@ -88,7 +88,9 @@ Page({
     aiLoading: false,
     planStyle: 'balanced',
     planStyleOptions: PLAN_STYLE_OPTIONS,
-    strategyMeta: null
+    strategyMeta: null,
+    pdfReady: false,
+    pdfFileName: ''
   },
   onShow() {
     const savedStyle = wx.getStorageSync('volunteerPlanStyle') || 'balanced';
@@ -384,13 +386,13 @@ Page({
       }
     });
   },
-  exportPlan() {
+  generatePlanPdf() {
     requirePermission('pdf_export', 'PDF 志愿表导出', { consume: true }).then((allowed) => {
       if (!allowed) return;
-      this.doExportPlan();
+      this.doGeneratePlanPdf();
     });
   },
-  doExportPlan() {
+  doGeneratePlanPdf() {
     const profile = this.data.profile;
     const currentDraftId = wx.getStorageSync('currentDraftId');
     if (!this.data.plan.length) return;
@@ -401,23 +403,18 @@ Page({
     if (!currentDraftId) {
       wx.showModal({
         title: '请先保存草稿',
-        content: 'PDF 导出需要使用后端草稿数据。请先点击“保存草稿”，保存成功后再导出 PDF。',
+        content: 'PDF 导出需要先保存草稿。',
         confirmText: '知道了'
       });
       return;
     }
     const fileName = buildStudentPdfFileName(profile, '填报志愿');
     const pdfUrl = `/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`;
-    if (this._pdfFilePath && this._pdfFileName === fileName) {
-      sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
-        .then(() => wx.showToast({ title: '请选择聊天后发送', icon: 'none' }))
-        .catch((error) => wx.showToast({ title: error.message || '转发失败', icon: 'none' }));
-      return;
-    }
     preparePdfFromUrl(pdfUrl, { fileName })
       .then(({ filePath, fileName: savedName }) => {
         this._pdfFilePath = filePath;
         this._pdfFileName = savedName;
+        this.setData({ pdfReady: true, pdfFileName: savedName });
         const records = wx.getStorageSync('exportRecords') || [];
         records.unshift({
           id: Date.now(),
@@ -427,16 +424,20 @@ Page({
           type: 'pdf'
         });
         wx.setStorageSync('exportRecords', records);
-        wx.showModal({
-          title: 'PDF 已生成',
-          content: `文件名：${savedName}\n\n请再点一次「导出志愿表」，选择文件传输助手发送。`,
-          showCancel: false,
-          confirmText: '知道了'
-        });
+        wx.showToast({ title: '已生成，请点②发送', icon: 'success' });
       })
       .catch((error) => {
-        wx.showToast({ title: error.message || 'PDF 导出失败', icon: 'none' });
+        wx.showToast({ title: error.message || 'PDF 生成失败', icon: 'none' });
       });
+  },
+  sendPlanPdfToWeChat() {
+    if (!this._pdfFilePath || !this._pdfFileName) {
+      wx.showToast({ title: '请先点①生成PDF', icon: 'none' });
+      return;
+    }
+    sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
+      .then(() => wx.showToast({ title: '请选择文件传输助手', icon: 'none' }))
+      .catch((error) => wx.showToast({ title: error.message || '发送失败', icon: 'none' }));
   },
   goCompare() {
     wx.navigateTo({ url: '/pages/compare/compare' });

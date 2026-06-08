@@ -77,9 +77,11 @@
     <button class="danger-btn remove-btn" data-index="{{index}}" bindtap="removePlanItem">移除该志愿</button>
   </view>
 
+  <view wx:if="{{pdfFileName}}" class="sub-text" style="padding:0 24rpx 12rpx">PDF 文件名：{{pdfFileName}}</view>
   <view wx:if="{{plan.length}}" class="bottom-actions">
     <button class="secondary-btn" bindtap="goCompare">方案对比</button>
-    <button class="secondary-btn" bindtap="exportPlan">转发PDF到微信</button>
+    <button class="secondary-btn" bindtap="generatePlanPdf">① 生成PDF</button>
+    <button class="secondary-btn" bindtap="sendPlanPdfToWeChat" disabled="{{!pdfReady}}">② 发送微信</button>
     <button class="primary-btn" bindtap="saveDraft">保存草稿</button>
   </view>
 </view>

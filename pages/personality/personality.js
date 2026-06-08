@@ -7,7 +7,7 @@ const {
   sharePdfToWeChat,
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
-const { ensureReportGreeting } = require('../../utils/reportFormat');
+const { formatReportContent } = require('../../utils/reportFormat');
 const { loadActiveProfileSync, resolveStudentId } = require('../../utils/profileHelper');
 
 function buildQuestions(answers = {}) {
@@ -55,7 +55,9 @@ Page({
     progress: 0,
     aiCareerReport: '',
     aiLoading: false,
-    syncing: false
+    syncing: false,
+    pdfReady: false,
+    pdfFileName: ''
   },
   onShow() {
     this.bootstrapResult();
@@ -67,9 +69,9 @@ Page({
       wx.setStorageSync('personalityResult', result);
     }
     const profile = loadActiveProfileSync();
-    const aiCareerReport = ensureReportGreeting(wx.getStorageSync('personalityAiCareerReport') || '', profile);
+    const aiCareerReport = formatReportContent(wx.getStorageSync('personalityAiCareerReport') || '', profile);
     if (aiCareerReport) wx.setStorageSync('personalityAiCareerReport', aiCareerReport);
-    this.setData({ result, aiCareerReport });
+    this.setData({ result, aiCareerReport, pdfReady: false, pdfFileName: '' });
     this._pdfFilePath = '';
     this._pdfFileName = '';
     const profile = loadActiveProfileSync();
@@ -84,7 +86,7 @@ Page({
       }
       if (assessment.ai_career_report) {
         const profile = loadActiveProfileSync();
-        const report = ensureReportGreeting(assessment.ai_career_report, profile);
+        const report = formatReportContent(assessment.ai_career_report, profile);
         wx.setStorageSync('personalityAiCareerReport', report);
         this.setData({ aiCareerReport: report });
       }
@@ -156,8 +158,9 @@ Page({
       }
     })
       .then((res) => {
-        const report = ensureReportGreeting(res.report || '', profile);
+        const report = formatReportContent(res.report || '', profile);
         wx.setStorageSync('personalityAiCareerReport', report);
+        this.setData({ pdfReady: false, pdfFileName: '' });
         this._pdfFilePath = '';
         this._pdfFileName = '';
         if (res.assessment_id) {
@@ -185,18 +188,7 @@ Page({
     }
     wx.setClipboardData({ data: this.data.aiCareerReport });
   },
-  prepareAiReportPdfExport() {
-    const profile = loadActiveProfileSync();
-    const studentId = resolveStudentId(profile);
-    const report = ensureReportGreeting(this.data.aiCareerReport, profile);
-    return preparePdfFromPost('/api/ai/career-report/pdf', {
-      student_id: studentId,
-      report_content: report
-    }, {
-      fileName: buildStudentPdfFileName(profile, '霍兰德测评报告')
-    });
-  },
-  shareAiReportPdf() {
+  generateAiReportPdf() {
     const profile = loadActiveProfileSync();
     const studentId = resolveStudentId(profile);
     if (!this.data.aiCareerReport) {
@@ -209,27 +201,32 @@ Page({
     }
     requirePermission('personality_deep', '深度职业兴趣报告', { consume: false }).then((allowed) => {
       if (!allowed) return;
-      if (this._pdfFilePath && this._pdfFileName) {
-        sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
-          .then(() => wx.showToast({ title: '请选择聊天后发送', icon: 'none' }))
-          .catch((error) => wx.showToast({ title: error.message || '转发失败', icon: 'none' }));
-        return;
-      }
-      this.prepareAiReportPdfExport()
+      const report = formatReportContent(this.data.aiCareerReport, profile);
+      preparePdfFromPost('/api/ai/career-report/pdf', {
+        student_id: studentId,
+        report_content: report
+      }, {
+        fileName: buildStudentPdfFileName(profile, '霍兰德测评报告')
+      })
         .then(({ filePath, fileName }) => {
           this._pdfFilePath = filePath;
           this._pdfFileName = fileName;
-          wx.showModal({
-            title: 'PDF 已生成',
-            content: `文件名：${fileName}\n\n请再点一次「转发PDF到微信」，选择文件传输助手发送。`,
-            showCancel: false,
-            confirmText: '知道了'
-          });
+          this.setData({ pdfReady: true, pdfFileName: fileName });
+          wx.showToast({ title: '已生成，请点②发送', icon: 'success' });
         })
         .catch((error) => {
           wx.showToast({ title: error.message || '生成失败', icon: 'none' });
         });
     });
+  },
+  sendAiReportPdfToWeChat() {
+    if (!this._pdfFilePath || !this._pdfFileName) {
+      wx.showToast({ title: '请先点①生成PDF', icon: 'none' });
+      return;
+    }
+    sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
+      .then(() => wx.showToast({ title: '请选择文件传输助手', icon: 'none' }))
+      .catch((error) => wx.showToast({ title: error.message || '发送失败', icon: 'none' }));
   },
   previewAiReportPdf() {
     const profile = loadActiveProfileSync();
@@ -246,7 +243,7 @@ Page({
       if (!allowed) return;
       openPdfFromPost('/api/ai/career-report/pdf', {
         student_id: studentId,
-        report_content: ensureReportGreeting(this.data.aiCareerReport, profile)
+        report_content: formatReportContent(this.data.aiCareerReport, profile)
       }, {
         fileName: buildStudentPdfFileName(profile, '霍兰德测评报告'),
         mode: 'preview'

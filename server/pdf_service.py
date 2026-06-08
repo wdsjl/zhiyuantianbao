@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
@@ -41,8 +42,30 @@ def build_report_greeting(student: dict) -> str:
     return f'{name}同学、{name}同学家长，您好：'
 
 
-def ensure_report_greeting(body: str, student: dict) -> str:
+REPORT_FILLER_PATTERNS = (
+    re.compile(r'^好的[，,。！!：:\s]+'),
+    re.compile(r'^没问题[，,。！!：:\s]+'),
+    re.compile(r'^当然[，,。！!：:\s]+'),
+    re.compile(r'^嗯[，,。！!：:\s]+'),
+)
+
+
+def strip_report_filler(body: str) -> str:
     content = str(body or '').strip()
+    changed = True
+    while changed and content:
+        changed = False
+        for pattern in REPORT_FILLER_PATTERNS:
+            new_content = pattern.sub('', content, count=1).strip()
+            if new_content != content:
+                content = new_content
+                changed = True
+                break
+    return content
+
+
+def ensure_report_greeting(body: str, student: dict) -> str:
+    content = strip_report_filler(body)
     if not content:
         return build_report_greeting(student)
     name = student_display_name(student)

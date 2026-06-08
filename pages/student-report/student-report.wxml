@@ -59,10 +59,12 @@
   <view wx:if="{{report}}" class="card report-card">
     <view class="section-title">你的专属报告</view>
     <view class="report-content">{{report}}</view>
+    <view wx:if="{{pdfFileName}}" class="sub-text" style="margin-bottom:12px">PDF 文件名：{{pdfFileName}}</view>
     <view class="report-actions">
       <button class="secondary-btn" bindtap="copyReport">复制报告</button>
-      <button class="primary-btn" bindtap="shareReportPdf">转发PDF到微信</button>
-      <button class="secondary-btn" bindtap="previewReportPdf">打开PDF预览</button>
+      <button class="primary-btn" bindtap="generateReportPdf">① 生成PDF</button>
+      <button class="primary-btn" bindtap="sendReportPdfToWeChat" disabled="{{!pdfReady}}">② 发送到微信</button>
+      <button class="secondary-btn" bindtap="previewReportPdf">打开预览</button>
       <button class="primary-btn" bindtap="goVolunteer">去填报志愿</button>
     </view>
   </view>
