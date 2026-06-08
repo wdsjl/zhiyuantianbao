@@ -1,4 +1,5 @@
 const { request } = require('./request');
+const { isTempOpenid } = require('./auth');
 
 const PERMISSION_LABELS = {
   smart_recommend: '智能志愿推荐',
@@ -40,11 +41,11 @@ function refreshUserIdentityFromServer() {
   const profile = wx.getStorageSync('studentProfile') || {};
   const loginUser = wx.getStorageSync('loginUser') || {};
   const openid = loginUser.openid || profile.openid || '';
-  const phone = profile.phone || '';
-  if (!openid && !phone) {
+  const phone = profile.phone || loginUser.phone || '';
+  if (!phone && (!openid || isTempOpenid(openid))) {
     return Promise.resolve(getCurrentUserId());
   }
-  const query = openid ? { openid } : { phone };
+  const query = phone ? { phone } : { openid };
   return request({ url: '/api/profile', data: query })
     .then((res) => {
       const serverProfile = res.profile || {};
@@ -98,37 +99,40 @@ function hasPermission(entitlements, permissionCode) {
 }
 
 function requirePermission(permissionCode, title, options = {}) {
-  const userId = getCurrentUserId();
-  if (!userId) {
-    showUpgradeModal(permissionCode, title, '请先完善档案后再使用会员功能。');
-    return Promise.resolve(false);
-  }
   wx.removeStorageSync('memberEntitlements');
-  const url = options.consume ? `/api/membership/permissions/${permissionCode}/consume` : `/api/membership/permissions/${permissionCode}/check`;
-  return fetchEntitlements()
-    .catch(() => null)
-    .then(() => request({ url, method: options.consume ? 'POST' : 'GET', data: { user_id: Number(userId) } }))
-    .then((res) => {
-      if (res.allowed) {
-        return fetchEntitlements().then(() => {
-          if (res.remaining >= 0 && options.consume) {
-            wx.showToast({ title: `剩余${res.remaining}次`, icon: 'none' });
-          }
-          return true;
-        });
-      }
-      return fetchEntitlements().then((latest) => {
-        const planName = latest && latest.plan ? latest.plan.plan_name : '免费版';
-        const hint = getMembershipStatusMessage(latest)
-          || res.message
-          || `当前套餐为「${planName}」，未开通该功能或次数已用完。`;
-        showUpgradeModal(permissionCode, title, hint);
+  return refreshUserIdentityFromServer()
+    .then(() => fetchEntitlements().catch(() => null))
+    .then(() => {
+      const userId = getCurrentUserId();
+      if (!userId) {
+        showUpgradeModal(permissionCode, title, '请先完善档案后再使用会员功能。');
         return false;
-      });
-    })
-    .catch((error) => {
-      showUpgradeModal(permissionCode, title, error.message);
-      return false;
+      }
+      const action = options.consume ? 'consume' : 'check';
+      const url = `/api/membership/permissions/${permissionCode}/${action}?user_id=${Number(userId)}`;
+      return request({ url, method: options.consume ? 'POST' : 'GET' })
+        .then((res) => {
+          if (res.allowed) {
+            return fetchEntitlements().then(() => {
+              if (res.remaining >= 0 && options.consume) {
+                wx.showToast({ title: `剩余${res.remaining}次`, icon: 'none' });
+              }
+              return true;
+            });
+          }
+          return fetchEntitlements().then((latest) => {
+            const planName = latest && latest.plan ? latest.plan.plan_name : '免费版';
+            const hint = getMembershipStatusMessage(latest)
+              || res.message
+              || `当前套餐为「${planName}」，未开通该功能或次数已用完。`;
+            showUpgradeModal(permissionCode, title, hint);
+            return false;
+          });
+        })
+        .catch((error) => {
+          showUpgradeModal(permissionCode, title, error.message || '权限校验失败，请稍后重试');
+          return false;
+        });
     });
 }
 
@@ -171,5 +175,6 @@ module.exports = {
   requirePermission,
   getCurrentUserId,
   syncUserIdentity,
+  refreshUserIdentityFromServer,
   goMembershipPage
 };
