@@ -2,11 +2,7 @@ const { request, formatRequestError, BASE_URL } = require('../../utils/request')
 const { getCurrentUserId, syncUserIdentity, fetchEntitlements } = require('../../utils/membership');
 const { requestVirtualPayment, getLoginCode } = require('../../utils/virtualPayment');
 
-const PLAN_BEAN_GRANT = {
-  trial: 2000,
-  standard: 12000,
-  premium: 24000
-};
+const { enrichPlan, getPlanDisplayName, PLAN_BEAN_GRANT } = require('../../utils/planCatalog');
 
 const PLAN_FEATURES = {
   free: ['完整测评流程', '基础院校专业查询', '近2年分数线', '手动志愿模拟'],
@@ -30,6 +26,7 @@ Page({
     plans: [],
     entitlements: null,
     currentPlanCode: 'free',
+    currentPlanName: '免费版',
     orders: [],
     membershipNotice: null,
     beanBalance: 0,
@@ -40,15 +37,16 @@ Page({
     this.loadData();
   },
   mapPlans(list) {
-    return (list || []).map((plan) => {
+    return (list || []).map((rawPlan) => {
+      const plan = enrichPlan(rawPlan);
       const price = Number(plan.price) || 0;
-      const beanGrant = PLAN_BEAN_GRANT[plan.plan_code] || 0;
+      const beanGrant = plan.beanGrant || PLAN_BEAN_GRANT[plan.plan_code] || 0;
       return {
         ...plan,
-        priceText: price === 0 ? '免费' : `¥${plan.price}`,
+        priceText: price === 0 ? '免费' : `¥${price}`,
         beanGrant,
         beanPriceText: beanGrant > 0 ? `${beanGrant}星鼎豆` : '免费',
-        displayPriceText: beanGrant > 0 ? `¥${plan.price} · ${beanGrant}星鼎豆` : '免费',
+        displayPriceText: beanGrant > 0 ? `¥${price} · ${beanGrant}星鼎豆` : '免费',
         durationText: Number(plan.duration_days) > 0 ? `${plan.duration_days}天` : '长期',
         features: PLAN_FEATURES[plan.plan_code] || [],
         canPay: price > 0
@@ -88,14 +86,22 @@ Page({
           ]);
 
         const currentPlanCode = entitlements.plan ? entitlements.plan.plan_code : 'free';
+        const currentPlanName = getPlanDisplayName(currentPlanCode, entitlements.plan && entitlements.plan.plan_name);
         const loadError = errors.length
           ? `${errors.join('；')}。请确认接口地址为 ${BASE_URL}`
           : '';
 
         this.setData({
           plans,
-          entitlements,
+          entitlements: {
+            ...entitlements,
+            plan: {
+              ...(entitlements.plan || { plan_code: 'free', plan_name: '免费版' }),
+              plan_name: currentPlanName
+            }
+          },
           currentPlanCode,
+          currentPlanName,
           virtualPayEnabled: !!payStatus.enabled,
           orders: (statusRes.orders || []).map((item) => ({
             ...item,

@@ -4,10 +4,12 @@ const { request } = require('./request');
 const REPORT_BEAN_COST = 500;
 const NON_REFUND_NOTICE = '星鼎豆充值后不支持退款，已消费的星鼎豆不退还。';
 
+const { PLAN_CATALOG, PLAN_BEAN_GRANT } = require('./planCatalog');
+
 const PLAN_GRANTS = {
-  trial: { name: '普通卡', beans: 2000, price: 19.9 },
-  standard: { name: '金卡', beans: 12000, price: 99 },
-  premium: { name: '白金卡', beans: 24000, price: 168 }
+  trial: { name: PLAN_CATALOG.trial.plan_name, beans: PLAN_BEAN_GRANT.trial, price: 19.9 },
+  standard: { name: PLAN_CATALOG.standard.plan_name, beans: PLAN_BEAN_GRANT.standard, price: 99 },
+  premium: { name: PLAN_CATALOG.premium.plan_name, beans: PLAN_BEAN_GRANT.premium, price: 168 }
 };
 
 function fetchBeanBalance() {

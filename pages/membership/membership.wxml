@@ -1,7 +1,7 @@
 <view class="container">
   <view class="card member-hero">
     <view class="section-title">会员中心</view>
-    <view class="sub-text">当前套餐：{{entitlements && entitlements.plan ? entitlements.plan.plan_name : '免费版'}}</view>
+    <view class="sub-text">当前套餐：{{currentPlanName || '免费版'}}</view>
     <view wx:if="{{beanBalance > 0}}" class="sub-text">星鼎豆余额：{{beanBalance}}（每次生成报告扣 500 豆）</view>
     <view wx:if="{{entitlements.membership && entitlements.membership.expires_at}}" class="sub-text">到期时间：{{entitlements.membership.expires_at}}</view>
     <view wx:else class="sub-text">免费功能长期可用，充值星鼎豆解锁更多智能填报能力。</view>
@@ -36,7 +36,7 @@
       <view wx:for="{{item.features}}" wx:key="*this" class="feature-item">{{item}}</view>
     </view>
     <button wx:if="{{item.plan_code === currentPlanCode}}" class="secondary-btn" disabled>当前套餐</button>
-    <button wx:elif="{{item.canPay}}" class="primary-btn" data-index="{{index}}" loading="{{paying}}" disabled="{{paying}}" bindtap="startPay">立即支付</button>
+    <button wx:elif="{{item.canPay}}" class="primary-btn" data-index="{{index}}" loading="{{paying}}" disabled="{{paying}}" bindtap="startPay">立即充值</button>
     <button wx:else class="secondary-btn" disabled>免费使用</button>
   </view>
 

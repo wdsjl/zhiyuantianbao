@@ -664,7 +664,15 @@ def api_membership_open_request(payload: OpenRequestCreate):
 
 @app.get('/api/membership/plans')
 def api_membership_plans():
-    return {'list': [plan for plan in list_plans() if plan.get('is_active')]}
+    from bean_service import apply_plan_catalog, sync_plan_catalog
+    sync_plan_catalog()
+    return {
+        'list': [
+            apply_plan_catalog(plan)
+            for plan in list_plans()
+            if plan.get('is_active')
+        ]
+    }
 
 
 @app.post('/api/membership/permissions/{permission_code}/consume')

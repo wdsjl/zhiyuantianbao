@@ -59,6 +59,20 @@ def ensure_bean_tables() -> None:
         connection.commit()
 
 
+def apply_plan_catalog(plan: dict[str, Any] | None) -> dict[str, Any]:
+    if not plan:
+        return {}
+    code = str(plan.get('plan_code') or '')
+    meta = PLAN_CATALOG.get(code, {})
+    enriched = dict(plan)
+    if meta:
+        enriched['plan_name'] = meta['plan_name']
+        enriched['description'] = meta['description']
+    if code in PLAN_BEAN_GRANT:
+        enriched['bean_grant'] = PLAN_BEAN_GRANT[code]
+    return enriched
+
+
 def sync_plan_catalog() -> None:
     from membership_service import ensure_membership_tables
     ensure_membership_tables()
