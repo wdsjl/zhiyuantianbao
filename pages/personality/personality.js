@@ -74,7 +74,6 @@ Page({
     this.setData({ result, aiCareerReport, pdfReady: false, pdfFileName: '' });
     this._pdfFilePath = '';
     this._pdfFileName = '';
-    const profile = loadActiveProfileSync();
     const studentId = profile.studentId || profile.student_id;
     if (!studentId) return;
     loadServerAssessment(studentId).then((assessment) => {
