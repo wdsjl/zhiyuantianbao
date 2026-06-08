@@ -125,3 +125,15 @@
 .error-card button {
   margin-top: 20rpx;
 }
+
+.member-support-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.member-support-actions button {
+  flex: 1;
+  min-width: 240rpx;
+}

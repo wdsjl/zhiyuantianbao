@@ -1,6 +1,5 @@
 const { request, formatRequestError, BASE_URL } = require('../../utils/request');
-const { ensureWechatLogin } = require('../../utils/auth');
-const { fetchEntitlements, getCurrentUserId, syncUserIdentity } = require('../../utils/membership');
+const { getCurrentUserId, syncUserIdentity, fetchEntitlements } = require('../../utils/membership');
 
 const PLAN_FEATURES = {
   free: ['完整测评流程', '基础院校专业查询', '近2年分数线', '手动志愿模拟'],
@@ -16,15 +15,22 @@ const ORDER_STATUS_TEXT = {
   cancelled: '已取消'
 };
 
+const REQUEST_STATUS_TEXT = {
+  pending: '待处理',
+  processed: '已开通',
+  cancelled: '已取消'
+};
+
 Page({
   data: {
     loading: false,
-    paying: false,
-    wechatPayEnabled: false,
+    submitting: false,
     plans: [],
     entitlements: null,
     currentPlanCode: 'free',
     orders: [],
+    openRequests: [],
+    supportContact: {},
     membershipNotice: null,
     loadError: ''
   },
@@ -38,7 +44,7 @@ Page({
       priceText: Number(plan.price) === 0 ? '免费' : `¥${plan.price}`,
       durationText: Number(plan.duration_days) > 0 ? `${plan.duration_days}天` : '长期',
       features: PLAN_FEATURES[plan.plan_code] || [],
-      canPay: Number(plan.price) > 0
+      canApply: Number(plan.price) > 0
     }));
   },
   loadData() {
@@ -47,11 +53,13 @@ Page({
     const tasks = [
       request({ url: '/api/membership/plans' }).catch((error) => ({ error })),
       fetchEntitlements().catch((error) => ({ error })),
-      request({ url: '/api/payments/wechat/status' }).catch(() => ({ enabled: false })),
-      this.fetchMyOrders(userId)
+      request({ url: '/api/membership/support-contact' }).catch(() => ({})),
+      userId
+        ? request({ url: '/api/membership/my-status', data: { user_id: Number(userId) } }).catch(() => ({}))
+        : Promise.resolve({})
     ];
     Promise.all(tasks)
-      .then(([plansRes, entitlementsRes, payStatus, orders]) => {
+      .then(([plansRes, entitlementsRes, supportContact, statusRes]) => {
         const errors = [];
         if (plansRes && plansRes.error) errors.push(`套餐列表：${formatRequestError(plansRes.error)}`);
         if (entitlementsRes && entitlementsRes.error) errors.push(`会员状态：${formatRequestError(entitlementsRes.error)}`);
@@ -70,22 +78,26 @@ Page({
 
         const currentPlanCode = entitlements.plan ? entitlements.plan.plan_code : 'free';
         const loadError = errors.length
-          ? `${errors.join('；')}。请确认已更新代码且接口地址为 ${BASE_URL}`
+          ? `${errors.join('；')}。请确认接口地址为 ${BASE_URL}`
           : '';
 
         this.setData({
           plans,
           entitlements,
           currentPlanCode,
-          wechatPayEnabled: !!payStatus.enabled,
-          orders,
+          supportContact: supportContact || {},
+          orders: (statusRes.orders || []).map((item) => ({
+            ...item,
+            statusText: ORDER_STATUS_TEXT[item.pay_status] || item.pay_status,
+            amountText: `¥${item.amount || 0}`
+          })),
+          openRequests: (statusRes.requests || []).map((item) => ({
+            ...item,
+            statusText: REQUEST_STATUS_TEXT[item.request_status] || item.request_status
+          })),
           membershipNotice: this.buildMembershipNotice(entitlements, plans),
           loadError
         });
-
-        if (loadError) {
-          wx.showToast({ title: '部分会员信息加载失败', icon: 'none', duration: 3000 });
-        }
       })
       .catch((error) => {
         const message = formatRequestError(error) || '会员信息加载失败';
@@ -93,12 +105,11 @@ Page({
           loadError: `${message}。请确认接口地址为 ${BASE_URL}`,
           plans: this.mapPlans([
             { plan_code: 'trial', plan_name: '体验月卡', price: 19.9, duration_days: 30, description: '30 天体验核心能力' },
-            { plan_code: 'standard', plan_name: '标准年卡', price: 99, duration_days: 365, description: '主推款，智能推荐、风险检测、AI 解读、PDF 导出' },
+            { plan_code: 'standard', plan_name: '标准年卡', price: 99, duration_days: 365, description: '主推款' },
             { plan_code: 'premium', plan_name: '尊享年卡', price: 168, duration_days: 365, description: '深度对比、提醒、答疑通道' }
           ]),
           entitlements: { plan: { plan_name: '免费版', plan_code: 'free' }, membership: null, permissions: {} }
         });
-        wx.showToast({ title: '会员信息加载失败', icon: 'none' });
       })
       .finally(() => {
         this.setData({ loading: false });
@@ -117,7 +128,7 @@ Page({
           type: 'warning',
           planCode: membership.plan_code,
           planName: membership.plan_name || '会员',
-          text: `您的${membership.plan_name || '会员'}将在${diffDays}天后到期，建议及时续费。`,
+          text: `您的${membership.plan_name || '会员'}将在${diffDays}天后到期，可提交续费申请。`,
           priceText: plan ? plan.priceText : ''
         };
       }
@@ -129,21 +140,11 @@ Page({
         type: 'expired',
         planCode: latest.plan_code,
         planName: latest.plan_name || '会员',
-        text: `您的${latest.plan_name || '会员'}已过期，续费后可继续使用会员功能。`,
+        text: `您的${latest.plan_name || '会员'}已过期，可提交续费申请。`,
         priceText: plan ? plan.priceText : ''
       };
     }
     return null;
-  },
-  fetchMyOrders(userId) {
-    if (!userId) return Promise.resolve([]);
-    return request({ url: '/api/membership/my-status', data: { user_id: Number(userId) } })
-      .then((res) => (res.orders || []).map((item) => ({
-        ...item,
-        statusText: ORDER_STATUS_TEXT[item.pay_status] || item.pay_status,
-        amountText: `¥${item.amount || 0}`
-      })))
-      .catch(() => []);
   },
 
   ensureUserReady() {
@@ -151,7 +152,7 @@ Page({
     if (!userId) {
       wx.showModal({
         title: '请先完善档案',
-        content: '支付开通会员前，请先完成登录和学生档案。',
+        content: '开通会员前，请先完成登录和学生档案。',
         confirmText: '去完善',
         success: (res) => {
           if (res.confirm) wx.navigateTo({ url: '/pages/profile/profile' });
@@ -170,136 +171,88 @@ Page({
       wx.showToast({ title: '套餐信息加载失败', icon: 'none' });
       return;
     }
-    this.payForPlan(plan, true);
+    this.submitOpenRequest(plan, true);
   },
 
-  payForPlan(eventOrPlan, isRenewal) {
+  submitOpenRequest(eventOrPlan, isRenewal) {
     const plan = eventOrPlan && eventOrPlan.currentTarget
       ? this.data.plans[eventOrPlan.currentTarget.dataset.index]
       : eventOrPlan;
-    if (!plan || this.data.paying) return;
+    if (!plan || this.data.submitting) return;
 
     const userId = this.ensureUserReady();
     if (!userId) return;
 
-    if (!plan.canPay) {
-      wx.showToast({ title: '当前套餐无需支付', icon: 'none' });
+    if (!plan.canApply) {
+      wx.showToast({ title: '当前套餐无需开通', icon: 'none' });
       return;
     }
 
-    if (!this.data.wechatPayEnabled) {
-      wx.showModal({
-        title: '支付未就绪',
-        content: '微信支付尚未完成服务端配置，请联系管理员配置商户证书和 API 密钥。',
-        showCancel: false
-      });
-      return;
-    }
-
+    const profile = wx.getStorageSync('studentProfile') || {};
     wx.showModal({
-      title: isRenewal ? '确认续费' : '确认支付',
-      content: `将支付 ${plan.priceText} 开通「${plan.plan_name}」，有效期 ${plan.durationText}。`,
-      confirmText: '立即支付',
+      title: isRenewal ? '提交续费申请' : '提交开通申请',
+      content: `将提交「${plan.plan_name}」（${plan.priceText}）开通申请。客服确认后会为您开通会员，请按页面说明联系客服。`,
+      confirmText: '提交申请',
       success: (res) => {
         if (!res.confirm) return;
-        this.createAndPay(userId, plan, isRenewal);
+        this.doSubmitOpenRequest(userId, plan, isRenewal, profile);
       }
     });
   },
 
-  createAndPay(userId, plan, isRenewal) {
-    this.setData({ paying: true });
-    ensureWechatLogin()
-      .then(() => {
-        const freshUserId = getCurrentUserId();
-        if (!freshUserId) {
-          throw new Error('请先完善学生档案后再支付');
-        }
-        return request({
-          url: '/api/payments/wechat/create',
-          method: 'POST',
-          data: {
-            user_id: Number(freshUserId),
-            plan_code: plan.plan_code,
-            request_type: isRenewal ? 'renew' : 'open'
+  doSubmitOpenRequest(userId, plan, isRenewal, profile) {
+    this.setData({ submitting: true });
+    request({
+      url: '/api/membership/open-requests',
+      method: 'POST',
+      data: {
+        user_id: Number(userId),
+        plan_code: plan.plan_code,
+        contact_name: profile.name || '',
+        contact_phone: profile.phone || '',
+        message: `${isRenewal ? '续费' : '开通'}${plan.plan_name}`,
+        request_type: isRenewal ? 'renew' : 'open'
+      }
+    })
+      .then((res) => {
+        const support = this.data.supportContact || {};
+        const note = support.support_note || '申请已提交，请联系客服并备注手机号与套餐名称。';
+        wx.showModal({
+          title: res.duplicate ? '已提交过申请' : '申请已提交',
+          content: `${res.message || '客服确认后会为您开通会员。'}\n\n${note}${support.support_wechat ? `\n客服微信：${support.support_wechat}` : ''}${support.support_phone ? `\n客服电话：${support.support_phone}` : ''}`,
+          confirmText: support.support_wechat ? '复制客服微信' : '知道了',
+          cancelText: '关闭',
+          success: (modalRes) => {
+            if (modalRes.confirm && support.support_wechat) {
+              wx.setClipboardData({ data: support.support_wechat });
+            }
           }
         });
+        this.loadData();
       })
-      .then((createRes) => {
-        const payUserId = getCurrentUserId();
-        const params = createRes.pay_params || {};
-        return new Promise((resolve, reject) => {
-          wx.requestPayment({
-            timeStamp: params.timeStamp,
-            nonceStr: params.nonceStr,
-            package: params.package,
-            signType: params.signType || 'RSA',
-            paySign: params.paySign,
-            success: () => resolve({ orderNo: createRes.order_no, payUserId }),
-            fail: (error) => reject(error)
-          });
-        });
-      })
-      .then(({ orderNo, payUserId }) => this.confirmPayment(orderNo, 0, payUserId))
       .catch((error) => {
-        if (error && error.errMsg && error.errMsg.includes('cancel')) {
-          wx.showToast({ title: '已取消支付', icon: 'none' });
-          return;
-        }
-        let content = (error && error.message) || (error && error.errMsg) || '请稍后重试';
-        if (content.includes('请先使用微信登录')) {
-          content = '当前账号未绑定微信身份。请确认服务器已配置 WECHAT_SECRET，然后关闭小程序重新进入，再完善档案后支付。';
-        }
-        wx.showModal({
-          title: '支付失败',
-          content,
-          showCancel: false
-        });
+        wx.showToast({ title: error.message || '提交失败', icon: 'none' });
       })
       .finally(() => {
-        this.setData({ paying: false });
+        this.setData({ submitting: false });
       });
   },
 
-  confirmPayment(orderNo, retry = 0, payUserId = '') {
-    const userId = payUserId || getCurrentUserId();
-    return request({
-      url: `/api/payments/wechat/orders/${orderNo}`,
-      data: { user_id: Number(userId) }
-    })
-      .then((res) => {
-        const order = res.order || {};
-        if (order.pay_status === 'paid') {
-          wx.removeStorageSync('memberEntitlements');
-          const profile = wx.getStorageSync('studentProfile') || {};
-          wx.setStorageSync('studentProfile', { ...profile, userId: String(userId) });
-          wx.setStorageSync('loginUser', {
-            ...(wx.getStorageSync('loginUser') || {}),
-            user_id: Number(userId)
-          });
-          return fetchEntitlements().then((entitlements) => {
-            const planName = entitlements && entitlements.plan ? entitlements.plan.plan_name : '会员';
-            wx.showModal({
-              title: '支付成功',
-              content: `已开通「${planName}」，现在可以生成个性化报告等功能。`,
-              showCancel: false,
-              success: () => {
-                this.loadData();
-              }
-            });
-          });
-        }
-        if (retry < 5) {
-          return new Promise((resolve) => {
-            setTimeout(() => resolve(this.confirmPayment(orderNo, retry + 1, userId)), 1200);
-          });
-        }
-        wx.showModal({
-          title: '支付处理中',
-          content: '支付结果确认中，请稍后在会员中心查看订单状态。',
-          showCancel: false,
-          success: () => this.loadData()
-        });
-      });
+  copySupportWechat() {
+    const wechat = (this.data.supportContact || {}).support_wechat;
+    if (!wechat) {
+      wx.showToast({ title: '暂未配置客服微信', icon: 'none' });
+      return;
+    }
+    wx.setClipboardData({ data: wechat });
+  },
+
+  callSupportPhone() {
+    const phone = (this.data.supportContact || {}).support_phone;
+    if (!phone) {
+      wx.showToast({ title: '暂未配置客服电话', icon: 'none' });
+      return;
+    }
+    wx.makePhoneCall({ phoneNumber: phone });
   }
 });

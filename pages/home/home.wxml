@@ -9,10 +9,10 @@
 
   <view class="card pay-banner" bindtap="goMembership">
     <view class="pay-banner-main">
-      <view class="pay-banner-title">开通会员 · 微信支付</view>
+      <view class="pay-banner-title">会员服务 · 联系客服开通</view>
       <view class="sub-text">智能志愿推荐、AI 解读、风险检测、PDF 导出一键解锁</view>
     </view>
-    <button class="primary-btn pay-banner-btn" catchtap="goMembership">去开通</button>
+    <button class="primary-btn pay-banner-btn" catchtap="goMembership">了解会员</button>
   </view>
 
   <view class="card flow-card">
@@ -64,6 +64,7 @@
       <view class="sub-text">{{flow.currentStep.title}}</view>
     </view>
     <view class="action-card" bindtap="goStudentReport">
+      <ai-generated-label />
       <view class="action-title">个性化报告</view>
       <view class="sub-text">分数+性格+需求，AI 专属报告</view>
     </view>

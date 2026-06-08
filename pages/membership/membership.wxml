@@ -19,7 +19,7 @@
   <view wx:if="{{membershipNotice}}" class="card expire-card {{membershipNotice.type}}">
     <view class="section-title">会员提醒</view>
     <view class="sub-text">{{membershipNotice.text}}</view>
-    <button class="primary-btn renew-btn" loading="{{paying}}" disabled="{{paying}}" bindtap="renewCurrentPlan">立即续费</button>
+    <button class="primary-btn renew-btn" loading="{{submitting}}" disabled="{{submitting}}" bindtap="renewCurrentPlan">提交续费申请</button>
   </view>
 
   <view wx:for="{{plans}}" wx:key="plan_code" class="card plan-card {{item.plan_code === currentPlanCode ? 'current-plan' : ''}}">
@@ -35,8 +35,18 @@
       <view wx:for="{{item.features}}" wx:key="*this" class="feature-item">{{item}}</view>
     </view>
     <button wx:if="{{item.plan_code === currentPlanCode}}" class="secondary-btn" disabled>当前套餐</button>
-    <button wx:elif="{{item.canPay}}" class="primary-btn" data-index="{{index}}" loading="{{paying}}" disabled="{{paying}}" bindtap="payForPlan">立即支付开通</button>
+    <button wx:elif="{{item.canApply}}" class="primary-btn" data-index="{{index}}" loading="{{submitting}}" disabled="{{submitting}}" bindtap="submitOpenRequest">提交开通申请</button>
     <button wx:else class="secondary-btn" disabled>免费使用</button>
+  </view>
+
+  <view class="card" wx:if="{{openRequests.length}}">
+    <view class="section-title">我的开通申请</view>
+    <view wx:for="{{openRequests}}" wx:key="request_id" class="status-row">
+      <view>
+        <view class="status-title">{{item.plan_name}} · {{item.statusText}}</view>
+        <view class="sub-text">申请时间：{{item.created_at}}</view>
+      </view>
+    </view>
   </view>
 
   <view class="card" wx:if="{{orders.length}}">
@@ -52,8 +62,15 @@
   </view>
 
   <view class="card">
-    <view class="section-title">支付说明</view>
-    <view class="warn-box">会员套餐通过微信支付完成开通，支付成功后系统自动开通对应权益。</view>
+    <view class="section-title">开通说明</view>
+    <view class="warn-box">会员为虚拟服务。请在本页提交开通申请后，按下方方式联系客服完成开通。小程序内暂不直接收款。</view>
+    <view class="warn-box">{{supportContact.support_note || '提交申请后请联系客服，备注手机号和套餐名称。'}}</view>
+    <view wx:if="{{supportContact.support_wechat}}" class="sub-text">客服微信：{{supportContact.support_wechat}}</view>
+    <view wx:if="{{supportContact.support_phone}}" class="sub-text">客服电话：{{supportContact.support_phone}}</view>
+    <view class="member-support-actions">
+      <button wx:if="{{supportContact.support_wechat}}" class="secondary-btn" bindtap="copySupportWechat">复制客服微信</button>
+      <button wx:if="{{supportContact.support_phone}}" class="secondary-btn" bindtap="callSupportPhone">拨打客服电话</button>
+    </view>
     <view class="warn-box">所有推荐、风险检测和 AI 解读仅供参考，不构成录取承诺，最终以官方招生政策和正式填报系统为准。</view>
   </view>
 </view>

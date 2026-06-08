@@ -67,10 +67,14 @@
     </view>
 
     <view class="card ai-report-card">
+      <ai-generated-label />
       <view class="section-title">AI 深度职业报告</view>
       <view class="sub-text">结合你的霍兰德结果、分数位次与批次，生成更具体的填报策略建议。该报告会同步作为志愿方案 AI 解读的数据基础。</view>
       <button class="primary-btn" bindtap="generateAiReport" loading="{{aiLoading}}">{{aiCareerReport ? '重新生成深度报告' : '生成 AI 深度报告'}}</button>
-      <view wx:if="{{aiCareerReport}}" class="ai-report-box">{{aiCareerReport}}</view>
+      <view wx:if="{{aiCareerReport}}" class="ai-report-box">
+        <ai-generated-label />
+        <text>{{aiCareerReport}}</text>
+      </view>
       <view wx:if="{{pdfFileName}}" class="sub-text">PDF 文件名：{{pdfFileName}}</view>
       <view wx:if="{{aiCareerReport}}" class="report-action-row">
         <button class="secondary-btn copy-btn" bindtap="copyAiReport">复制报告</button>

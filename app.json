@@ -47,5 +47,8 @@
     ]
   },
   "style": "v2",
-  "sitemapLocation": "sitemap.json"
+  "sitemapLocation": "sitemap.json",
+  "usingComponents": {
+    "ai-generated-label": "/components/ai-generated-label/ai-generated-label"
+  }
 }

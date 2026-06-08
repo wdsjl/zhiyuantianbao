@@ -1,0 +1,13 @@
+.ai-generated-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 18rpx;
+  border-radius: 8rpx;
+  background: #fff7e6;
+  color: #d46b08;
+  border: 1rpx solid #ffd591;
+  font-size: 22rpx;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 16rpx;
+}

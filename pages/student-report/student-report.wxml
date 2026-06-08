@@ -1,5 +1,6 @@
 <view class="container">
   <view class="card hero-card">
+    <ai-generated-label />
     <view class="section-title">AI 个性化填报报告</view>
     <view class="sub-text">流程第 3～4 步：填写个人需求后，系统将分数、霍兰德测评和偏好发给大模型，生成你的专属报告。</view>
   </view>
@@ -52,11 +53,13 @@
   </view>
 
   <view class="card">
+    <ai-generated-label />
     <button class="primary-btn" bindtap="generateReport" loading="{{loading}}">生成个性化报告</button>
     <view class="warn-box">报告由大模型基于你填写的数据生成，仅供参考，不构成录取承诺。</view>
   </view>
 
   <view wx:if="{{report}}" class="card report-card">
+    <ai-generated-label />
     <view class="section-title">你的专属报告</view>
     <view class="report-content">{{report}}</view>
     <view wx:if="{{pdfFileName}}" class="sub-text" style="margin-bottom:12px">PDF 文件名：{{pdfFileName}}</view>

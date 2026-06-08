@@ -20,7 +20,7 @@
     <view class="button-row">
       <button class="primary-btn" bindtap="generatePlan">智能生成</button>
       <button class="secondary-btn" bindtap="inspectRisk">风险排查</button>
-      <button class="secondary-btn" loading="{{aiLoading}}" bindtap="explainPlan">AI 解读</button>
+      <button class="secondary-btn" loading="{{aiLoading}}" bindtap="explainPlan">AI 志愿解读</button>
     </view>
   </view>
 
@@ -34,6 +34,7 @@
   </view>
 
   <view wx:if="{{aiExplain}}" class="card ai-explain-card">
+    <ai-generated-label />
     <view class="section-title">AI 志愿方案解读</view>
     <view class="ai-explain-text">{{aiExplain}}</view>
     <view class="ai-action-row">
