@@ -2,7 +2,7 @@
   "miniprogramRoot": "./",
   "projectname": "zhiyuantianbao",
   "description": "高考志愿填报微信小程序",
-  "appid": "touristappid",
+  "appid": "wx58ed9703d22d85c2",
   "setting": {
     "urlCheck": false,
     "es6": true,
