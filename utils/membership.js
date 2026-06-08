@@ -36,15 +36,53 @@ function getCurrentUserId() {
   return syncUserIdentity();
 }
 
+function refreshUserIdentityFromServer() {
+  const profile = wx.getStorageSync('studentProfile') || {};
+  const loginUser = wx.getStorageSync('loginUser') || {};
+  const openid = loginUser.openid || profile.openid || '';
+  const phone = profile.phone || '';
+  if (!openid && !phone) {
+    return Promise.resolve(getCurrentUserId());
+  }
+  const query = openid ? { openid } : { phone };
+  return request({ url: '/api/profile', data: query })
+    .then((res) => {
+      const serverProfile = res.profile || {};
+      if (!serverProfile.user_id) return getCurrentUserId();
+      const updatedProfile = {
+        ...profile,
+        userId: serverProfile.user_id,
+        studentId: serverProfile.student_id || profile.studentId,
+        openid: serverProfile.openid || openid,
+        phone: serverProfile.phone || phone,
+        name: serverProfile.name || profile.name,
+        province: serverProfile.province || profile.province,
+        score: serverProfile.score || profile.score,
+        rank: serverProfile.rank || profile.rank,
+        subjectCombination: serverProfile.subject_combination || profile.subjectCombination,
+        targetBatch: serverProfile.target_batch || profile.targetBatch
+      };
+      wx.setStorageSync('studentProfile', updatedProfile);
+      wx.setStorageSync('loginUser', {
+        ...loginUser,
+        user_id: serverProfile.user_id,
+        openid: serverProfile.openid || openid,
+        has_profile: true
+      });
+      wx.removeStorageSync('memberEntitlements');
+      return String(serverProfile.user_id);
+    })
+    .catch(() => getCurrentUserId());
+}
+
 function fetchEntitlements() {
-  const userId = getCurrentUserId();
-  return request({
+  return refreshUserIdentityFromServer().then((userId) => request({
     url: '/api/membership/entitlements',
     data: userId ? { user_id: Number(userId) } : {}
   }).then((res) => {
     wx.setStorageSync('memberEntitlements', res);
     return res;
-  });
+  }));
 }
 
 function getCachedEntitlements() {
