@@ -199,7 +199,7 @@ Page({
           wx.setStorageSync('studentProfile', saved);
           const { BASE_URL } = require('../../utils/request');
           const domainHint = (error.errMsg || '').includes('domain list')
-            ? '请在微信公众平台 → 开发管理 → 开发设置 → 服务器域名，将 request 合法域名配置为 api.zntb.lhyun.net（不要带 https://）。'
+            ? '请在微信公众平台 → 开发管理 → 开发设置 → 服务器域名，request 合法域名填写：https://api.zntb.lhyun.net（须带 https://，末尾不要加分号）。'
             : `请确认小程序已更新代码（接口 ${BASE_URL}），服务器 pm2 status 中 zhiyuan-backend 为 online，并在浏览器打开 ${BASE_URL}/health 应显示 {"status":"ok"}。`;
           wx.showModal({
             title: '无法连接后端',
