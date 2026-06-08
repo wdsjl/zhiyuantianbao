@@ -7,6 +7,7 @@ const {
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
 const { formatReportContent } = require('../../utils/reportFormat');
+const { confirmReportBeanDeduction } = require('../../utils/reportBean');
 const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
@@ -149,9 +150,12 @@ Page({
   },
   generateReport() {
     if (!this.validateBeforeGenerate()) return;
-    requirePermission('personality_deep', '个性化填报报告', { consume: true }).then((allowed) => {
-      if (!allowed) return;
-      this.doGenerateReport();
+    confirmReportBeanDeduction('个性化填报报告').then((confirmed) => {
+      if (!confirmed) return;
+      requirePermission('personality_deep', '个性化填报报告', { consume: true }).then((allowed) => {
+        if (!allowed) return;
+        this.doGenerateReport();
+      });
     });
   },
   doGenerateReport() {

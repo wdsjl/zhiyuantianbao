@@ -8,6 +8,7 @@ const {
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
 const { formatReportContent } = require('../../utils/reportFormat');
+const { confirmReportBeanDeduction } = require('../../utils/reportBean');
 const { loadActiveProfileSync, resolveStudentId } = require('../../utils/profileHelper');
 
 function buildQuestions(answers = {}) {
@@ -135,9 +136,12 @@ Page({
       wx.showToast({ title: '请先完成测评', icon: 'none' });
       return;
     }
-    requirePermission('personality_deep', '深度职业兴趣报告', { consume: true }).then((allowed) => {
-      if (!allowed) return;
-      this.doGenerateAiReport();
+    confirmReportBeanDeduction('AI 深度职业报告').then((confirmed) => {
+      if (!confirmed) return;
+      requirePermission('personality_deep', '深度职业兴趣报告', { consume: true }).then((allowed) => {
+        if (!allowed) return;
+        this.doGenerateAiReport();
+      });
     });
   },
   doGenerateAiReport() {
