@@ -52,6 +52,10 @@
     </view>
   </view>
 
+  <view class="card version-card">
+    <view class="sub-text">界面版本：星鼎豆体系 v2（普通卡/金卡/白金卡）</view>
+  </view>
+
   <view class="card">
     <view class="section-title">支付说明</view>
     <view class="warn-box">普通卡 ¥19.9 到账 2000 星鼎豆；金卡 ¥99 到账 12000 星鼎豆；白金卡 ¥168 到账 24000 星鼎豆。</view>
