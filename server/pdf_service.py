@@ -1,5 +1,13 @@
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote
+
+
+PDF_FILENAME_LABELS = {
+    'student_report': '个性化报告',
+    'career_report': '霍兰德测评报告',
+    'volunteer_draft': '填报志愿',
+}
 
 
 def pdf_text(value: Any) -> str:
@@ -12,14 +20,28 @@ def hex_text(value: Any) -> str:
     return pdf_text(value).encode('utf-16-be').hex().upper()
 
 
+def normalize_pdf_filename_part(value: str, fallback: str = '学生') -> str:
+    text = pdf_text(value).strip() or fallback
+    for char in ['/', '\\', ':', '*', '?', '"', '<', '>', '|']:
+        text = text.replace(char, '')
+    return text.strip() or fallback
+
+
+def build_student_pdf_filename(student: dict, kind: str) -> str:
+    name = normalize_pdf_filename_part(student.get('name') or student.get('student_name') or '')
+    label = PDF_FILENAME_LABELS.get(kind, '报告')
+    return f'{name}的{label}.pdf'
+
+
 def escape_pdf_name(value: str) -> str:
-    keep = []
-    for char in value:
-        if char.isascii() and (char.isalnum() or char in ['-', '_']):
-            keep.append(char)
-        else:
-            keep.append('_')
-    return ''.join(keep).strip('_') or 'draft'
+    return normalize_pdf_filename_part(value, '导出')
+
+
+def pdf_content_disposition(filename: str) -> str:
+    base = filename[:-4] if filename.lower().endswith('.pdf') else filename
+    full_name = f'{normalize_pdf_filename_part(base, "导出")}.pdf'
+    ascii_fallback = full_name if full_name.isascii() else 'report.pdf'
+    return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quote(full_name)}'
 
 def wrap_text(value: Any, max_chars: int) -> list[str]:
     text = pdf_text(value)

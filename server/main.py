@@ -46,7 +46,7 @@ from admin_data_service import (
 from llm_settings_service import save_llm_settings, get_llm_settings, test_llm_connection, chat_completion
 from data_fetch_service import create_source, fetch_source, list_sources, list_tasks, list_records, update_source, delete_source, review_record, archive_record_to_brochure
 from auth_service import login_or_create_user, is_temp_openid, get_wechat_login_status
-from pdf_service import build_draft_pdf, build_text_report_pdf, escape_pdf_name
+from pdf_service import build_draft_pdf, build_text_report_pdf, build_student_pdf_filename, pdf_content_disposition
 from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, revoke_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, adjust_permission_usage, export_permission_usage_csv, expire_overdue_memberships
 from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv, refund_order
 from wechat_pay_service import create_wechat_payment, handle_wechat_pay_notify, sync_wechat_order_status, is_wechat_pay_ready
@@ -1574,7 +1574,10 @@ def _pdf_response(pdf: bytes, filename: str) -> Response:
     return Response(
         content=pdf,
         media_type='application/pdf',
-        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        headers={
+            'Content-Disposition': pdf_content_disposition(filename),
+            'X-Pdf-Filename': filename,
+        }
     )
 
 
@@ -1603,7 +1606,7 @@ def export_student_report_pdf(student_id: int):
     student = _load_student_or_404(student_id)
     body = _resolve_student_report_content(student_id, None)
     pdf = build_text_report_pdf('智愿填报 · 个性化高考志愿填报报告', student, body)
-    filename = f'{escape_pdf_name(student.get("name") or "student")}_report.pdf'
+    filename = build_student_pdf_filename(student, 'student_report')
     return _pdf_response(pdf, filename)
 
 
@@ -1612,7 +1615,7 @@ def export_student_report_pdf_post(request: ReportPdfExportRequest):
     student = _load_student_or_404(request.student_id)
     body = _resolve_student_report_content(request.student_id, request.report_content)
     pdf = build_text_report_pdf('智愿填报 · 个性化高考志愿填报报告', student, body)
-    filename = f'{escape_pdf_name(student.get("name") or "student")}_report.pdf'
+    filename = build_student_pdf_filename(student, 'student_report')
     return _pdf_response(pdf, filename)
 
 
@@ -1621,7 +1624,7 @@ def export_career_report_pdf(student_id: int):
     student = _load_student_or_404(student_id)
     body = _resolve_career_report_content(student_id, None)
     pdf = build_text_report_pdf('智愿填报 · 霍兰德职业兴趣深度报告', student, body)
-    filename = f'{escape_pdf_name(student.get("name") or "student")}_career.pdf'
+    filename = build_student_pdf_filename(student, 'career_report')
     return _pdf_response(pdf, filename)
 
 
@@ -1630,7 +1633,7 @@ def export_career_report_pdf_post(request: ReportPdfExportRequest):
     student = _load_student_or_404(request.student_id)
     body = _resolve_career_report_content(request.student_id, request.report_content)
     pdf = build_text_report_pdf('智愿填报 · 霍兰德职业兴趣深度报告', student, body)
-    filename = f'{escape_pdf_name(student.get("name") or "student")}_career.pdf'
+    filename = build_student_pdf_filename(student, 'career_report')
     return _pdf_response(pdf, filename)
 
 
@@ -1720,12 +1723,8 @@ def export_draft_pdf(draft_id: int, student_id: int):
             [draft_id]
         ).fetchall())
     pdf = build_draft_pdf(draft, student or {}, items)
-    filename = f'{escape_pdf_name(draft.get("draft_name") or "志愿方案")}.pdf'
-    return Response(
-        content=pdf,
-        media_type='application/pdf',
-        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
-    )
+    filename = build_student_pdf_filename(student or {}, 'volunteer_draft')
+    return _pdf_response(pdf, filename)
 
 
 @app.delete('/api/drafts/{draft_id}')

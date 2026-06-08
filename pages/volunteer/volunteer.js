@@ -1,6 +1,7 @@
-const { request, BASE_URL } = require('../../utils/request');
+const { request } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
 const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
+const { openPdfFromUrl, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
 
@@ -411,14 +412,11 @@ Page({
       confirmText: '导出 PDF',
       success: (res) => {
         if (!res.confirm) return;
-        wx.showLoading({ title: '生成中' });
-        wx.downloadFile({
-          url: `${BASE_URL}/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`,
-          success: (downloadRes) => {
-            if (downloadRes.statusCode !== 200) {
-              wx.showToast({ title: 'PDF 生成失败', icon: 'none' });
-              return;
-            }
+        openPdfFromUrl(
+          `/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`,
+          { fileName: buildStudentPdfFileName(profile, '填报志愿') }
+        )
+          .then(() => {
             const records = wx.getStorageSync('exportRecords') || [];
             records.unshift({
               id: Date.now(),
@@ -428,25 +426,11 @@ Page({
               type: 'pdf'
             });
             wx.setStorageSync('exportRecords', records);
-            wx.openDocument({
-              filePath: downloadRes.tempFilePath,
-              fileType: 'pdf',
-              showMenu: true,
-              success: () => {
-                wx.showToast({ title: 'PDF 已打开', icon: 'success' });
-              },
-              fail: () => {
-                wx.showToast({ title: 'PDF 打开失败', icon: 'none' });
-              }
-            });
-          },
-          fail: () => {
-            wx.showToast({ title: 'PDF 下载失败', icon: 'none' });
-          },
-          complete: () => {
-            wx.hideLoading();
-          }
-        });
+            wx.showToast({ title: 'PDF 已打开', icon: 'success' });
+          })
+          .catch((error) => {
+            wx.showToast({ title: error.message || 'PDF 导出失败', icon: 'none' });
+          });
       }
     });
   },

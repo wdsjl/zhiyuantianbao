@@ -1,7 +1,7 @@
 const { questions, options, calculateResult, migrateLegacyResult } = require('../../utils/personality');
 const { request } = require('../../utils/request');
 const { requirePermission, getCurrentUserId } = require('../../utils/membership');
-const { openPdfFromPost } = require('../../utils/pdfExport');
+const { openPdfFromPost, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { loadActiveProfileSync, resolveStudentId } = require('../../utils/profileHelper');
 
 function buildQuestions(answers = {}) {
@@ -187,6 +187,8 @@ Page({
       openPdfFromPost('/api/ai/career-report/pdf', {
         student_id: studentId,
         report_content: this.data.aiCareerReport
+      }, {
+        fileName: buildStudentPdfFileName(profile, '霍兰德测评报告')
       })
         .then(() => {
           wx.showModal({

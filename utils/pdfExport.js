@@ -1,5 +1,30 @@
 const { BASE_URL, formatRequestError } = require('./request');
 
+function sanitizeFileName(name) {
+  const text = String(name || '导出')
+    .replace(/[/\\:*?"<>|\r\n\t]/g, '')
+    .trim();
+  return text || '导出';
+}
+
+function ensurePdfExtension(fileName) {
+  const safeName = sanitizeFileName(fileName);
+  return safeName.toLowerCase().endsWith('.pdf') ? safeName : `${safeName}.pdf`;
+}
+
+function buildStudentPdfFileName(profile, label) {
+  const name = sanitizeFileName(
+    (profile && (profile.name || profile.studentName || profile.student_name)) || '学生'
+  );
+  return ensurePdfExtension(`${name}的${sanitizeFileName(label)}`);
+}
+
+function resolveResponseFileName(res, fallback) {
+  const headers = res.header || {};
+  const fromHeader = headers['X-Pdf-Filename'] || headers['x-pdf-filename'];
+  return ensurePdfExtension(fromHeader || fallback || `export_${Date.now()}.pdf`);
+}
+
 function buildDownloadError(downloadRes, failError) {
   if (failError && failError.errMsg) {
     const message = formatRequestError(failError);
@@ -50,19 +75,42 @@ function openDocument(filePath) {
   });
 }
 
-function writePdfBuffer(buffer) {
+function writePdfBuffer(buffer, fileName) {
   return new Promise((resolve, reject) => {
-    const filePath = `${wx.env.USER_DATA_PATH}/export_${Date.now()}.pdf`;
+    const safeName = ensurePdfExtension(fileName);
+    const filePath = `${wx.env.USER_DATA_PATH}/${safeName}`;
     wx.getFileSystemManager().writeFile({
       filePath,
       data: buffer,
       success: () => resolve(filePath),
-      fail: (error) => reject(new Error(error.errMsg || 'PDF 保存失败'))
+      fail: () => {
+        const fallbackPath = `${wx.env.USER_DATA_PATH}/export_${Date.now()}.pdf`;
+        wx.getFileSystemManager().writeFile({
+          filePath: fallbackPath,
+          data: buffer,
+          success: () => resolve(fallbackPath),
+          fail: (error) => reject(new Error(error.errMsg || 'PDF 保存失败'))
+        });
+      }
     });
   });
 }
 
-function openPdfFromPost(path, data) {
+function saveTempPdf(tempFilePath, fileName) {
+  return new Promise((resolve) => {
+    const safeName = ensurePdfExtension(fileName);
+    const destPath = `${wx.env.USER_DATA_PATH}/${safeName}`;
+    wx.getFileSystemManager().copyFile({
+      srcPath: tempFilePath,
+      destPath,
+      success: () => resolve(destPath),
+      fail: () => resolve(tempFilePath)
+    });
+  });
+}
+
+function openPdfFromPost(path, data, options) {
+  const opts = options || {};
   return new Promise((resolve, reject) => {
     wx.showLoading({ title: '生成 PDF...', mask: true });
     wx.request({
@@ -76,7 +124,8 @@ function openPdfFromPost(path, data) {
           reject(new Error(buildRequestError(res.statusCode, res.data)));
           return;
         }
-        writePdfBuffer(res.data)
+        const fileName = resolveResponseFileName(res, opts.fileName);
+        writePdfBuffer(res.data, fileName)
           .then((filePath) => openDocument(filePath))
           .then(resolve)
           .catch(reject);
@@ -87,7 +136,8 @@ function openPdfFromPost(path, data) {
   });
 }
 
-function openPdfFromUrl(path) {
+function openPdfFromUrl(path, options) {
+  const opts = options || {};
   return new Promise((resolve, reject) => {
     wx.showLoading({ title: '生成 PDF...', mask: true });
     wx.downloadFile({
@@ -97,7 +147,11 @@ function openPdfFromUrl(path) {
           reject(new Error(buildDownloadError(downloadRes, null)));
           return;
         }
-        openDocument(downloadRes.tempFilePath).then(resolve).catch(reject);
+        const fileName = opts.fileName || `export_${Date.now()}.pdf`;
+        saveTempPdf(downloadRes.tempFilePath, fileName)
+          .then((filePath) => openDocument(filePath))
+          .then(resolve)
+          .catch(reject);
       },
       fail: (error) => reject(new Error(buildDownloadError(null, error))),
       complete: () => wx.hideLoading()
@@ -107,5 +161,6 @@ function openPdfFromUrl(path) {
 
 module.exports = {
   openPdfFromUrl,
-  openPdfFromPost
+  openPdfFromPost,
+  buildStudentPdfFileName
 };

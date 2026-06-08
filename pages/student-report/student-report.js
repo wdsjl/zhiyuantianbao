@@ -1,6 +1,6 @@
 const { request } = require('../../utils/request');
 const { requirePermission, getCurrentUserId, fetchEntitlements } = require('../../utils/membership');
-const { openPdfFromPost } = require('../../utils/pdfExport');
+const { openPdfFromPost, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
@@ -201,6 +201,8 @@ Page({
       openPdfFromPost('/api/ai/student-report/pdf', {
         student_id: studentId,
         report_content: this.data.report
+      }, {
+        fileName: buildStudentPdfFileName(profile, '个性化报告')
       })
         .then(() => {
           wx.showModal({
