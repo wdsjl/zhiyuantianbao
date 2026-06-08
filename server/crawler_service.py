@@ -302,6 +302,48 @@ def get_province_data_overview() -> list[dict[str, Any]]:
     return overview
 
 
+def classify_province_progress(item: dict[str, Any], target_years: int = 3) -> str:
+    if item.get('is_running'):
+        return '采集中'
+    if not item.get('admission_count'):
+        return '未采集'
+    if (item.get('year_count') or 0) < target_years:
+        return '年份不全'
+    return '较完整'
+
+
+def print_crawl_progress(target_years: int = 3) -> dict[str, Any]:
+    """打印各省采集进度，并给出建议的续爬命令。"""
+    overview = get_province_data_overview()
+    groups: dict[str, list[str]] = {'未采集': [], '年份不全': [], '较完整': [], '采集中': []}
+    header = f'{"省份":<6} {"状态":<8} {"录取条数":>8} {"含位次":>8} {"年份":<16} {"最近采集":<20}'
+    log_progress(header)
+    log_progress('-' * len(header))
+    for item in overview:
+        status = classify_province_progress(item, target_years)
+        groups[status].append(item['name'])
+        years = str(item.get('years') or '—')
+        last_at = str(item.get('last_success_at') or item.get('last_crawl_at') or '—')
+        log_progress(
+            f'{item["name"]:<6} {status:<8} {item["admission_count"]:>8} '
+            f'{item["rank_count"]:>8} {years:<16} {last_at:<20}'
+        )
+
+    total = len(overview)
+    done = len(groups['较完整'])
+    log_progress('')
+    log_progress(f'汇总：{done}/{total} 省近三年数据较完整，{len(groups["未采集"])} 省未采集，{len(groups["年份不全"])} 省年份不全')
+    todo = groups['未采集'] + groups['年份不全']
+    if todo:
+        log_progress(f'建议续爬省份：{"、".join(todo)}')
+        log_progress(f'续爬命令：python -u crawler_service.py --province {",".join(todo)} --preset full_recent_3y')
+    else:
+        log_progress('31 省近三年数据均已较完整，无需续爬。')
+    if groups['采集中']:
+        log_progress(f'注意：{"、".join(groups["采集中"])} 日志状态为采集中，若进程已退出可先清理 running 记录再续爬。')
+    return {'overview': overview, 'groups': groups, 'todo': todo}
+
+
 def has_running_crawl(province: str | None = None) -> bool:
     ensure_crawl_tables()
     with get_connection() as connection:
@@ -601,7 +643,12 @@ if __name__ == '__main__':
     parser.add_argument('--limit', type=int, default=20, help='最多采集院校数量，0 表示全部')
     parser.add_argument('--schools-only', action='store_true', help='仅同步院校库，不采集分数线')
     parser.add_argument('--list-provinces', action='store_true', help='列出已配置的全部省份')
+    parser.add_argument('--progress', action='store_true', help='查看各省采集进度，并输出续爬命令')
     args = parser.parse_args()
+
+    if args.progress:
+        print_crawl_progress()
+        raise SystemExit(0)
 
     if args.list_provinces:
         for region in REGION_ORDER:
