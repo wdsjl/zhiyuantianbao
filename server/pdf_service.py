@@ -27,6 +27,31 @@ def normalize_pdf_filename_part(value: str, fallback: str = '学生') -> str:
     return text.strip() or fallback
 
 
+def student_display_name(student: dict) -> str:
+    return normalize_pdf_filename_part(
+        student.get('name') or student.get('student_name') or '',
+        '同学'
+    )
+
+
+def build_report_greeting(student: dict) -> str:
+    name = student_display_name(student)
+    if name == '同学':
+        return '尊敬的同学、同学家长，您好：'
+    return f'{name}同学、{name}同学家长，您好：'
+
+
+def ensure_report_greeting(body: str, student: dict) -> str:
+    content = str(body or '').strip()
+    if not content:
+        return build_report_greeting(student)
+    name = student_display_name(student)
+    head = content[:40]
+    if '家长，您好' in head or head.startswith(f'{name}同学'):
+        return content
+    return f'{build_report_greeting(student)}\n\n{content}'
+
+
 def build_student_pdf_filename(student: dict, kind: str) -> str:
     name = normalize_pdf_filename_part(student.get('name') or student.get('student_name') or '')
     label = PDF_FILENAME_LABELS.get(kind, '报告')
@@ -77,7 +102,7 @@ def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
         '',
         '—— 报告正文 ——',
     ]
-    lines.extend(lines_from_paragraphs(body, 52))
+    lines.extend(lines_from_paragraphs(ensure_report_greeting(body, student), 52))
     lines.extend([
         '',
         '—— 免责声明 ——',
@@ -167,6 +192,8 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
         '智愿填报志愿方案',
         f'导出时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
         '提示：本方案仅供参考，最终以各省教育考试院和高校官方公布及正式填报系统为准。',
+        '',
+        build_report_greeting(student),
         '',
         '一、学生信息',
         f'姓名：{student.get("name", "")}    省份：{student.get("province", "")}    城市：{student.get("city", "")}',

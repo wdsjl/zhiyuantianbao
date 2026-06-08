@@ -1,7 +1,13 @@
 const { questions, options, calculateResult, migrateLegacyResult } = require('../../utils/personality');
 const { request } = require('../../utils/request');
 const { requirePermission, getCurrentUserId } = require('../../utils/membership');
-const { openPdfFromPost, buildStudentPdfFileName } = require('../../utils/pdfExport');
+const {
+  openPdfFromPost,
+  preparePdfFromPost,
+  sharePdfToWeChat,
+  buildStudentPdfFileName
+} = require('../../utils/pdfExport');
+const { ensureReportGreeting } = require('../../utils/reportFormat');
 const { loadActiveProfileSync, resolveStudentId } = require('../../utils/profileHelper');
 
 function buildQuestions(answers = {}) {
@@ -60,8 +66,12 @@ Page({
       result = migrateLegacyResult(result);
       wx.setStorageSync('personalityResult', result);
     }
-    const aiCareerReport = wx.getStorageSync('personalityAiCareerReport') || '';
+    const profile = loadActiveProfileSync();
+    const aiCareerReport = ensureReportGreeting(wx.getStorageSync('personalityAiCareerReport') || '', profile);
+    if (aiCareerReport) wx.setStorageSync('personalityAiCareerReport', aiCareerReport);
     this.setData({ result, aiCareerReport });
+    this._pdfFilePath = '';
+    this._pdfFileName = '';
     const profile = loadActiveProfileSync();
     const studentId = profile.studentId || profile.student_id;
     if (!studentId) return;
@@ -73,8 +83,10 @@ Page({
         this.setData({ result: merged });
       }
       if (assessment.ai_career_report) {
-        wx.setStorageSync('personalityAiCareerReport', assessment.ai_career_report);
-        this.setData({ aiCareerReport: assessment.ai_career_report });
+        const profile = loadActiveProfileSync();
+        const report = ensureReportGreeting(assessment.ai_career_report, profile);
+        wx.setStorageSync('personalityAiCareerReport', report);
+        this.setData({ aiCareerReport: report });
       }
       if (assessment.assessment_id) {
         wx.setStorageSync('personalityAssessmentId', assessment.assessment_id);
@@ -144,8 +156,10 @@ Page({
       }
     })
       .then((res) => {
-        const report = res.report || '';
+        const report = ensureReportGreeting(res.report || '', profile);
         wx.setStorageSync('personalityAiCareerReport', report);
+        this._pdfFilePath = '';
+        this._pdfFileName = '';
         if (res.assessment_id) {
           wx.setStorageSync('personalityAssessmentId', res.assessment_id);
         }
@@ -171,7 +185,53 @@ Page({
     }
     wx.setClipboardData({ data: this.data.aiCareerReport });
   },
-  exportAiReportPdf() {
+  prepareAiReportPdfExport() {
+    const profile = loadActiveProfileSync();
+    const studentId = resolveStudentId(profile);
+    const report = ensureReportGreeting(this.data.aiCareerReport, profile);
+    return preparePdfFromPost('/api/ai/career-report/pdf', {
+      student_id: studentId,
+      report_content: report
+    }, {
+      fileName: buildStudentPdfFileName(profile, '霍兰德测评报告')
+    });
+  },
+  shareAiReportPdf() {
+    const profile = loadActiveProfileSync();
+    const studentId = resolveStudentId(profile);
+    if (!this.data.aiCareerReport) {
+      wx.showToast({ title: '请先生成深度报告', icon: 'none' });
+      return;
+    }
+    if (!studentId) {
+      wx.showToast({ title: '请先保存学生档案', icon: 'none' });
+      return;
+    }
+    requirePermission('personality_deep', '深度职业兴趣报告', { consume: false }).then((allowed) => {
+      if (!allowed) return;
+      if (this._pdfFilePath && this._pdfFileName) {
+        sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
+          .then(() => wx.showToast({ title: '请选择聊天后发送', icon: 'none' }))
+          .catch((error) => wx.showToast({ title: error.message || '转发失败', icon: 'none' }));
+        return;
+      }
+      this.prepareAiReportPdfExport()
+        .then(({ filePath, fileName }) => {
+          this._pdfFilePath = filePath;
+          this._pdfFileName = fileName;
+          wx.showModal({
+            title: 'PDF 已生成',
+            content: `文件名：${fileName}\n\n请再点一次「转发PDF到微信」，选择文件传输助手发送。`,
+            showCancel: false,
+            confirmText: '知道了'
+          });
+        })
+        .catch((error) => {
+          wx.showToast({ title: error.message || '生成失败', icon: 'none' });
+        });
+    });
+  },
+  previewAiReportPdf() {
     const profile = loadActiveProfileSync();
     const studentId = resolveStudentId(profile);
     if (!this.data.aiCareerReport) {
@@ -186,17 +246,13 @@ Page({
       if (!allowed) return;
       openPdfFromPost('/api/ai/career-report/pdf', {
         student_id: studentId,
-        report_content: this.data.aiCareerReport
+        report_content: ensureReportGreeting(this.data.aiCareerReport, profile)
       }, {
-        fileName: buildStudentPdfFileName(profile, '霍兰德测评报告')
-      })
-        .then((result) => {
-          if (result && result.action === 'share') return;
-          wx.showToast({ title: '如需转发请选「转发给微信好友」', icon: 'none', duration: 2500 });
-        })
-        .catch((error) => {
-          wx.showToast({ title: error.message || '导出失败', icon: 'none' });
-        });
+        fileName: buildStudentPdfFileName(profile, '霍兰德测评报告'),
+        mode: 'preview'
+      }).catch((error) => {
+        wx.showToast({ title: error.message || '导出失败', icon: 'none' });
+      });
     });
   },
   retest() {

@@ -1,7 +1,7 @@
 const { request } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
 const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
-const { openPdfFromUrl, buildStudentPdfFileName } = require('../../utils/pdfExport');
+const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
 
@@ -406,33 +406,37 @@ Page({
       });
       return;
     }
-    wx.showModal({
-      title: '导出 PDF 志愿表',
-      content: '将生成 PDF 文件，内容包含学生信息、志愿顺序、院校专业代码、调剂状态和风险提示。结果仅供参考。',
-      confirmText: '导出 PDF',
-      success: (res) => {
-        if (!res.confirm) return;
-        openPdfFromUrl(
-          `/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`,
-          { fileName: buildStudentPdfFileName(profile, '填报志愿') }
-        )
-          .then(() => {
-            const records = wx.getStorageSync('exportRecords') || [];
-            records.unshift({
-              id: Date.now(),
-              draftId: currentDraftId,
-              time: new Date().toLocaleString(),
-              count: this.data.plan.length,
-              type: 'pdf'
-            });
-            wx.setStorageSync('exportRecords', records);
-            wx.showToast({ title: 'PDF 已打开', icon: 'success' });
-          })
-          .catch((error) => {
-            wx.showToast({ title: error.message || 'PDF 导出失败', icon: 'none' });
-          });
-      }
-    });
+    const fileName = buildStudentPdfFileName(profile, '填报志愿');
+    const pdfUrl = `/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`;
+    if (this._pdfFilePath && this._pdfFileName === fileName) {
+      sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
+        .then(() => wx.showToast({ title: '请选择聊天后发送', icon: 'none' }))
+        .catch((error) => wx.showToast({ title: error.message || '转发失败', icon: 'none' }));
+      return;
+    }
+    preparePdfFromUrl(pdfUrl, { fileName })
+      .then(({ filePath, fileName: savedName }) => {
+        this._pdfFilePath = filePath;
+        this._pdfFileName = savedName;
+        const records = wx.getStorageSync('exportRecords') || [];
+        records.unshift({
+          id: Date.now(),
+          draftId: currentDraftId,
+          time: new Date().toLocaleString(),
+          count: this.data.plan.length,
+          type: 'pdf'
+        });
+        wx.setStorageSync('exportRecords', records);
+        wx.showModal({
+          title: 'PDF 已生成',
+          content: `文件名：${savedName}\n\n请再点一次「导出志愿表」，选择文件传输助手发送。`,
+          showCancel: false,
+          confirmText: '知道了'
+        });
+      })
+      .catch((error) => {
+        wx.showToast({ title: error.message || 'PDF 导出失败', icon: 'none' });
+      });
   },
   goCompare() {
     wx.navigateTo({ url: '/pages/compare/compare' });

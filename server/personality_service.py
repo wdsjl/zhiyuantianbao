@@ -142,9 +142,16 @@ def build_personality_ai_context(personality: dict[str, Any]) -> str:
 
 def build_career_report_prompt(profile: dict[str, Any], personality: dict[str, Any]) -> str:
     context = build_personality_ai_context(personality)
+    student_name = (profile.get('name') or profile.get('studentName') or '同学').strip() or '同学'
+    greeting = (
+        f'{student_name}同学、{student_name}同学家长，您好：'
+        if student_name != '同学' else
+        '尊敬的同学、同学家长，您好：'
+    )
     return f'''
 请基于以下霍兰德职业兴趣测评结果，为学生生成一份“高考志愿填报职业兴趣深度报告”。
 要求：
+0. 报告正文第一段必须是：「{greeting}」，然后空一行再写后续内容。
 1. 不承诺录取，不使用“保证”“一定”等词。
 2. 分为：兴趣画像、专业方向建议、职业发展方向、与当前成绩的填报策略、需要规避的误区、下一步行动建议。
 3. 语言面向学生和家长，结构清晰，控制在 700 字以内。

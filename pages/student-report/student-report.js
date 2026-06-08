@@ -1,6 +1,12 @@
 const { request } = require('../../utils/request');
 const { requirePermission, getCurrentUserId, fetchEntitlements } = require('../../utils/membership');
-const { openPdfFromPost, buildStudentPdfFileName } = require('../../utils/pdfExport');
+const {
+  openPdfFromPost,
+  preparePdfFromPost,
+  sharePdfToWeChat,
+  buildStudentPdfFileName
+} = require('../../utils/pdfExport');
+const { ensureReportGreeting } = require('../../utils/reportFormat');
 const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
@@ -81,8 +87,12 @@ Page({
       mergedPrefs.preferredMajorTypesText = personality.majorTypes.join('、');
       wx.setStorageSync(PREF_STORAGE_KEY, mergedPrefs);
     }
-    const savedReport = wx.getStorageSync('studentAiReport') || '';
+    const profile = this.data.profile || loadActiveProfileSync();
+    const savedReport = ensureReportGreeting(wx.getStorageSync('studentAiReport') || '', profile);
+    if (savedReport) wx.setStorageSync('studentAiReport', savedReport);
     this.setData({ personality, preferences: mergedPrefs, report: savedReport });
+    this._pdfFilePath = '';
+    this._pdfFileName = '';
   },
   loadServerReport() {
     const profile = this.data.profile || loadActiveProfileSync();
@@ -91,8 +101,9 @@ Page({
     request({ url: `/api/ai/student-report?student_id=${studentId}` })
       .then((res) => {
         if (res.report && res.report.report_content) {
-          wx.setStorageSync('studentAiReport', res.report.report_content);
-          this.setData({ report: res.report.report_content });
+          const report = ensureReportGreeting(res.report.report_content, profile);
+          wx.setStorageSync('studentAiReport', report);
+          this.setData({ report });
         }
       })
       .catch(() => {});
@@ -158,9 +169,11 @@ Page({
       }
     })
       .then((res) => {
-        const report = res.report || '';
+        const report = ensureReportGreeting(res.report || '', profile);
         wx.setStorageSync('studentAiReport', report);
         this.setData({ report });
+        this._pdfFilePath = '';
+        this._pdfFileName = '';
         wx.showToast({ title: '报告已生成', icon: 'success' });
         setTimeout(() => {
           wx.showModal({
@@ -185,7 +198,53 @@ Page({
     if (!this.data.report) return;
     wx.setClipboardData({ data: this.data.report });
   },
-  exportReportPdf() {
+  prepareReportPdfExport() {
+    const profile = this.data.profile || loadActiveProfileSync();
+    const studentId = resolveStudentId(profile);
+    const report = ensureReportGreeting(this.data.report, profile);
+    return preparePdfFromPost('/api/ai/student-report/pdf', {
+      student_id: studentId,
+      report_content: report
+    }, {
+      fileName: buildStudentPdfFileName(profile, '个性化报告')
+    });
+  },
+  shareReportPdf() {
+    const profile = this.data.profile || loadActiveProfileSync();
+    const studentId = resolveStudentId(profile);
+    if (!this.data.report) {
+      wx.showToast({ title: '请先生成报告', icon: 'none' });
+      return;
+    }
+    if (!studentId) {
+      wx.showToast({ title: '请先保存学生档案', icon: 'none' });
+      return;
+    }
+    requirePermission('personality_deep', '个性化填报报告', { consume: false }).then((allowed) => {
+      if (!allowed) return;
+      if (this._pdfFilePath && this._pdfFileName) {
+        sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
+          .then(() => wx.showToast({ title: '请选择聊天后发送', icon: 'none' }))
+          .catch((error) => wx.showToast({ title: error.message || '转发失败', icon: 'none' }));
+        return;
+      }
+      this.prepareReportPdfExport()
+        .then(({ filePath, fileName }) => {
+          this._pdfFilePath = filePath;
+          this._pdfFileName = fileName;
+          wx.showModal({
+            title: 'PDF 已生成',
+            content: `文件名：${fileName}\n\n请再点一次「转发PDF到微信」，选择文件传输助手发送。`,
+            showCancel: false,
+            confirmText: '知道了'
+          });
+        })
+        .catch((error) => {
+          wx.showToast({ title: error.message || '生成失败', icon: 'none' });
+        });
+    });
+  },
+  previewReportPdf() {
     const profile = this.data.profile || loadActiveProfileSync();
     const studentId = resolveStudentId(profile);
     if (!this.data.report) {
@@ -200,17 +259,13 @@ Page({
       if (!allowed) return;
       openPdfFromPost('/api/ai/student-report/pdf', {
         student_id: studentId,
-        report_content: this.data.report
+        report_content: ensureReportGreeting(this.data.report, profile)
       }, {
-        fileName: buildStudentPdfFileName(profile, '个性化报告')
-      })
-        .then((result) => {
-          if (result && result.action === 'share') return;
-          wx.showToast({ title: '如需转发请选「转发给微信好友」', icon: 'none', duration: 2500 });
-        })
-        .catch((error) => {
-          wx.showToast({ title: error.message || '导出失败', icon: 'none' });
-        });
+        fileName: buildStudentPdfFileName(profile, '个性化报告'),
+        mode: 'preview'
+      }).catch((error) => {
+        wx.showToast({ title: error.message || '导出失败', icon: 'none' });
+      });
     });
   }
 });

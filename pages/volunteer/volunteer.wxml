@@ -79,7 +79,7 @@
 
   <view wx:if="{{plan.length}}" class="bottom-actions">
     <button class="secondary-btn" bindtap="goCompare">方案对比</button>
-    <button class="secondary-btn" bindtap="exportPlan">导出志愿表</button>
+    <button class="secondary-btn" bindtap="exportPlan">转发PDF到微信</button>
     <button class="primary-btn" bindtap="saveDraft">保存草稿</button>
   </view>
 </view>

@@ -118,10 +118,17 @@ def build_student_report_prompt(
 ) -> str:
     personality_block = build_personality_ai_context(personality)
     volunteer_block = volunteer_summary or '尚未生成志愿方案，请主要依据分数位次与兴趣测评给出策略。'
+    student_name = (profile.get('name') or profile.get('studentName') or '同学').strip() or '同学'
+    greeting = (
+        f'{student_name}同学、{student_name}同学家长，您好：'
+        if student_name != '同学' else
+        '尊敬的同学、同学家长，您好：'
+    )
     return f'''
 请作为专业、谨慎的高考志愿填报顾问，基于以下学生完整信息，生成一份「个性化高考志愿填报报告」。
 
 写作要求：
+0. 报告正文第一段必须是：「{greeting}」，然后空一行再写后续内容。
 1. 不承诺录取，不使用“保证”“一定录取”等表述。
 2. 报告必须体现该学生的个体差异，不要写成通用模板。
 3. 结构请使用以下标题（可适度展开）：
