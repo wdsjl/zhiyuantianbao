@@ -197,9 +197,13 @@ Page({
             studentId: form.studentId || ''
           };
           wx.setStorageSync('studentProfile', saved);
+          const { BASE_URL } = require('../../utils/request');
+          const domainHint = (error.errMsg || '').includes('domain list')
+            ? '请在微信公众平台 → 开发管理 → 开发设置 → 服务器域名，将 request 合法域名配置为 api.zntb.lhyun.net（不要带 https://）。'
+            : `请确认小程序已更新代码（接口 ${BASE_URL}），服务器 pm2 status 中 zhiyuan-backend 为 online，并在浏览器打开 ${BASE_URL}/health 应显示 {"status":"ok"}。`;
           wx.showModal({
-            title: '后端未连接',
-            content: '档案已暂存到本地。请在服务器执行 pm2 restart zhiyuan-backend 后重新保存，以写入数据库。',
+            title: '无法连接后端',
+            content: `档案已暂存到本地。\n\n${domainHint}\n\n技术信息：${message}`,
             showCancel: false
           });
           return;
