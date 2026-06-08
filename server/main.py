@@ -994,6 +994,11 @@ def api_data_fetch_records(task_id: int | None = None, source_id: int | None = N
     return {'list': list_records(task_id, source_id)}
 
 
+@app.get('/api/auth/wechat/status')
+def api_wechat_login_status():
+    return get_wechat_login_status()
+
+
 @app.post('/api/auth/login')
 def login(request: LoginRequest):
     try:

@@ -9,6 +9,21 @@ from db import get_connection, row_to_dict
 WECHAT_SESSION_URL = 'https://api.weixin.qq.com/sns/jscode2session'
 
 
+def is_wechat_login_ready() -> bool:
+    return bool(os.getenv('WECHAT_APPID', '') and os.getenv('WECHAT_SECRET', ''))
+
+
+def get_wechat_login_status() -> dict[str, Any]:
+    appid = os.getenv('WECHAT_APPID', '')
+    secret = os.getenv('WECHAT_SECRET', '')
+    return {
+        'enabled': bool(appid and secret),
+        'appid_configured': bool(appid),
+        'secret_configured': bool(secret),
+        'appid_preview': f'{appid[:6]}...' if len(appid) >= 6 else appid
+    }
+
+
 def is_temp_openid(openid: str | None) -> bool:
     if not openid:
         return True
@@ -45,8 +60,14 @@ def get_wechat_session(code: str) -> dict[str, Any] | None:
 
 
 def login_or_create_user(code: str | None, openid: str | None, phone: str | None, name: str | None, role: str) -> dict[str, Any]:
-    session = get_wechat_session(code or '')
-    resolved_openid = openid or (session or {}).get('openid') or f'dev_{code or phone or name or "student"}'
+    code_text = (code or '').strip()
+    if code_text and not is_wechat_login_ready():
+        raise ValueError(
+            '微信登录未就绪：服务器未读取 WECHAT_SECRET。'
+            '请在 C:/zhiyuantianbao/ecosystem.secrets.js 填写后执行 pm2 restart zhiyuan-backend --update-env'
+        )
+    session = get_wechat_session(code_text)
+    resolved_openid = openid or (session or {}).get('openid') or f'dev_{code_text or phone or name or "student"}'
     unionid = (session or {}).get('unionid')
     normalized_role = normalize_role(role)
 

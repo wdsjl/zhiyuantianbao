@@ -86,6 +86,16 @@ module.exports = {
 
 然后执行 `pm2 restart zhiyuan-backend --update-env`。
 
+验证是否生效：
+
+```text
+GET https://api.zntb.lhyun.net/api/auth/wechat/status
+```
+
+应返回 `{"enabled": true, "appid_configured": true, "secret_configured": true}`。
+
+若 `secret_configured` 为 `false`，说明运行中的 pm2 进程未读到 `WECHAT_SECRET`（常见原因：secrets 文件路径不对、未 `--update-env` 重启）。
+
 ## 本地爬取后上传到服务器
 
 适合在本地电脑长时间跑爬虫，再把数据合并到服务器（保留服务器上的用户、订单、会员等数据）。
