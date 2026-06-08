@@ -602,7 +602,12 @@ def api_wechat_pay_status():
 @app.post('/api/payments/wechat/create')
 def api_wechat_pay_create(payload: PaymentCreateRequest):
     try:
-        return create_wechat_payment(payload.user_id, payload.plan_code, payload.request_type)
+        return create_wechat_payment(
+            payload.user_id,
+            payload.plan_code,
+            payload.request_type,
+            payload.login_code,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -623,6 +628,17 @@ async def api_wechat_pay_notify(request: Request):
         return JSONResponse(result)
     except Exception as exc:
         return JSONResponse({'code': 'FAIL', 'message': str(exc)}, status_code=500)
+
+
+@app.post('/api/payments/virtual/deliver-notify')
+async def api_virtual_deliver_notify(request: Request):
+    from wechat_virtual_pay_service import handle_virtual_deliver_notify
+    body = await request.body()
+    try:
+        result = handle_virtual_deliver_notify(body.decode('utf-8'))
+        return JSONResponse(result)
+    except Exception as exc:
+        return JSONResponse({'ErrCode': -1, 'ErrMsg': str(exc)}, status_code=500)
 
 
 @app.post('/api/membership/open-requests')

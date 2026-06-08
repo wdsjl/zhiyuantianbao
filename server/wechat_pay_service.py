@@ -34,15 +34,8 @@ def get_pay_config() -> dict[str, str]:
 
 
 def is_wechat_pay_ready() -> bool:
-    config = get_pay_config()
-    key_path = Path(config['private_key_path'])
-    return bool(
-        config['appid']
-        and config['mchid']
-        and config['api_v3_key']
-        and config['serial_no']
-        and key_path.exists()
-    )
+    from wechat_virtual_pay_service import is_virtual_pay_ready
+    return is_virtual_pay_ready()
 
 
 def _load_private_key():
@@ -117,50 +110,14 @@ def _get_plan(plan_code: str) -> dict[str, Any]:
     raise ValueError('套餐不存在或已下架')
 
 
-def create_wechat_payment(user_id: int, plan_code: str, order_type: str = 'open') -> dict[str, Any]:
-    if not is_wechat_pay_ready():
-        raise ValueError('微信支付尚未配置完成，请联系管理员配置商户证书和 API 密钥')
-
-    plan = _get_plan(plan_code)
-    price = float(plan.get('price') or 0)
-    if price <= 0:
-        raise ValueError('免费套餐无需支付')
-
-    openid = _get_user_openid(user_id)
-    order_no, order_id = create_pending_order(
-        user_id=user_id,
-        plan_code=plan_code,
-        amount=price,
-        order_type=order_type,
-        pay_method='wechat_pay'
-    )
-
-    payload = {
-        'appid': get_pay_config()['appid'],
-        'mchid': get_pay_config()['mchid'],
-        'description': f'智愿填报-{plan.get("plan_name")}',
-        'out_trade_no': order_no,
-        'notify_url': get_pay_config()['notify_url'],
-        'amount': {
-            'total': _amount_to_fen(price),
-            'currency': 'CNY'
-        },
-        'payer': {'openid': openid}
-    }
-    result = _request_wechat_pay('POST', '/v3/pay/transactions/jsapi', payload)
-    prepay_id = result.get('prepay_id')
-    if not prepay_id:
-        raise ValueError('微信支付下单失败，未返回 prepay_id')
-
-    pay_params = build_miniprogram_pay_params(prepay_id)
-    return {
-        'order_id': order_id,
-        'order_no': order_no,
-        'plan_code': plan_code,
-        'plan_name': plan.get('plan_name'),
-        'amount': price,
-        'pay_params': pay_params
-    }
+def create_wechat_payment(
+    user_id: int,
+    plan_code: str,
+    order_type: str = 'open',
+    login_code: str | None = None,
+) -> dict[str, Any]:
+    from wechat_virtual_pay_service import create_virtual_payment
+    return create_virtual_payment(user_id, plan_code, order_type, login_code)
 
 
 def build_miniprogram_pay_params(prepay_id: str) -> dict[str, str]:
@@ -185,32 +142,8 @@ def query_wechat_order(order_no: str) -> dict[str, Any]:
 
 
 def sync_wechat_order_status(order_no: str, user_id: int | None = None) -> dict[str, Any]:
-    order = get_order_by_order_no(order_no)
-    if not order:
-        raise ValueError('订单不存在')
-    if user_id is not None and int(order['user_id']) != int(user_id):
-        raise ValueError('无权查看该订单')
-
-    if order.get('pay_status') == 'paid':
-        return {'order': order, 'synced': False}
-
-    if not is_wechat_pay_ready():
-        return {'order': order, 'synced': False}
-
-    try:
-        remote = query_wechat_order(order_no)
-    except ValueError:
-        return {'order': order, 'synced': False}
-
-    if remote.get('trade_state') == 'SUCCESS':
-        fulfill_wechat_order(
-            order_no,
-            remote.get('transaction_id') or '',
-            json.dumps(remote, ensure_ascii=False)
-        )
-        order = get_order_by_order_no(order_no)
-        return {'order': order, 'synced': True}
-    return {'order': order, 'synced': False}
+    from wechat_virtual_pay_service import sync_virtual_order_status
+    return sync_virtual_order_status(order_no, user_id)
 
 
 def _decrypt_notify_resource(resource: dict[str, Any]) -> dict[str, Any]:

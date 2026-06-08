@@ -136,3 +136,4 @@ class PaymentCreateRequest(BaseModel):
     user_id: int
     plan_code: str
     request_type: str = 'open'
+    login_code: Optional[str] = None

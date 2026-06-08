@@ -1,5 +1,6 @@
 const { request, formatRequestError, BASE_URL } = require('../../utils/request');
 const { getCurrentUserId, syncUserIdentity, fetchEntitlements } = require('../../utils/membership');
+const { requestVirtualPayment, getLoginCode } = require('../../utils/virtualPayment');
 
 const PLAN_FEATURES = {
   free: ['完整测评流程', '基础院校专业查询', '近2年分数线', '手动志愿模拟'],
@@ -15,22 +16,15 @@ const ORDER_STATUS_TEXT = {
   cancelled: '已取消'
 };
 
-const REQUEST_STATUS_TEXT = {
-  pending: '待处理',
-  processed: '已开通',
-  cancelled: '已取消'
-};
-
 Page({
   data: {
     loading: false,
-    submitting: false,
+    paying: false,
+    virtualPayEnabled: false,
     plans: [],
     entitlements: null,
     currentPlanCode: 'free',
     orders: [],
-    openRequests: [],
-    supportContact: {},
     membershipNotice: null,
     loadError: ''
   },
@@ -39,13 +33,19 @@ Page({
     this.loadData();
   },
   mapPlans(list) {
-    return (list || []).map((plan) => ({
-      ...plan,
-      priceText: Number(plan.price) === 0 ? '免费' : `¥${plan.price}`,
-      durationText: Number(plan.duration_days) > 0 ? `${plan.duration_days}天` : '长期',
-      features: PLAN_FEATURES[plan.plan_code] || [],
-      canApply: Number(plan.price) > 0
-    }));
+    return (list || []).map((plan) => {
+      const price = Number(plan.price) || 0;
+      const beanPrice = Math.round(price * 10);
+      return {
+        ...plan,
+        priceText: price === 0 ? '免费' : `¥${plan.price}`,
+        beanPriceText: price === 0 ? '免费' : `${beanPrice}星鼎豆`,
+        displayPriceText: price === 0 ? '免费' : `${beanPrice}星鼎豆（¥${plan.price}）`,
+        durationText: Number(plan.duration_days) > 0 ? `${plan.duration_days}天` : '长期',
+        features: PLAN_FEATURES[plan.plan_code] || [],
+        canPay: price > 0
+      };
+    });
   },
   loadData() {
     this.setData({ loading: true, loadError: '' });
@@ -53,13 +53,13 @@ Page({
     const tasks = [
       request({ url: '/api/membership/plans' }).catch((error) => ({ error })),
       fetchEntitlements().catch((error) => ({ error })),
-      request({ url: '/api/membership/support-contact' }).catch(() => ({})),
+      request({ url: '/api/payments/wechat/status' }).catch(() => ({ enabled: false })),
       userId
         ? request({ url: '/api/membership/my-status', data: { user_id: Number(userId) } }).catch(() => ({}))
         : Promise.resolve({})
     ];
     Promise.all(tasks)
-      .then(([plansRes, entitlementsRes, supportContact, statusRes]) => {
+      .then(([plansRes, entitlementsRes, payStatus, statusRes]) => {
         const errors = [];
         if (plansRes && plansRes.error) errors.push(`套餐列表：${formatRequestError(plansRes.error)}`);
         if (entitlementsRes && entitlementsRes.error) errors.push(`会员状态：${formatRequestError(entitlementsRes.error)}`);
@@ -85,15 +85,11 @@ Page({
           plans,
           entitlements,
           currentPlanCode,
-          supportContact: supportContact || {},
+          virtualPayEnabled: !!payStatus.enabled,
           orders: (statusRes.orders || []).map((item) => ({
             ...item,
             statusText: ORDER_STATUS_TEXT[item.pay_status] || item.pay_status,
             amountText: `¥${item.amount || 0}`
-          })),
-          openRequests: (statusRes.requests || []).map((item) => ({
-            ...item,
-            statusText: REQUEST_STATUS_TEXT[item.request_status] || item.request_status
           })),
           membershipNotice: this.buildMembershipNotice(entitlements, plans),
           loadError
@@ -128,8 +124,8 @@ Page({
           type: 'warning',
           planCode: membership.plan_code,
           planName: membership.plan_name || '会员',
-          text: `您的${membership.plan_name || '会员'}将在${diffDays}天后到期，可提交续费申请。`,
-          priceText: plan ? plan.priceText : ''
+          text: `您的${membership.plan_name || '会员'}将在${diffDays}天后到期，建议及时续费。`,
+          priceText: plan ? plan.displayPriceText : ''
         };
       }
       return null;
@@ -140,8 +136,8 @@ Page({
         type: 'expired',
         planCode: latest.plan_code,
         planName: latest.plan_name || '会员',
-        text: `您的${latest.plan_name || '会员'}已过期，可提交续费申请。`,
-        priceText: plan ? plan.priceText : ''
+        text: `您的${latest.plan_name || '会员'}已过期，续费后可继续使用会员功能。`,
+        priceText: plan ? plan.displayPriceText : ''
       };
     }
     return null;
@@ -152,7 +148,7 @@ Page({
     if (!userId) {
       wx.showModal({
         title: '请先完善档案',
-        content: '开通会员前，请先完成登录和学生档案。',
+        content: '支付开通会员前，请先完成登录和学生档案。',
         confirmText: '去完善',
         success: (res) => {
           if (res.confirm) wx.navigateTo({ url: '/pages/profile/profile' });
@@ -171,88 +167,113 @@ Page({
       wx.showToast({ title: '套餐信息加载失败', icon: 'none' });
       return;
     }
-    this.submitOpenRequest(plan, true);
+    this.startPay(plan, true);
   },
 
-  submitOpenRequest(eventOrPlan, isRenewal) {
+  startPay(eventOrPlan, isRenewal) {
     const plan = eventOrPlan && eventOrPlan.currentTarget
       ? this.data.plans[eventOrPlan.currentTarget.dataset.index]
       : eventOrPlan;
-    if (!plan || this.data.submitting) return;
+    if (!plan || this.data.paying) return;
 
     const userId = this.ensureUserReady();
     if (!userId) return;
 
-    if (!plan.canApply) {
-      wx.showToast({ title: '当前套餐无需开通', icon: 'none' });
+    if (!plan.canPay) {
+      wx.showToast({ title: '当前套餐无需支付', icon: 'none' });
       return;
     }
 
-    const profile = wx.getStorageSync('studentProfile') || {};
+    if (!this.data.virtualPayEnabled) {
+      wx.showModal({
+        title: '支付未就绪',
+        content: '虚拟支付尚未完成服务端配置，请联系管理员检查 OfferID 与 AppKey。',
+        showCancel: false
+      });
+      return;
+    }
+
     wx.showModal({
-      title: isRenewal ? '提交续费申请' : '提交开通申请',
-      content: `将提交「${plan.plan_name}」（${plan.priceText}）开通申请。客服确认后会为您开通会员，请按页面说明联系客服。`,
-      confirmText: '提交申请',
+      title: isRenewal ? '确认续费' : '确认支付',
+      content: `将支付 ${plan.displayPriceText} 开通「${plan.plan_name}」，有效期 ${plan.durationText}。`,
+      confirmText: '立即支付',
       success: (res) => {
         if (!res.confirm) return;
-        this.doSubmitOpenRequest(userId, plan, isRenewal, profile);
+        this.createAndPay(userId, plan, isRenewal);
       }
     });
   },
 
-  doSubmitOpenRequest(userId, plan, isRenewal, profile) {
-    this.setData({ submitting: true });
-    request({
-      url: '/api/membership/open-requests',
-      method: 'POST',
-      data: {
-        user_id: Number(userId),
-        plan_code: plan.plan_code,
-        contact_name: profile.name || '',
-        contact_phone: profile.phone || '',
-        message: `${isRenewal ? '续费' : '开通'}${plan.plan_name}`,
-        request_type: isRenewal ? 'renew' : 'open'
-      }
-    })
-      .then((res) => {
-        const support = this.data.supportContact || {};
-        const note = support.support_note || '申请已提交，请联系客服并备注手机号与套餐名称。';
-        wx.showModal({
-          title: res.duplicate ? '已提交过申请' : '申请已提交',
-          content: `${res.message || '客服确认后会为您开通会员。'}\n\n${note}${support.support_wechat ? `\n客服微信：${support.support_wechat}` : ''}${support.support_phone ? `\n客服电话：${support.support_phone}` : ''}`,
-          confirmText: support.support_wechat ? '复制客服微信' : '知道了',
-          cancelText: '关闭',
-          success: (modalRes) => {
-            if (modalRes.confirm && support.support_wechat) {
-              wx.setClipboardData({ data: support.support_wechat });
-            }
-          }
-        });
-        this.loadData();
+  createAndPay(userId, plan, isRenewal) {
+    this.setData({ paying: true });
+    getLoginCode()
+      .then((loginCode) => request({
+        url: '/api/payments/wechat/create',
+        method: 'POST',
+        data: {
+          user_id: Number(userId),
+          plan_code: plan.plan_code,
+          request_type: isRenewal ? 'renew' : 'open',
+          login_code: loginCode
+        }
+      }))
+      .then((createRes) => {
+        const virtualPay = createRes.virtual_pay || {};
+        return requestVirtualPayment({
+          mode: createRes.mode || 'short_series_goods',
+          signData: virtualPay.signData,
+          paySig: virtualPay.paySig,
+          signature: virtualPay.signature
+        }).then(() => createRes.order_no);
       })
+      .then((orderNo) => this.confirmPayment(orderNo))
       .catch((error) => {
-        wx.showToast({ title: error.message || '提交失败', icon: 'none' });
+        if (error && error.errMsg && error.errMsg.includes('cancel')) {
+          wx.showToast({ title: '已取消支付', icon: 'none' });
+          return;
+        }
+        wx.showModal({
+          title: '支付失败',
+          content: (error && error.message) || (error && error.errMsg) || '请稍后重试',
+          showCancel: false
+        });
       })
       .finally(() => {
-        this.setData({ submitting: false });
+        this.setData({ paying: false });
       });
   },
 
-  copySupportWechat() {
-    const wechat = (this.data.supportContact || {}).support_wechat;
-    if (!wechat) {
-      wx.showToast({ title: '暂未配置客服微信', icon: 'none' });
-      return;
-    }
-    wx.setClipboardData({ data: wechat });
-  },
-
-  callSupportPhone() {
-    const phone = (this.data.supportContact || {}).support_phone;
-    if (!phone) {
-      wx.showToast({ title: '暂未配置客服电话', icon: 'none' });
-      return;
-    }
-    wx.makePhoneCall({ phoneNumber: phone });
+  confirmPayment(orderNo, retry = 0) {
+    const userId = getCurrentUserId();
+    return request({
+      url: `/api/payments/wechat/orders/${orderNo}`,
+      data: { user_id: Number(userId) }
+    })
+      .then((res) => {
+        const order = res.order || {};
+        if (order.pay_status === 'paid') {
+          wx.showModal({
+            title: '支付成功',
+            content: '会员已开通，相关功能现在可以使用了。',
+            showCancel: false,
+            success: () => {
+              fetchEntitlements();
+              this.loadData();
+            }
+          });
+          return;
+        }
+        if (retry < 8) {
+          return new Promise((resolve) => {
+            setTimeout(() => resolve(this.confirmPayment(orderNo, retry + 1)), 1200);
+          });
+        }
+        wx.showModal({
+          title: '支付处理中',
+          content: '支付结果确认中，请稍后在会员中心查看订单状态。',
+          showCancel: false,
+          success: () => this.loadData()
+        });
+      });
   }
 });

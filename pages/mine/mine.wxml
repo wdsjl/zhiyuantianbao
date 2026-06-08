@@ -9,11 +9,11 @@
 
   <view class="card vip-card" bindtap="goMembership">
     <view>
-      <view class="vip-title">会员服务 · 联系客服开通</view>
+      <view class="vip-title">会员开通 · 星鼎豆支付</view>
       <view class="sub-text">当前：{{planName}}{{expiresAt ? ' · 到期 ' + expiresAt : ''}}</view>
       <view class="sub-text">解锁智能推荐、AI 解读、PDF 导出等高级功能</view>
     </view>
-    <button class="primary-btn vip-btn" catchtap="goMembership">了解会员</button>
+    <button class="primary-btn vip-btn" catchtap="goMembership">立即开通</button>
   </view>
 
   <view class="card">
@@ -22,8 +22,8 @@
       <text>›</text>
     </view>
     <view class="menu-item" bindtap="goMembership">
-      <text>会员中心 / 开通申请</text>
-      <text>去查看 ›</text>
+      <text>会员中心 / 我的订单</text>
+      <text>去支付 ›</text>
     </view>
     <view class="menu-item" bindtap="goDrafts">
       <text>我的志愿草稿</text>

@@ -81,7 +81,12 @@ def get_order_by_order_no(order_no: str) -> dict[str, Any] | None:
         return row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_no = ?', [order_no]).fetchone())
 
 
-def fulfill_wechat_order(order_no: str, transaction_id: str, notify_raw: str = '') -> dict[str, Any]:
+def fulfill_wechat_order(
+    order_no: str,
+    transaction_id: str,
+    notify_raw: str = '',
+    pay_method: str = 'wechat_pay',
+) -> dict[str, Any]:
     ensure_payment_tables()
     with get_connection() as connection:
         order = row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_no = ?', [order_no]).fetchone())
@@ -90,21 +95,23 @@ def fulfill_wechat_order(order_no: str, transaction_id: str, notify_raw: str = '
         if order.get('pay_status') == 'paid':
             return order
 
+        method = pay_method or order.get('pay_method') or 'wechat_pay'
+        source = 'virtual_pay' if method == 'virtual_pay' else 'wechat_pay'
         membership_id = grant_membership(
             int(order['user_id']),
             order['plan_code'],
             None,
-            f'微信支付订单 {order_no}',
-            source='wechat_pay'
+            f'{"虚拟支付" if method == "virtual_pay" else "微信支付"}订单 {order_no}',
+            source=source,
         )
         connection.execute(
             '''
             UPDATE payment_orders
-            SET pay_status = 'paid', pay_method = 'wechat_pay', wx_transaction_id = ?, wx_notify_raw = ?,
+            SET pay_status = 'paid', pay_method = ?, wx_transaction_id = ?, wx_notify_raw = ?,
                 opened_membership_id = ?, paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             WHERE order_no = ?
             ''',
-            [transaction_id, notify_raw, membership_id, order_no]
+            [method, transaction_id, notify_raw, membership_id, order_no]
         )
         connection.commit()
         return row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_no = ?', [order_no]).fetchone())

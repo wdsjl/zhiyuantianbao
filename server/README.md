@@ -231,21 +231,36 @@ https://api.zntb.lhyun.net
 api.zntb.lhyun.net
 ```
 
-## 微信支付
+## 虚拟支付（会员）
 
-小程序会员中心已接入微信支付 JSAPI。服务器需配置：
+小程序会员中心已接入**小程序虚拟支付**（道具直购 `short_series_goods`），价格以星鼎豆展示（1 元 = 10 星鼎豆）。
+
+`ecosystem.config.js` 中配置：
 
 ```text
-WECHAT_APPID=小程序AppID
-WECHAT_MCH_ID=1621904940
-WECHAT_PAY_API_V3_KEY=商户平台APIv3密钥
-WECHAT_PAY_SERIAL_NO=商户API证书序列号
-WECHAT_PAY_PRIVATE_KEY_PATH=C:/zhiyuantianbao/server/certs/apiclient_key.pem
-WECHAT_PAY_NOTIFY_URL=https://api.zntb.lhyun.net/api/payments/wechat/notify
+WECHAT_VIRTUAL_PAY_OFFER_ID=1450554502
+WECHAT_VIRTUAL_PAY_ENV=0
 ```
 
-1. 将 `apiclient_key.pem` 放到 `server/certs/`
-2. 微信商户平台配置支付回调地址：`https://api.zntb.lhyun.net/api/payments/wechat/notify`
-3. 小程序后台关联商户号 `1621904940`
-4. 安装依赖后重启：`pip install -r requirements.txt && pm2 restart zhiyuan-backend`
-5. 访问 `GET /api/payments/wechat/status`，返回 `{"enabled": true}` 表示支付就绪
+`ecosystem.secrets.js` 中配置：
+
+```text
+WECHAT_SECRET=小程序Secret
+WECHAT_VIRTUAL_PAY_APP_KEY=现网AppKey
+WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY=沙箱AppKey
+```
+
+可选：若虚拟支付后台道具 ID 不是 `trial` / `standard` / `premium`，可设置：
+
+```text
+WECHAT_VIRTUAL_PRODUCT_TRIAL=道具ID
+WECHAT_VIRTUAL_PRODUCT_STANDARD=道具ID
+WECHAT_VIRTUAL_PRODUCT_PREMIUM=道具ID
+```
+
+部署步骤：
+
+1. 虚拟支付后台为三个会员套餐创建并发布道具，价格（分）分别为 `1990` / `9900` / `16800`
+2. 配置发货推送 URL：`https://api.zntb.lhyun.net/api/payments/virtual/deliver-notify`
+3. 重启：`pm2 restart zhiyuan-backend --update-env`
+4. 访问 `GET /api/payments/wechat/status`，返回 `{"enabled": true}` 表示虚拟支付就绪
