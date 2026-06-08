@@ -4,6 +4,7 @@ const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/pro
 const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
+const { formatAiContent } = require('../../utils/reportFormat');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -128,7 +129,7 @@ Page({
         ...item,
         gradientClass: item.gradientClass || getGradientClass(item.gradientType)
       }));
-      this.setData({ plan, aiExplain: wx.getStorageSync('currentAiExplain') || '' });
+      this.setData({ plan, aiExplain: formatAiContent(wx.getStorageSync('currentAiExplain') || '') });
     }
     fetchEntitlements();
   },
@@ -363,8 +364,9 @@ Page({
       }
     })
       .then((res) => {
-        this.setData({ aiExplain: res.explain || '' });
-        wx.setStorageSync('currentAiExplain', res.explain || '');
+        const aiExplain = formatAiContent(res.explain || '');
+        this.setData({ aiExplain });
+        wx.setStorageSync('currentAiExplain', aiExplain);
         wx.showToast({ title: 'AI 解读已生成', icon: 'success' });
       })
       .catch((error) => {

@@ -46,7 +46,10 @@ from admin_data_service import (
 from llm_settings_service import save_llm_settings, get_llm_settings, test_llm_connection, chat_completion
 from data_fetch_service import create_source, fetch_source, list_sources, list_tasks, list_records, update_source, delete_source, review_record, archive_record_to_brochure
 from auth_service import login_or_create_user, is_temp_openid, get_wechat_login_status
-from pdf_service import build_draft_pdf, build_text_report_pdf, build_student_pdf_filename, pdf_content_disposition
+from pdf_service import (
+    append_ai_generated_notice, build_draft_pdf, build_text_report_pdf,
+    build_student_pdf_filename, pdf_content_disposition,
+)
 from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, revoke_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, adjust_permission_usage, export_permission_usage_csv, expire_overdue_memberships
 from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv, refund_order
 from wechat_pay_service import create_wechat_payment, handle_wechat_pay_notify, sync_wechat_order_status, is_wechat_pay_ready
@@ -1482,7 +1485,7 @@ def ai_plan_explain(request: PlanExplainRequest):
             {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，所有建议必须提示以官方信息为准。'},
             {'role': 'user', 'content': prompt}
         ], max_tokens=900)
-        return {'explain': content}
+        return {'explain': append_ai_generated_notice(content)}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1509,10 +1512,10 @@ def ai_career_report(request: CareerReportRequest):
         raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
     prompt = build_career_report_prompt(request.profile or {}, request.personality)
     try:
-        content = chat_completion([
+        content = append_ai_generated_notice(chat_completion([
             {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将霍兰德职业兴趣测评与全省位次冲稳保策略结合分析。所有建议必须提示以官方信息为准。'},
             {'role': 'user', 'content': prompt}
-        ], max_tokens=1200)
+        ], max_tokens=1200))
         assessment_id = request.assessment_id
         if not assessment_id and request.student_id:
             latest = get_latest_assessment(request.student_id)
@@ -1537,10 +1540,10 @@ def ai_student_report(request: StudentReportRequest):
         request.volunteer_summary,
     )
     try:
-        content = chat_completion([
+        content = append_ai_generated_notice(chat_completion([
             {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将分数位次、兴趣测评与个人需求融合为个性化报告。'},
             {'role': 'user', 'content': prompt}
-        ], max_tokens=1800)
+        ], max_tokens=1800))
         report_id = save_student_report(
             request.student_id,
             request.user_id,

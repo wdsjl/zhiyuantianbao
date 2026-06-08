@@ -43,14 +43,38 @@ function ensureReportGreeting(report, profile) {
   return `${buildReportGreeting(profile)}\n\n${content}`;
 }
 
+const AI_GENERATED_NOTICE = '人工智能生成';
+const AI_GENERATED_MARKERS = [AI_GENERATED_NOTICE, 'AI生成'];
+
+function hasAiGeneratedNotice(text) {
+  const content = String(text || '').trim();
+  if (!content) return false;
+  const tail = content.slice(-120);
+  return AI_GENERATED_MARKERS.some((marker) => tail.includes(marker));
+}
+
+function appendAiGeneratedNotice(text) {
+  const content = String(text || '').trim();
+  if (!content || hasAiGeneratedNotice(content)) return content;
+  return `${content}\n\n—— ${AI_GENERATED_NOTICE}`;
+}
+
 function formatReportContent(report, profile) {
-  return ensureReportGreeting(stripReportFiller(report), profile);
+  return appendAiGeneratedNotice(ensureReportGreeting(stripReportFiller(report), profile));
+}
+
+function formatAiContent(text) {
+  return appendAiGeneratedNotice(text);
 }
 
 module.exports = {
+  AI_GENERATED_NOTICE,
   buildReportGreeting,
   ensureReportGreeting,
   formatReportContent,
+  formatAiContent,
+  appendAiGeneratedNotice,
+  hasAiGeneratedNotice,
   stripReportFiller,
   getStudentName
 };

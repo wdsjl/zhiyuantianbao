@@ -75,6 +75,20 @@ def ensure_report_greeting(body: str, student: dict) -> str:
     return f'{build_report_greeting(student)}\n\n{content}'
 
 
+AI_GENERATED_NOTICE = '人工智能生成'
+AI_GENERATED_MARKERS = (AI_GENERATED_NOTICE, 'AI生成')
+
+
+def append_ai_generated_notice(text: str) -> str:
+    content = str(text or '').strip()
+    if not content:
+        return content
+    tail = content[-120:]
+    if any(marker in tail for marker in AI_GENERATED_MARKERS):
+        return content
+    return f'{content}\n\n—— {AI_GENERATED_NOTICE}'
+
+
 def build_student_pdf_filename(student: dict, kind: str) -> str:
     name = normalize_pdf_filename_part(student.get('name') or student.get('student_name') or '')
     label = PDF_FILENAME_LABELS.get(kind, '报告')
@@ -125,7 +139,7 @@ def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
         '',
         '—— 报告正文 ——',
     ]
-    lines.extend(lines_from_paragraphs(ensure_report_greeting(body, student), 52))
+    lines.extend(lines_from_paragraphs(append_ai_generated_notice(ensure_report_greeting(body, student)), 52))
     lines.extend([
         '',
         '—— 免责声明 ——',
@@ -244,7 +258,7 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
             lines.extend(wrap_text(f'    风险说明：{item.get("risk_reason")}', 52))
     if draft.get('ai_explain'):
         lines.extend(['', '四、AI 志愿方案解读'])
-        for paragraph in str(draft.get('ai_explain') or '').splitlines():
+        for paragraph in append_ai_generated_notice(str(draft.get('ai_explain') or '')).splitlines():
             lines.extend(wrap_text(paragraph, 52))
         disclaimer_title = '五、免责声明'
     else:
