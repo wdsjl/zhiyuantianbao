@@ -1,8 +1,8 @@
 const { questions, options, calculateResult, migrateLegacyResult } = require('../../utils/personality');
 const { request } = require('../../utils/request');
 const { requirePermission, getCurrentUserId } = require('../../utils/membership');
-const { openPdfFromUrl } = require('../../utils/pdfExport');
-const { loadActiveProfileSync } = require('../../utils/profileHelper');
+const { openPdfFromPost } = require('../../utils/pdfExport');
+const { loadActiveProfileSync, resolveStudentId } = require('../../utils/profileHelper');
 
 function buildQuestions(answers = {}) {
   return questions.map((question) => ({
@@ -133,7 +133,7 @@ Page({
       url: '/api/ai/career-report',
       method: 'POST',
       data: {
-        student_id: profile.studentId ? Number(profile.studentId) : null,
+        student_id: resolveStudentId(profile),
         user_id: getCurrentUserId() ? Number(getCurrentUserId()) : null,
         assessment_id: wx.getStorageSync('personalityAssessmentId') || null,
         profile,
@@ -173,18 +173,21 @@ Page({
   },
   exportAiReportPdf() {
     const profile = loadActiveProfileSync();
-    const studentId = profile.studentId || profile.student_id;
+    const studentId = resolveStudentId(profile);
     if (!this.data.aiCareerReport) {
       wx.showToast({ title: '请先生成深度报告', icon: 'none' });
       return;
     }
     if (!studentId) {
-      wx.showToast({ title: '请先完善档案', icon: 'none' });
+      wx.showToast({ title: '请先保存学生档案', icon: 'none' });
       return;
     }
     requirePermission('personality_deep', '深度职业兴趣报告', { consume: false }).then((allowed) => {
       if (!allowed) return;
-      openPdfFromUrl(`/api/ai/career-report/pdf?student_id=${Number(studentId)}`)
+      openPdfFromPost('/api/ai/career-report/pdf', {
+        student_id: studentId,
+        report_content: this.data.aiCareerReport
+      })
         .then(() => {
           wx.showModal({
             title: 'PDF 已打开',

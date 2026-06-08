@@ -46,7 +46,16 @@ function refreshActiveProfile() {
     .catch(() => stored);
 }
 
+function resolveStudentId(profile) {
+  if (!profile) return null;
+  const raw = profile.studentId ?? profile.student_id;
+  if (raw === undefined || raw === null || raw === '') return null;
+  const studentId = Number(raw);
+  return Number.isFinite(studentId) && studentId > 0 ? studentId : null;
+}
+
 module.exports = {
   loadActiveProfileSync,
-  refreshActiveProfile
+  refreshActiveProfile,
+  resolveStudentId
 };

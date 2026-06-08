@@ -1,7 +1,7 @@
 const { request } = require('../../utils/request');
 const { requirePermission, getCurrentUserId, fetchEntitlements } = require('../../utils/membership');
-const { openPdfFromUrl } = require('../../utils/pdfExport');
-const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
+const { openPdfFromPost } = require('../../utils/pdfExport');
+const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
 const PREF_STORAGE_KEY = 'studentPreferences';
@@ -86,9 +86,9 @@ Page({
   },
   loadServerReport() {
     const profile = this.data.profile || loadActiveProfileSync();
-    const studentId = profile.studentId || profile.student_id;
+    const studentId = resolveStudentId(profile);
     if (!studentId) return;
-    request({ url: '/api/ai/student-report', data: { student_id: Number(studentId) } })
+    request({ url: `/api/ai/student-report?student_id=${studentId}` })
       .then((res) => {
         if (res.report && res.report.report_content) {
           wx.setStorageSync('studentAiReport', res.report.report_content);
@@ -149,7 +149,7 @@ Page({
       url: '/api/ai/student-report',
       method: 'POST',
       data: {
-        student_id: profile.studentId ? Number(profile.studentId) : null,
+        student_id: resolveStudentId(profile),
         user_id: getCurrentUserId() ? Number(getCurrentUserId()) : null,
         profile,
         personality: this.data.personality,
@@ -187,18 +187,21 @@ Page({
   },
   exportReportPdf() {
     const profile = this.data.profile || loadActiveProfileSync();
-    const studentId = profile.studentId || profile.student_id;
+    const studentId = resolveStudentId(profile);
     if (!this.data.report) {
       wx.showToast({ title: '请先生成报告', icon: 'none' });
       return;
     }
     if (!studentId) {
-      wx.showToast({ title: '请先完善档案', icon: 'none' });
+      wx.showToast({ title: '请先保存学生档案', icon: 'none' });
       return;
     }
     requirePermission('personality_deep', '个性化填报报告', { consume: false }).then((allowed) => {
       if (!allowed) return;
-      openPdfFromUrl(`/api/ai/student-report/pdf?student_id=${Number(studentId)}`)
+      openPdfFromPost('/api/ai/student-report/pdf', {
+        student_id: studentId,
+        report_content: this.data.report
+      })
         .then(() => {
           wx.showModal({
             title: 'PDF 已打开',

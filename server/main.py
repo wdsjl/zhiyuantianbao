@@ -9,7 +9,7 @@ from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import (
     RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
-    PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest,
+    PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
@@ -1560,44 +1560,78 @@ def get_student_report(student_id: int):
     return {'report': report}
 
 
-@app.get('/api/ai/student-report/pdf')
-def export_student_report_pdf(student_id: int):
-    report = get_latest_student_report(student_id)
-    if not report or not report.get('report_content'):
-        raise HTTPException(status_code=404, detail='报告不存在，请先生成个性化报告')
+def _load_student_or_404(student_id: int) -> dict:
     with get_connection() as connection:
         student = row_to_dict(connection.execute(
             'SELECT * FROM students WHERE student_id = ?', [student_id]
         ).fetchone())
     if not student:
         raise HTTPException(status_code=404, detail='学生档案不存在')
-    pdf = build_text_report_pdf('智愿填报 · 个性化高考志愿填报报告', student, report['report_content'])
-    filename = f'{escape_pdf_name(student.get("name") or "student")}_report.pdf'
+    return student
+
+
+def _pdf_response(pdf: bytes, filename: str) -> Response:
     return Response(
         content=pdf,
         media_type='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'}
     )
+
+
+def _resolve_student_report_content(student_id: int, report_content: str | None) -> str:
+    content = (report_content or '').strip()
+    if content:
+        return content
+    report = get_latest_student_report(student_id)
+    if not report or not report.get('report_content'):
+        raise HTTPException(status_code=404, detail='报告不存在，请先生成个性化报告')
+    return report['report_content']
+
+
+def _resolve_career_report_content(student_id: int, report_content: str | None) -> str:
+    content = (report_content or '').strip()
+    if content:
+        return content
+    assessment = get_latest_assessment(student_id)
+    if not assessment or not assessment.get('ai_career_report'):
+        raise HTTPException(status_code=404, detail='深度测评报告不存在，请先生成')
+    return assessment['ai_career_report']
+
+
+@app.get('/api/ai/student-report/pdf')
+def export_student_report_pdf(student_id: int):
+    student = _load_student_or_404(student_id)
+    body = _resolve_student_report_content(student_id, None)
+    pdf = build_text_report_pdf('智愿填报 · 个性化高考志愿填报报告', student, body)
+    filename = f'{escape_pdf_name(student.get("name") or "student")}_report.pdf'
+    return _pdf_response(pdf, filename)
+
+
+@app.post('/api/ai/student-report/pdf')
+def export_student_report_pdf_post(request: ReportPdfExportRequest):
+    student = _load_student_or_404(request.student_id)
+    body = _resolve_student_report_content(request.student_id, request.report_content)
+    pdf = build_text_report_pdf('智愿填报 · 个性化高考志愿填报报告', student, body)
+    filename = f'{escape_pdf_name(student.get("name") or "student")}_report.pdf'
+    return _pdf_response(pdf, filename)
 
 
 @app.get('/api/ai/career-report/pdf')
 def export_career_report_pdf(student_id: int):
-    assessment = get_latest_assessment(student_id)
-    if not assessment or not assessment.get('ai_career_report'):
-        raise HTTPException(status_code=404, detail='深度测评报告不存在，请先生成')
-    with get_connection() as connection:
-        student = row_to_dict(connection.execute(
-            'SELECT * FROM students WHERE student_id = ?', [student_id]
-        ).fetchone())
-    if not student:
-        raise HTTPException(status_code=404, detail='学生档案不存在')
-    pdf = build_text_report_pdf('智愿填报 · 霍兰德职业兴趣深度报告', student, assessment['ai_career_report'])
+    student = _load_student_or_404(student_id)
+    body = _resolve_career_report_content(student_id, None)
+    pdf = build_text_report_pdf('智愿填报 · 霍兰德职业兴趣深度报告', student, body)
     filename = f'{escape_pdf_name(student.get("name") or "student")}_career.pdf'
-    return Response(
-        content=pdf,
-        media_type='application/pdf',
-        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
-    )
+    return _pdf_response(pdf, filename)
+
+
+@app.post('/api/ai/career-report/pdf')
+def export_career_report_pdf_post(request: ReportPdfExportRequest):
+    student = _load_student_or_404(request.student_id)
+    body = _resolve_career_report_content(request.student_id, request.report_content)
+    pdf = build_text_report_pdf('智愿填报 · 霍兰德职业兴趣深度报告', student, body)
+    filename = f'{escape_pdf_name(student.get("name") or "student")}_career.pdf'
+    return _pdf_response(pdf, filename)
 
 
 @app.post('/api/risk-inspect')

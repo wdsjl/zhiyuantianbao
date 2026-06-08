@@ -118,6 +118,10 @@ class StudentReportRequest(BaseModel):
     volunteer_summary: Optional[str] = None
 
 
+class ReportPdfExportRequest(BaseModel):
+    student_id: int
+    report_content: Optional[str] = None
+
 
 class OpenRequestCreate(BaseModel):
     user_id: int
