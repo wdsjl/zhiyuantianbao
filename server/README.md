@@ -72,6 +72,20 @@ WECHAT_SECRET=你的小程序secret
 
 设置后，后端会使用微信官方 `jscode2session` 换取真实 `openid`。
 
+**微信支付必须配置 `WECHAT_SECRET`**，否则用户 openid 会是 `local_` / `dev_` 临时值，支付时会提示「请先使用微信登录后再支付」。
+
+在服务器 `ecosystem.secrets.js` 中填写：
+
+```javascript
+module.exports = {
+  WECHAT_SECRET: '你的小程序AppSecret',
+  WECHAT_PAY_API_V3_KEY: '...',
+  WECHAT_PAY_SERIAL_NO: '...'
+};
+```
+
+然后执行 `pm2 restart zhiyuan-backend --update-env`。
+
 ## 本地爬取后上传到服务器
 
 适合在本地电脑长时间跑爬虫，再把数据合并到服务器（保留服务器上的用户、订单、会员等数据）。

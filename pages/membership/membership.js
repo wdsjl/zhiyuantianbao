@@ -1,4 +1,5 @@
 const { request, formatRequestError, BASE_URL } = require('../../utils/request');
+const { ensureWechatLogin } = require('../../utils/auth');
 const { fetchEntitlements, getCurrentUserId } = require('../../utils/membership');
 
 const PLAN_FEATURES = {
@@ -207,15 +208,22 @@ Page({
 
   createAndPay(userId, plan, isRenewal) {
     this.setData({ paying: true });
-    request({
-      url: '/api/payments/wechat/create',
-      method: 'POST',
-      data: {
-        user_id: Number(userId),
-        plan_code: plan.plan_code,
-        request_type: isRenewal ? 'renew' : 'open'
-      }
-    })
+    ensureWechatLogin()
+      .then(() => {
+        const freshUserId = getCurrentUserId();
+        if (!freshUserId) {
+          throw new Error('请先完善学生档案后再支付');
+        }
+        return request({
+          url: '/api/payments/wechat/create',
+          method: 'POST',
+          data: {
+            user_id: Number(freshUserId),
+            plan_code: plan.plan_code,
+            request_type: isRenewal ? 'renew' : 'open'
+          }
+        });
+      })
       .then((createRes) => {
         const params = createRes.pay_params || {};
         return new Promise((resolve, reject) => {
@@ -236,9 +244,13 @@ Page({
           wx.showToast({ title: '已取消支付', icon: 'none' });
           return;
         }
+        let content = (error && error.message) || (error && error.errMsg) || '请稍后重试';
+        if (content.includes('请先使用微信登录')) {
+          content = '当前账号未绑定微信身份。请确认服务器已配置 WECHAT_SECRET，然后关闭小程序重新进入，再完善档案后支付。';
+        }
         wx.showModal({
           title: '支付失败',
-          content: (error && error.message) || (error && error.errMsg) || '请稍后重试',
+          content,
           showCancel: false
         });
       })
