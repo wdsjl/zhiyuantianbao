@@ -1,6 +1,6 @@
 const { request, formatRequestError, BASE_URL } = require('../../utils/request');
 const { ensureWechatLogin } = require('../../utils/auth');
-const { fetchEntitlements, getCurrentUserId } = require('../../utils/membership');
+const { fetchEntitlements, getCurrentUserId, syncUserIdentity } = require('../../utils/membership');
 
 const PLAN_FEATURES = {
   free: ['完整测评流程', '基础院校专业查询', '近2年分数线', '手动志愿模拟'],
@@ -29,6 +29,7 @@ Page({
     loadError: ''
   },
   onShow() {
+    syncUserIdentity();
     this.loadData();
   },
   mapPlans(list) {
@@ -225,6 +226,7 @@ Page({
         });
       })
       .then((createRes) => {
+        const payUserId = getCurrentUserId();
         const params = createRes.pay_params || {};
         return new Promise((resolve, reject) => {
           wx.requestPayment({
@@ -233,12 +235,12 @@ Page({
             package: params.package,
             signType: params.signType || 'RSA',
             paySign: params.paySign,
-            success: () => resolve(createRes.order_no),
+            success: () => resolve({ orderNo: createRes.order_no, payUserId }),
             fail: (error) => reject(error)
           });
         });
       })
-      .then((orderNo) => this.confirmPayment(orderNo))
+      .then(({ orderNo, payUserId }) => this.confirmPayment(orderNo, 0, payUserId))
       .catch((error) => {
         if (error && error.errMsg && error.errMsg.includes('cancel')) {
           wx.showToast({ title: '已取消支付', icon: 'none' });
@@ -259,8 +261,8 @@ Page({
       });
   },
 
-  confirmPayment(orderNo, retry = 0) {
-    const userId = getCurrentUserId();
+  confirmPayment(orderNo, retry = 0, payUserId = '') {
+    const userId = payUserId || getCurrentUserId();
     return request({
       url: `/api/payments/wechat/orders/${orderNo}`,
       data: { user_id: Number(userId) }
@@ -268,20 +270,28 @@ Page({
       .then((res) => {
         const order = res.order || {};
         if (order.pay_status === 'paid') {
-          wx.showModal({
-            title: '支付成功',
-            content: '会员已开通，相关功能现在可以使用了。',
-            showCancel: false,
-            success: () => {
-              fetchEntitlements();
-              this.loadData();
-            }
+          wx.removeStorageSync('memberEntitlements');
+          const profile = wx.getStorageSync('studentProfile') || {};
+          wx.setStorageSync('studentProfile', { ...profile, userId: String(userId) });
+          wx.setStorageSync('loginUser', {
+            ...(wx.getStorageSync('loginUser') || {}),
+            user_id: Number(userId)
           });
-          return;
+          return fetchEntitlements().then((entitlements) => {
+            const planName = entitlements && entitlements.plan ? entitlements.plan.plan_name : '会员';
+            wx.showModal({
+              title: '支付成功',
+              content: `已开通「${planName}」，现在可以生成个性化报告等功能。`,
+              showCancel: false,
+              success: () => {
+                this.loadData();
+              }
+            });
+          });
         }
         if (retry < 5) {
           return new Promise((resolve) => {
-            setTimeout(() => resolve(this.confirmPayment(orderNo, retry + 1)), 1200);
+            setTimeout(() => resolve(this.confirmPayment(orderNo, retry + 1, userId)), 1200);
           });
         }
         wx.showModal({

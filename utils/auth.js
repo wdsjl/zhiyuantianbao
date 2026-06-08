@@ -5,26 +5,33 @@ function isTempOpenid(openid) {
 }
 
 function mergeLoginProfile(loginRes) {
-  if (!loginRes || !loginRes.profile) return;
+  if (!loginRes) return;
   const oldProfile = wx.getStorageSync('studentProfile') || {};
+  const serverProfile = loginRes.profile || {};
   const profile = {
     ...oldProfile,
     openid: loginRes.openid,
     userId: loginRes.user_id,
-    studentId: loginRes.profile.student_id || oldProfile.studentId,
-    name: loginRes.profile.name || oldProfile.name,
-    phone: loginRes.profile.phone || oldProfile.phone,
-    province: loginRes.profile.province || oldProfile.province,
-    city: loginRes.profile.city || oldProfile.city,
-    school: loginRes.profile.school_name || oldProfile.school,
-    grade: loginRes.profile.grade || oldProfile.grade,
-    className: loginRes.profile.class_name || oldProfile.className,
-    subjectCombination: loginRes.profile.subject_combination || oldProfile.subjectCombination,
-    score: loginRes.profile.score || oldProfile.score,
-    rank: loginRes.profile.rank || oldProfile.rank,
-    targetBatch: loginRes.profile.target_batch || oldProfile.targetBatch
+    studentId: serverProfile.student_id || oldProfile.studentId,
+    name: serverProfile.name || oldProfile.name,
+    phone: serverProfile.phone || oldProfile.phone,
+    province: serverProfile.province || oldProfile.province,
+    city: serverProfile.city || oldProfile.city,
+    school: serverProfile.school_name || oldProfile.school,
+    grade: serverProfile.grade || oldProfile.grade,
+    className: serverProfile.class_name || oldProfile.className,
+    subjectCombination: serverProfile.subject_combination || oldProfile.subjectCombination,
+    score: serverProfile.score || oldProfile.score,
+    rank: serverProfile.rank || oldProfile.rank,
+    targetBatch: serverProfile.target_batch || oldProfile.targetBatch
   };
   wx.setStorageSync('studentProfile', profile);
+  wx.setStorageSync('loginUser', {
+    ...(wx.getStorageSync('loginUser') || {}),
+    ...loginRes,
+    user_id: loginRes.user_id,
+    openid: loginRes.openid
+  });
 }
 
 function syncProfileToServer(profile, openid) {

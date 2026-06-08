@@ -1,5 +1,5 @@
 const { request } = require('../../utils/request');
-const { requirePermission, getCurrentUserId } = require('../../utils/membership');
+const { requirePermission, getCurrentUserId, fetchEntitlements } = require('../../utils/membership');
 const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
@@ -65,6 +65,7 @@ Page({
     loading: false
   },
   onShow() {
+    fetchEntitlements().catch(() => {});
     refreshActiveProfile().then((profile) => {
       this.setData({ profile: profile || loadActiveProfileSync() });
       this.loadServerReport();

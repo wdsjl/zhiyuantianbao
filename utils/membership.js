@@ -11,10 +11,29 @@ const PERMISSION_LABELS = {
   personality_deep: '深度测评报告 / 个性化填报报告'
 };
 
-function getCurrentUserId() {
+function syncUserIdentity() {
   const loginUser = wx.getStorageSync('loginUser') || {};
   const profile = wx.getStorageSync('studentProfile') || {};
-  return loginUser.user_id || profile.userId || profile.user_id || '';
+  const loginId = loginUser.user_id || loginUser.userId || '';
+  const profileId = profile.userId || profile.user_id || '';
+  if (loginId && profileId && String(loginId) !== String(profileId)) {
+    const updated = {
+      ...profile,
+      userId: loginId,
+      openid: loginUser.openid || profile.openid
+    };
+    wx.setStorageSync('studentProfile', updated);
+    return String(loginId);
+  }
+  const resolved = loginId || profileId || '';
+  if (resolved && profile && String(profile.userId || '') !== String(resolved)) {
+    wx.setStorageSync('studentProfile', { ...profile, userId: resolved });
+  }
+  return String(resolved);
+}
+
+function getCurrentUserId() {
+  return syncUserIdentity();
 }
 
 function fetchEntitlements() {
@@ -46,8 +65,11 @@ function requirePermission(permissionCode, title, options = {}) {
     showUpgradeModal(permissionCode, title, '请先完善档案后再使用会员功能。');
     return Promise.resolve(false);
   }
+  wx.removeStorageSync('memberEntitlements');
   const url = options.consume ? `/api/membership/permissions/${permissionCode}/consume` : `/api/membership/permissions/${permissionCode}/check`;
-  return request({ url, method: options.consume ? 'POST' : 'GET', data: { user_id: Number(userId) } })
+  return fetchEntitlements()
+    .catch(() => null)
+    .then(() => request({ url, method: options.consume ? 'POST' : 'GET', data: { user_id: Number(userId) } }))
     .then((res) => {
       if (res.allowed) {
         return fetchEntitlements().then(() => {
@@ -58,7 +80,11 @@ function requirePermission(permissionCode, title, options = {}) {
         });
       }
       return fetchEntitlements().then((latest) => {
-        showUpgradeModal(permissionCode, title, getMembershipStatusMessage(latest) || res.message);
+        const planName = latest && latest.plan ? latest.plan.plan_name : '免费版';
+        const hint = getMembershipStatusMessage(latest)
+          || res.message
+          || `当前套餐为「${planName}」，未开通该功能或次数已用完。`;
+        showUpgradeModal(permissionCode, title, hint);
         return false;
       });
     })
@@ -106,5 +132,6 @@ module.exports = {
   hasPermission,
   requirePermission,
   getCurrentUserId,
+  syncUserIdentity,
   goMembershipPage
 };
