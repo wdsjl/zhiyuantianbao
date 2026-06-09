@@ -30,7 +30,9 @@ Page({
     orders: [],
     membershipNotice: null,
     beanBalance: 0,
-    loadError: ''
+    loadError: '',
+    comparePlans: [],
+    compareFeatures: []
   },
   onShow() {
     syncUserIdentity();
@@ -58,6 +60,7 @@ Page({
     const userId = getCurrentUserId();
     const tasks = [
       request({ url: '/api/membership/plans' }).catch((error) => ({ error })),
+      request({ url: '/api/referral/membership-compare' }).catch(() => ({ list: [] })),
       fetchEntitlements().catch((error) => ({ error })),
       request({ url: '/api/payments/wechat/status' }).catch(() => ({ enabled: false })),
       userId
@@ -68,7 +71,7 @@ Page({
         : Promise.resolve({ balance: 0 })
     ];
     Promise.all(tasks)
-      .then(([plansRes, entitlementsRes, payStatus, statusRes, beanRes]) => {
+      .then(([plansRes, compareRes, entitlementsRes, payStatus, statusRes, beanRes]) => {
         const errors = [];
         if (plansRes && plansRes.error) errors.push(`套餐列表：${formatRequestError(plansRes.error)}`);
         if (entitlementsRes && entitlementsRes.error) errors.push(`会员状态：${formatRequestError(entitlementsRes.error)}`);
@@ -91,8 +94,24 @@ Page({
           ? `${errors.join('；')}。请确认接口地址为 ${BASE_URL}`
           : '';
 
+        const comparePlans = (compareRes.list || []).map((item) => ({
+          ...item,
+          beanGrantText: item.bean_grant > 0 ? `${item.bean_grant} 星鼎豆` : '—',
+          reportCostText: item.report_cost > 0 ? `${item.report_cost} 豆/次` : '—'
+        }));
+        const featureSet = new Set();
+        comparePlans.forEach((plan) => {
+          (plan.features || []).forEach((feature) => featureSet.add(feature));
+        });
+        const compareFeatures = Array.from(featureSet).map((feature) => ({
+          name: feature,
+          cells: comparePlans.map((plan) => ((plan.features || []).includes(feature) ? '✓' : '—'))
+        }));
+
         this.setData({
           plans,
+          comparePlans,
+          compareFeatures,
           entitlements: {
             ...entitlements,
             plan: {
@@ -109,7 +128,9 @@ Page({
             amountText: `¥${item.amount || 0}`
           })),
           membershipNotice: this.buildMembershipNotice(entitlements, plans),
-          beanBalance: Number(beanRes.balance) || 0,
+          beanBalance: Number(
+            beanRes.balance ?? (entitlements.beans && entitlements.beans.balance)
+          ) || 0,
           loadError
         });
       })

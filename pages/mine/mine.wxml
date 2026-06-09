@@ -16,6 +16,15 @@
     <button class="primary-btn vip-btn" catchtap="goMembership">立即开通</button>
   </view>
 
+  <view class="card promo-card" bindtap="goPromotion">
+    <view>
+      <view class="promo-title">达人推广中心</view>
+      <view class="sub-text">专属海报 · 推广物料 · 数据看板 · 佣金提现</view>
+      <view class="sub-text">扫码绑定用户，充值后参与分账</view>
+    </view>
+    <button class="primary-btn promo-btn" catchtap="goPromotion">进入推广</button>
+  </view>
+
   <view class="card">
     <view class="menu-item" bindtap="goProfile">
       <text>身份切换 / 绑定学生</text>
@@ -26,8 +35,8 @@
       <text>去支付 ›</text>
     </view>
     <view class="menu-item" bindtap="goPromotion">
-      <text>推广中心 / 专属海报</text>
-      <text>博主 ›</text>
+      <text>达人推广 / 专属海报</text>
+      <text>进入 ›</text>
     </view>
     <view class="menu-item" bindtap="goDrafts">
       <text>我的志愿草稿</text>
@@ -56,4 +65,6 @@
     <view class="section-title">免责声明</view>
     <view class="warn-box">本系统基于历年录取数据、招生计划及用户输入信息进行智能分析，结果仅供参考。最终录取结果以各省教育考试院及高校官方公布为准。</view>
   </view>
+
+  <view class="version-line">小程序版本 {{buildTag}}</view>
 </view>

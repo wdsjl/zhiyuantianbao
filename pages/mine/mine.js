@@ -1,7 +1,9 @@
 const { fetchEntitlements, goMembershipPage } = require('../../utils/membership');
+const { BUILD_TAG } = require('../../utils/miniappVersion');
 
 Page({
   data: {
+    buildTag: BUILD_TAG,
     profile: {},
     draftCount: 0,
     exportCount: 0,
