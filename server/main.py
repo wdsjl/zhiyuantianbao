@@ -9,6 +9,7 @@ from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import (
     RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
+    ReferralAgentRegisterRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
     BeanConsumeReportRequest,
 )
@@ -29,6 +30,7 @@ from admin_views import (
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
+    admin_referrals,
 )
 from crawler_service import (
     crawl_and_import, crawl_and_import_years, import_schools_only, ensure_crawl_tables,
@@ -54,6 +56,10 @@ from pdf_service import (
 from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, revoke_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, adjust_permission_usage, export_permission_usage_csv, expire_overdue_memberships
 from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv, refund_order
 from wechat_pay_service import create_wechat_payment, handle_wechat_pay_notify, sync_wechat_order_status, is_wechat_pay_ready
+from referral_service import (
+    ensure_referral_tables, register_agent, get_agent_dashboard, bind_invitee,
+    poster_image_base64, get_binding_for_user,
+)
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
 
@@ -98,6 +104,7 @@ ensure_personality_tables()
 ensure_student_report_tables()
 from bean_service import ensure_bean_tables, sync_plan_catalog
 ensure_bean_tables()
+ensure_referral_tables()
 sync_plan_catalog()
 expire_overdue_memberships()
 
@@ -454,7 +461,19 @@ def admin_payments_page(keyword: str = '', message: str = ''):
     return admin_payments(keyword, message)
 
 
+@app.get('/admin/referrals')
+def admin_referrals_page(keyword: str = '', message: str = ''):
+    return admin_referrals(keyword, message=message)
 
+
+@app.post('/admin/referrals/settle')
+def admin_referrals_settle(commission_id: int = Form(...)):
+    from referral_service import settle_commission
+    try:
+        settle_commission(commission_id)
+        return RedirectResponse('/admin/referrals?message=分账已确认结算', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals?message=分账失败：{exc}', status_code=303)
 
 
 @app.get('/admin/payments/requests/export')
@@ -1058,9 +1077,58 @@ def api_wechat_login_status():
 @app.post('/api/auth/login')
 def login(request: LoginRequest):
     try:
-        return login_or_create_user(request.code, request.openid, request.phone, request.name, request.role)
+        return login_or_create_user(
+            request.code, request.openid, request.phone, request.name, request.role, request.invite_code
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/referral/agent/register')
+def api_referral_agent_register(request: ReferralAgentRegisterRequest):
+    try:
+        agent = register_agent(request.user_id, request.display_name)
+        return {'agent': agent}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/referral/dashboard')
+def api_referral_dashboard(user_id: int = Query(...)):
+    try:
+        return get_agent_dashboard(user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/referral/poster')
+def api_referral_poster(user_id: int = Query(...)):
+    try:
+        agent = register_agent(user_id)
+        image_base64 = poster_image_base64(agent['invite_code'])
+        return {
+            'invite_code': agent['invite_code'],
+            'display_name': agent.get('display_name'),
+            'commission_rate': agent.get('commission_rate'),
+            'image_base64': image_base64,
+            'share_path': f'pages/home/home?invite={agent["invite_code"]}',
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/referral/bind')
+def api_referral_bind(user_id: int = Query(...), invite_code: str = Query(...)):
+    binding = bind_invitee(user_id, invite_code, 'manual')
+    if not binding:
+        raise HTTPException(status_code=400, detail='邀请码无效或已绑定其他博主')
+    return {'binding': binding}
+
+
+@app.get('/api/referral/my-binding')
+def api_referral_my_binding(user_id: int = Query(...)):
+    binding = get_binding_for_user(user_id)
+    return {'binding': binding}
 
 
 @app.get('/api/profile')

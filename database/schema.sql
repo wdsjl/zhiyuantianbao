@@ -399,3 +399,50 @@ CREATE TABLE IF NOT EXISTS app_settings (
   setting_value TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+
+CREATE TABLE IF NOT EXISTS referral_agents (
+  agent_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL UNIQUE,
+  invite_code TEXT NOT NULL UNIQUE,
+  display_name TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+  commission_rate REAL NOT NULL DEFAULT 10,
+  total_invites INTEGER NOT NULL DEFAULT 0,
+  total_paid_orders INTEGER NOT NULL DEFAULT 0,
+  total_commission REAL NOT NULL DEFAULT 0,
+  settled_commission REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS referral_bindings (
+  binding_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invitee_user_id INTEGER NOT NULL UNIQUE,
+  agent_id INTEGER NOT NULL,
+  invite_code TEXT NOT NULL,
+  bind_source TEXT NOT NULL DEFAULT 'poster',
+  bound_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  first_paid_order_id INTEGER,
+  FOREIGN KEY (invitee_user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_id) REFERENCES referral_agents(agent_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS referral_commissions (
+  commission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL UNIQUE,
+  order_no TEXT NOT NULL,
+  agent_id INTEGER NOT NULL,
+  invitee_user_id INTEGER NOT NULL,
+  order_amount REAL NOT NULL DEFAULT 0,
+  commission_rate REAL NOT NULL DEFAULT 0,
+  commission_amount REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'settled', 'cancelled')),
+  settled_at TEXT,
+  remark TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES payment_orders(order_id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_id) REFERENCES referral_agents(agent_id) ON DELETE CASCADE,
+  FOREIGN KEY (invitee_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);

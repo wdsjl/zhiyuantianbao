@@ -1,4 +1,5 @@
 const { login } = require('./utils/auth');
+const { captureInviteFromLaunch } = require('./utils/referral');
 
 App({
   globalData: {
@@ -7,7 +8,8 @@ App({
     studentProfile: null,
     loginUser: null
   },
-  onLaunch() {
+  onLaunch(options) {
+    captureInviteFromLaunch(options);
     const userInfo = wx.getStorageSync('userInfo') || null;
     const currentRole = wx.getStorageSync('currentRole') || '';
     const studentProfile = wx.getStorageSync('studentProfile') || null;

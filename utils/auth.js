@@ -1,4 +1,5 @@
 const { request } = require('./request');
+const { getPendingInviteCode, clearPendingInviteCode } = require('./referral');
 
 function isTempOpenid(openid) {
   return !openid || /^(dev_|local_|test_)/.test(openid);
@@ -91,7 +92,8 @@ function ensureWechatLogin() {
             code,
             phone: profile.phone || '',
             name: profile.name || '',
-            role: profile.role || wx.getStorageSync('currentRole') || 'student'
+            role: profile.role || wx.getStorageSync('currentRole') || 'student',
+            invite_code: getPendingInviteCode()
           }
         })
           .then((loginRes) => {
@@ -102,6 +104,7 @@ function ensureWechatLogin() {
               return null;
             }
             wx.setStorageSync('loginUser', loginRes);
+            if (loginRes.referral_bound) clearPendingInviteCode();
             mergeLoginProfile(loginRes);
             const latestProfile = wx.getStorageSync('studentProfile') || profile;
             if (isTempOpenid(latestProfile.openid)) {
@@ -133,11 +136,13 @@ function login() {
           method: 'POST',
           data: {
             code,
-            role: wx.getStorageSync('currentRole') || 'student'
+            role: wx.getStorageSync('currentRole') || 'student',
+            invite_code: getPendingInviteCode()
           }
         })
           .then((loginRes) => {
             wx.setStorageSync('loginUser', loginRes);
+            if (loginRes.referral_bound) clearPendingInviteCode();
             mergeLoginProfile(loginRes);
             resolve(loginRes);
           })

@@ -10,7 +10,8 @@
     "pages/drafts/drafts",
     "pages/membership/membership",
     "pages/compare/compare",
-    "pages/student-report/student-report"
+    "pages/student-report/student-report",
+    "pages/promotion/promotion"
   ],
   "window": {
     "navigationBarTitleText": "智愿填报",

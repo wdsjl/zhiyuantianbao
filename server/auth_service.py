@@ -59,7 +59,14 @@ def get_wechat_session(code: str) -> dict[str, Any] | None:
     return data
 
 
-def login_or_create_user(code: str | None, openid: str | None, phone: str | None, name: str | None, role: str) -> dict[str, Any]:
+def login_or_create_user(
+    code: str | None,
+    openid: str | None,
+    phone: str | None,
+    name: str | None,
+    role: str,
+    invite_code: str | None = None,
+) -> dict[str, Any]:
     code_text = (code or '').strip()
     if code_text and not is_wechat_login_ready():
         raise ValueError(
@@ -76,6 +83,7 @@ def login_or_create_user(code: str | None, openid: str | None, phone: str | None
         if not user and phone:
             user = row_to_dict(connection.execute('SELECT * FROM users WHERE phone = ?', [phone]).fetchone())
 
+        is_new_user = not user
         if user:
             user_id = user['user_id']
             connection.execute(
@@ -107,10 +115,16 @@ def login_or_create_user(code: str | None, openid: str | None, phone: str | None
         ).fetchone())
         connection.commit()
 
+    referral_binding = None
+    if invite_code:
+        from referral_service import try_bind_on_login
+        referral_binding = try_bind_on_login(user_id, invite_code, is_new_user)
+
     return {
         'user_id': user_id,
         'openid': resolved_openid,
         'unionid': unionid,
         'has_profile': bool(profile and profile.get('student_id')),
-        'profile': profile
+        'profile': profile,
+        'referral_bound': bool(referral_binding),
     }

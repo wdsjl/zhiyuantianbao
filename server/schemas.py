@@ -8,6 +8,12 @@ class LoginRequest(BaseModel):
     phone: Optional[str] = None
     name: Optional[str] = None
     role: str = 'student'
+    invite_code: Optional[str] = None
+
+
+class ReferralAgentRegisterRequest(BaseModel):
+    user_id: int
+    display_name: Optional[str] = None
 
 
 class ParentBindRequest(BaseModel):

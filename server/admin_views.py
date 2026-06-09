@@ -87,6 +87,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
         <a href="/admin/membership/users">用户会员</a>
         <a href="/admin/membership/usage">次数记录</a>
         <a href="/admin/payments">收款订单</a>
+        <a href="/admin/referrals">推广分账</a>
         <a href="/admin/llm-settings">大模型配置</a>
         <a href="/admin/account">账号设置</a>
         <a href="/docs" target="_blank">接口文档</a>
@@ -1395,3 +1396,90 @@ def admin_payments(keyword: str = '', message: str = ''):
       </div>
     '''
     return render_page('收款订单', body)
+
+
+def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
+    from referral_service import list_agents, list_bindings, list_commissions, get_default_commission_rate
+
+    agents = list_agents(keyword)
+    bindings = list_bindings(keyword)
+    commissions = list_commissions(keyword)
+    pending_total = sum(float(item.get('commission_amount') or 0) for item in commissions if item.get('status') == 'pending')
+    settled_total = sum(float(item.get('commission_amount') or 0) for item in commissions if item.get('status') == 'settled')
+
+    agent_rows = ''.join(
+        f'''<tr>
+          <td>{item.get("agent_id")}</td>
+          <td>{escape(str(item.get("display_name") or ""))}</td>
+          <td><code>{escape(str(item.get("invite_code") or ""))}</code></td>
+          <td>{escape(str(item.get("user_name") or ""))}<br><span class="muted">{escape(str(item.get("user_phone") or ""))}</span></td>
+          <td>{item.get("commission_rate")}%</td>
+          <td>{item.get("total_invites")}</td>
+          <td>{item.get("total_paid_orders")}</td>
+          <td>¥{item.get("total_commission")}</td>
+          <td>¥{item.get("settled_commission")}</td>
+          <td>{escape(str(item.get("status") or ""))}</td>
+        </tr>'''
+        for item in agents
+    ) or '<tr><td colspan="10" class="muted">暂无博主</td></tr>'
+
+    binding_rows = ''.join(
+        f'''<tr>
+          <td>{item.get("binding_id")}</td>
+          <td>{escape(str(item.get("agent_name") or ""))}<br><code>{escape(str(item.get("agent_invite_code") or ""))}</code></td>
+          <td>{escape(str(item.get("invitee_name") or ""))}<br><span class="muted">{escape(str(item.get("invitee_phone") or ""))}</span></td>
+          <td>{escape(str(item.get("bind_source") or ""))}</td>
+          <td>{escape(str(item.get("bound_at") or ""))}</td>
+        </tr>'''
+        for item in bindings
+    ) or '<tr><td colspan="5" class="muted">暂无推广用户</td></tr>'
+
+    commission_rows = ''.join(
+        f'''<tr>
+          <td>{item.get("commission_id")}</td>
+          <td>{escape(str(item.get("order_no") or ""))}</td>
+          <td>{escape(str(item.get("agent_name") or ""))}</td>
+          <td>{escape(str(item.get("invitee_name") or ""))}<br><span class="muted">{escape(str(item.get("invitee_phone") or ""))}</span></td>
+          <td>¥{item.get("order_amount")}</td>
+          <td>{item.get("commission_rate")}%</td>
+          <td>¥{item.get("commission_amount")}</td>
+          <td>{escape(str(item.get("status") or ""))}</td>
+          <td>{escape(str(item.get("created_at") or ""))}</td>
+          <td>
+            {'<form method="post" action="/admin/referrals/settle" style="display:inline"><input type="hidden" name="commission_id" value="' + str(item.get("commission_id")) + '" /><button type="submit">确认分账</button></form>' if item.get('status') == 'pending' else escape(str(item.get('settled_at') or ''))}
+          </td>
+        </tr>'''
+        for item in commissions
+    ) or '<tr><td colspan="10" class="muted">暂无分账记录</td></tr>'
+
+    body = f'''
+      <div class="card">
+        <h2>推广分账</h2>
+        <p class="muted">博主扫码进入小程序领取专属海报；用户扫海报后绑定推广关系。用户支付成功后自动生成待分账记录，平台确认后标记已结算。</p>
+        {f'<div class="notice">{escape(message)}</div>' if message else ''}
+        <div class="stats">
+          <div class="stat"><div class="stat-label">博主数</div><div class="stat-value">{len(agents)}</div></div>
+          <div class="stat"><div class="stat-label">推广用户</div><div class="stat-value">{len(bindings)}</div></div>
+          <div class="stat"><div class="stat-label">待分账</div><div class="stat-value">¥{pending_total:.2f}</div></div>
+          <div class="stat"><div class="stat-label">已分账</div><div class="stat-value">¥{settled_total:.2f}</div></div>
+          <div class="stat"><div class="stat-label">默认佣金比例</div><div class="stat-value">{get_default_commission_rate()}%</div></div>
+        </div>
+        <form class="toolbar" method="get">
+          <input name="keyword" value="{escape(keyword)}" placeholder="博主 / 邀请码 / 用户手机 / 订单号" />
+          <button type="submit">搜索</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>推广博主</h2>
+        <table><thead><tr><th>ID</th><th>博主名</th><th>邀请码</th><th>绑定微信用户</th><th>佣金%</th><th>推广人数</th><th>付费单</th><th>累计佣金</th><th>已结算</th><th>状态</th></tr></thead><tbody>{agent_rows}</tbody></table>
+      </div>
+      <div class="card">
+        <h2>推广用户绑定</h2>
+        <table><thead><tr><th>ID</th><th>博主</th><th>用户</th><th>来源</th><th>绑定时间</th></tr></thead><tbody>{binding_rows}</tbody></table>
+      </div>
+      <div class="card">
+        <h2>分账记录</h2>
+        <table><thead><tr><th>ID</th><th>订单号</th><th>博主</th><th>用户</th><th>订单额</th><th>比例</th><th>佣金</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>{commission_rows}</tbody></table>
+      </div>
+    '''
+    return render_page('推广分账', body)

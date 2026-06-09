@@ -1,0 +1,52 @@
+<view class="container">
+  <view class="card hero-card">
+    <view class="section-title">博主推广中心</view>
+    <view class="sub-text">领取专属海报，用户扫码后将绑定为您的推广用户。用户充值会员后，您与平台均可查看订单并参与分账。</view>
+  </view>
+
+  <view class="card" wx:if="{{loading}}">
+    <view class="sub-text">正在加载推广信息...</view>
+  </view>
+
+  <view wx:else>
+    <view class="card">
+      <view class="section-title">我的推广码</view>
+      <view class="invite-code">{{agent.invite_code || '--'}}</view>
+      <view class="sub-text">佣金比例：{{agent.commission_rate || 0}}%</view>
+      <view class="stats-row">
+        <view class="stat-item"><view class="stat-num">{{agent.total_invites || 0}}</view><view class="stat-label">推广用户</view></view>
+        <view class="stat-item"><view class="stat-num">{{agent.total_paid_orders || 0}}</view><view class="stat-label">付费订单</view></view>
+        <view class="stat-item"><view class="stat-num">¥{{agent.total_commission || 0}}</view><view class="stat-label">累计佣金</view></view>
+        <view class="stat-item"><view class="stat-num">¥{{pendingCommission}}</view><view class="stat-label">待结算</view></view>
+      </view>
+    </view>
+
+    <view class="card poster-card">
+      <view class="section-title">专属推广海报</view>
+      <view class="sub-text">保存海报或转发给家长/学生扫码，即可绑定推广关系。</view>
+      <image wx:if="{{posterImage}}" class="poster-image" src="{{posterImage}}" mode="widthFix" show-menu-by-longpress="{{true}}" />
+      <view wx:else class="sub-text warn-text">海报生成失败，请确认服务端已配置 WECHAT_SECRET</view>
+      <button class="primary-btn" bindtap="savePoster" disabled="{{!posterImage}}">保存海报到相册</button>
+      <button class="secondary-btn" bindtap="refreshPoster">刷新海报</button>
+    </view>
+
+    <view class="card">
+      <view class="section-title">我的推广用户</view>
+      <view wx:if="{{!invitees.length}}" class="sub-text">暂无推广用户，分享海报后开始统计。</view>
+      <view wx:for="{{invitees}}" wx:key="user_id" class="list-item">
+        <view class="item-title">{{item.name || '未填写姓名'}}</view>
+        <view class="sub-text">{{item.phone || '未留手机'}} · 付费 {{item.paid_orders || 0}} 单 · ¥{{item.paid_amount || 0}}</view>
+        <view class="sub-text">绑定时间：{{item.bound_at}}</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">分账记录</view>
+      <view wx:if="{{!commissions.length}}" class="sub-text">暂无分账记录。</view>
+      <view wx:for="{{commissions}}" wx:key="commission_id" class="list-item">
+        <view class="item-title">订单 {{item.order_no}} · ¥{{item.commission_amount}}</view>
+        <view class="sub-text">{{item.invitee_name || '用户'}} · {{item.status === 'settled' ? '已结算' : (item.status === 'pending' ? '待平台确认' : '已取消')}}</view>
+      </view>
+    </view>
+  </view>
+</view>

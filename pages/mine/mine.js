@@ -37,5 +37,8 @@ Page({
   },
   goStudentReport() {
     wx.navigateTo({ url: '/pages/student-report/student-report' });
+  },
+  goPromotion() {
+    wx.navigateTo({ url: '/pages/promotion/promotion' });
   }
 });

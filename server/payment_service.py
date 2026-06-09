@@ -127,7 +127,13 @@ def fulfill_wechat_order(
             [method, transaction_id, notify_raw, membership_id, order_no]
         )
         connection.commit()
-        return row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_no = ?', [order_no]).fetchone())
+        paid_order = row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_no = ?', [order_no]).fetchone())
+    try:
+        from referral_service import record_commission_for_order
+        record_commission_for_order(paid_order)
+    except Exception:
+        pass
+    return paid_order
 
 
 def create_manual_order(data: dict[str, Any]) -> int:
@@ -239,6 +245,12 @@ def refund_order(order_id: int, remark: str = '', revoke: bool = True) -> dict[s
 
     if revoke:
         revoke_membership(int(order['user_id']), f'{refund_note}，会员已撤销')
+
+    try:
+        from referral_service import cancel_commission_for_order
+        cancel_commission_for_order(int(order['order_id']), refund_note)
+    except Exception:
+        pass
 
     if gateway_refund:
         message = '已发起原路退款，款项将退回用户支付账户'

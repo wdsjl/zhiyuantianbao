@@ -1,0 +1,76 @@
+.hero-card {
+  background: linear-gradient(135deg, #1677ff 0%, #3b8cff 100%);
+  color: #fff;
+}
+
+.hero-card .section-title,
+.hero-card .sub-text {
+  color: #fff;
+}
+
+.invite-code {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #1677ff;
+  margin: 16rpx 0;
+  letter-spacing: 4rpx;
+}
+
+.stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.stat-item {
+  width: calc(50% - 8rpx);
+  background: #f5f7fb;
+  border-radius: 16rpx;
+  padding: 20rpx;
+  box-sizing: border-box;
+}
+
+.stat-num {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #1677ff;
+}
+
+.stat-label {
+  font-size: 24rpx;
+  color: #7a8499;
+  margin-top: 8rpx;
+}
+
+.poster-image {
+  width: 100%;
+  margin: 24rpx 0;
+  border-radius: 16rpx;
+  background: #f5f7fb;
+}
+
+.warn-text {
+  color: #ff4d4f;
+  margin: 16rpx 0;
+}
+
+.list-item {
+  padding: 20rpx 0;
+  border-bottom: 1px solid #eef1f6;
+}
+
+.list-item:last-child {
+  border-bottom: none;
+}
+
+.item-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2430;
+}
+
+.primary-btn,
+.secondary-btn {
+  margin-top: 16rpx;
+}

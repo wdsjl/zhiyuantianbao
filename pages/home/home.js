@@ -1,5 +1,8 @@
 const { refreshActiveProfile } = require('../../utils/profileHelper');
 const { getFlowStatus, goNextStep, navigateToStep } = require('../../utils/applyFlow');
+const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode } = require('../../utils/referral');
+const { request } = require('../../utils/request');
+const { getCurrentUserId } = require('../../utils/membership');
 
 Page({
   data: {
@@ -14,7 +17,22 @@ Page({
       allDone: false
     }
   },
+  onLoad(options) {
+    captureInviteFromLaunch({ query: options || {}, scene: options && options.scene });
+    this.tryBindInvite();
+  },
+  tryBindInvite() {
+    const inviteCode = getPendingInviteCode();
+    const userId = getCurrentUserId();
+    if (!inviteCode || !userId) return;
+    request({
+      url: `/api/referral/bind?user_id=${Number(userId)}&invite_code=${encodeURIComponent(inviteCode)}`,
+      method: 'POST',
+      data: {}
+    }).then(() => clearPendingInviteCode()).catch(() => {});
+  },
   onShow() {
+    this.tryBindInvite();
     refreshActiveProfile().then((profile) => {
       const savedProfile = profile || wx.getStorageSync('studentProfile') || {};
       const personality = (() => {
