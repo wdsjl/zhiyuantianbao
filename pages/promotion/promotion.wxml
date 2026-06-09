@@ -29,10 +29,23 @@
       <button class="secondary-btn" bindtap="goWithdraw">提现中心</button>
     </view>
 
+    <view class="card level-card">
+      <view class="section-title">达人等级</view>
+      <view class="level-head">
+        <view class="level-badge">{{level.level_name || '新手达人'}}</view>
+        <view class="sub-text">当前有效佣金：{{level.effective_commission_rate || agent.commission_rate || 0}}%（基础 {{level.base_commission_rate || agent.commission_rate || 0}}% + 等级加成 {{level.rate_bonus || 0}}%）</view>
+      </view>
+      <view class="level-progress">
+        <view class="progress-bar"><view class="progress-fill" style="width: {{level.progress_percent || 0}}%"></view></view>
+        <view class="sub-text" wx:if="{{level.next_level_name}}">再带来 {{level.orders_to_next || 0}} 笔付费订单可升至「{{level.next_level_name}}」</view>
+        <view class="sub-text" wx:else>已达最高等级，继续保持推广势头！</view>
+      </view>
+    </view>
+
     <view class="card">
       <view class="section-title">我的推广码（达人ID：{{agent.agent_id || '--'}}）</view>
       <view class="invite-code">{{agent.invite_code || '--'}}</view>
-      <view class="sub-text">佣金比例：{{agent.commission_rate || 0}}%</view>
+      <view class="sub-text">基础佣金：{{agent.commission_rate || 0}}% · 等级：{{level.level_key || 'L1'}}</view>
     </view>
 
     <view class="card poster-card">
@@ -67,6 +80,17 @@
         <view class="item-title">{{item.name || '未填写姓名'}}</view>
         <view class="sub-text">{{item.phone || '未留手机'}} · 付费 {{item.paid_orders || 0}} 单 · ¥{{item.paid_amount || 0}}</view>
         <view class="sub-text">绑定时间：{{item.bound_at}}</view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{faqs.length}}">
+      <view class="section-title">常见问题</view>
+      <view wx:for="{{faqs}}" wx:key="faq_id" class="faq-item">
+        <view class="faq-question" data-id="{{item.faq_id}}" bindtap="toggleFaq">
+          <text>{{item.question}}</text>
+          <text class="faq-arrow">{{expandedFaqId === item.faq_id ? '−' : '+'}}</text>
+        </view>
+        <view class="faq-answer" wx:if="{{expandedFaqId === item.faq_id}}">{{item.answer}}</view>
       </view>
     </view>
 

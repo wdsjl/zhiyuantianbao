@@ -1421,6 +1421,7 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           <td>{escape(str(item.get("display_name") or ""))}</td>
           <td><code>{escape(str(item.get("invite_code") or ""))}</code></td>
           <td>{escape(str(item.get("user_name") or ""))}<br><span class="muted">{escape(str(item.get("user_phone") or ""))}</span></td>
+          <td>{escape(str(item.get("agent_level") or "L1"))}</td>
           <td>{escape(str(item.get("tags") or ""))}<br><span class="muted">{escape(str(item.get("douyin_id") or ""))} {escape(str(item.get("fan_scale") or ""))}</span></td>
           <td>
             <form method="post" action="/admin/referrals/agent-rate" class="inline-form">
@@ -1442,7 +1443,7 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           </td>
         </tr>'''
         for item in agents
-    ) or '<tr><td colspan="11" class="muted">暂无博主</td></tr>'
+    ) or '<tr><td colspan="12" class="muted">暂无博主</td></tr>'
 
     agent_profile_forms = ''.join(
         f'''<form class="toolbar" method="post" action="/admin/referrals/agent-profile">
@@ -1546,6 +1547,7 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           <label>达人福利豆</label><input name="bonus_beans" value="{bonus.get('bonus_beans', 200)}" style="width:72px" />
           <label>体验天数</label><input name="bonus_days" value="{bonus.get('bonus_days', 3)}" style="width:72px" />
           <button type="submit">保存策略</button>
+          <a class="button" href="/admin/referrals/overview">全局大盘</a>
           <a class="button" href="/admin/referrals/export">导出对账CSV</a>
           <a class="button" href="/admin/referrals/agents/export">导出达人CSV</a>
           <a class="button" href="/admin/referrals/withdrawals">提现审核</a>
@@ -1569,7 +1571,7 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
       </div>
       <div class="card">
         <h2>推广博主</h2>
-        <table><thead><tr><th>ID</th><th>博主名</th><th>邀请码</th><th>绑定微信用户</th><th>标签/抖音</th><th>佣金%</th><th>推广人数</th><th>付费单</th><th>累计佣金</th><th>已结算</th><th>状态</th></tr></thead><tbody>{agent_rows}</tbody></table>
+        <table><thead><tr><th>ID</th><th>博主名</th><th>邀请码</th><th>绑定微信用户</th><th>等级</th><th>标签/抖音</th><th>佣金%</th><th>推广人数</th><th>付费单</th><th>累计佣金</th><th>已结算</th><th>状态</th></tr></thead><tbody>{agent_rows}</tbody></table>
         {agent_profile_forms}
       </div>
       <div class="card">
@@ -1595,8 +1597,176 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
     return render_page('推广分账', body)
 
 
+def admin_referrals_overview(days: int = 30, message: str = ''):
+    import json
+    from referral_p3 import (
+        get_global_stats, get_level_config, list_faqs, list_douyin_invites,
+        get_douyin_invite_template, get_auto_pay_settings,
+    )
+
+    stats = get_global_stats(days)
+    levels = get_level_config()
+    faqs = list_faqs(active_only=False)
+    invites = list_douyin_invites()
+    auto_pay = get_auto_pay_settings()
+    template = get_douyin_invite_template()
+
+    daily_bind_rows = ''.join(
+        f'<tr><td>{escape(str(i.get("day") or ""))}</td><td>{i.get("binds")}</td></tr>'
+        for i in stats.get('daily_binds', [])
+    ) or '<tr><td colspan="2" class="muted">暂无数据</td></tr>'
+
+    daily_order_rows = ''.join(
+        f'<tr><td>{escape(str(i.get("day") or ""))}</td><td>{i.get("orders")}</td><td>¥{i.get("commission")}</td></tr>'
+        for i in stats.get('daily_orders', [])
+    ) or '<tr><td colspan="3" class="muted">暂无数据</td></tr>'
+
+    top_agent_rows = ''.join(
+        f'''<tr>
+          <td>{i.get("agent_id")}</td>
+          <td>{escape(str(i.get("display_name") or ""))}</td>
+          <td><code>{escape(str(i.get("invite_code") or ""))}</code></td>
+          <td>{escape(str(i.get("agent_level") or ""))}</td>
+          <td>{i.get("total_invites")}</td>
+          <td>{i.get("total_paid_orders")}</td>
+          <td>¥{i.get("range_commission")}</td>
+        </tr>'''
+        for i in stats.get('top_agents', [])
+    ) or '<tr><td colspan="7" class="muted">暂无排行</td></tr>'
+
+    level_rows = ''.join(
+        f'<tr><td>{escape(str(i.get("agent_level") or ""))}</td><td>{i.get("count")}</td></tr>'
+        for i in stats.get('level_distribution', [])
+    ) or '<tr><td colspan="2" class="muted">暂无数据</td></tr>'
+
+    level_config_rows = ''.join(
+        f'<tr><td>{escape(str(i.get("level_key") or ""))}</td><td>{escape(str(i.get("level_name") or ""))}</td>'
+        f'<td>{i.get("min_paid_orders")}</td><td>+{i.get("rate_bonus")}%</td></tr>'
+        for i in levels
+    )
+
+    faq_rows = ''.join(
+        f'''<tr>
+          <td>{item.get("faq_id")}</td>
+          <td>{escape(str(item.get("question") or ""))}</td>
+          <td><pre style="white-space:pre-wrap">{escape(str(item.get("answer") or ""))}</pre></td>
+          <td>{item.get("sort_order")}</td>
+          <td>
+            <form method="post" action="/admin/referrals/faqs/delete" style="display:inline">
+              <input type="hidden" name="faq_id" value="{item.get('faq_id')}" />
+              <button type="submit">删除</button>
+            </form>
+          </td>
+        </tr>'''
+        for item in faqs
+    ) or '<tr><td colspan="5" class="muted">暂无 FAQ</td></tr>'
+
+    invite_rows = ''.join(
+        f'''<tr>
+          <td>{item.get("invite_id")}</td>
+          <td>{escape(str(item.get("display_name") or ""))}</td>
+          <td>{escape(str(item.get("douyin_id") or item.get("agent_douyin_id") or ""))}</td>
+          <td><pre style="white-space:pre-wrap;max-width:360px">{escape(str(item.get("invite_message") or ""))}</pre></td>
+          <td>{escape(str(item.get("status") or ""))}</td>
+          <td>
+            <form method="post" action="/admin/referrals/douyin/status" style="display:inline">
+              <input type="hidden" name="invite_id" value="{item.get('invite_id')}" />
+              <input type="hidden" name="status" value="sent" />
+              <button type="submit">标记已发</button>
+            </form>
+            <form method="post" action="/admin/referrals/douyin/status" style="display:inline">
+              <input type="hidden" name="invite_id" value="{item.get('invite_id')}" />
+              <input type="hidden" name="status" value="joined" />
+              <button type="submit">已入驻</button>
+            </form>
+          </td>
+        </tr>'''
+        for item in invites[:50]
+    ) or '<tr><td colspan="6" class="muted">暂无邀约记录</td></tr>'
+
+    level_json = escape(json.dumps(levels, ensure_ascii=False))
+    body = f'''
+      <div class="card">
+        <h2>推广全局大盘（近 {days} 天）</h2>
+        {f'<div class="notice">{escape(message)}</div>' if message else ''}
+        <a class="button" href="/admin/referrals">返回推广分账</a>
+        <form class="toolbar" method="get" style="display:inline">
+          <input name="days" value="{days}" style="width:72px" />
+          <button type="submit">切换天数</button>
+        </form>
+        <div class="stats">
+          <div class="stat"><div class="stat-label">达人总数</div><div class="stat-value">{stats.get("agents_total")}</div></div>
+          <div class="stat"><div class="stat-label">活跃达人</div><div class="stat-value">{stats.get("agents_active")}</div></div>
+          <div class="stat"><div class="stat-label">区间绑定</div><div class="stat-value">{stats.get("binds_range")}</div></div>
+          <div class="stat"><div class="stat-label">区间付费单</div><div class="stat-value">{stats.get("paid_orders_range")}</div></div>
+          <div class="stat"><div class="stat-label">区间GMV</div><div class="stat-value">¥{stats.get("order_amount_range")}</div></div>
+          <div class="stat"><div class="stat-label">转化率</div><div class="stat-value">{stats.get("conversion_rate")}%</div></div>
+          <div class="stat"><div class="stat-label">待分账</div><div class="stat-value">¥{stats.get("commission_pending")}</div></div>
+          <div class="stat"><div class="stat-label">已分账</div><div class="stat-value">¥{stats.get("commission_settled")}</div></div>
+          <div class="stat"><div class="stat-label">待提现</div><div class="stat-value">¥{stats.get("withdraw_pending")}</div></div>
+          <div class="stat"><div class="stat-label">抖音待邀约</div><div class="stat-value">{stats.get("douyin_invites_pending")}</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>达人排行榜</h2>
+        <table><thead><tr><th>ID</th><th>昵称</th><th>邀请码</th><th>等级</th><th>推广人数</th><th>付费单</th><th>区间佣金</th></tr></thead><tbody>{top_agent_rows}</tbody></table>
+      </div>
+      <div class="card">
+        <h2>每日趋势</h2>
+        <div style="display:flex;gap:24px;flex-wrap:wrap">
+          <div><h3>每日绑定</h3><table><thead><tr><th>日期</th><th>绑定数</th></tr></thead><tbody>{daily_bind_rows}</tbody></table></div>
+          <div><h3>每日付费/佣金</h3><table><thead><tr><th>日期</th><th>订单</th><th>佣金</th></tr></thead><tbody>{daily_order_rows}</tbody></table></div>
+          <div><h3>等级分布</h3><table><thead><tr><th>等级</th><th>人数</th></tr></thead><tbody>{level_rows}</tbody></table></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>达人等级配置</h2>
+        <table><thead><tr><th>等级</th><th>名称</th><th>最低付费单</th><th>佣金加成</th></tr></thead><tbody>{level_config_rows}</tbody></table>
+        <form class="toolbar" method="post" action="/admin/referrals/levels/save">
+          <input name="level_config_json" value='{level_json}' style="min-width:480px" />
+          <button type="submit">保存等级 JSON</button>
+        </form>
+        <p class="muted">示例：[{{"level_key":"L1","level_name":"新手达人","min_paid_orders":0,"rate_bonus":0}}]</p>
+      </div>
+      <div class="card">
+        <h2>微信自动打款</h2>
+        <p class="muted">状态：{"已就绪" if auto_pay.get("ready") else "未配置商户证书"}；开关：{"开启" if auto_pay.get("enabled") else "关闭"}</p>
+        <form class="toolbar" method="post" action="/admin/referrals/auto-pay/settings">
+          <label><input type="checkbox" name="enabled" value="1" {'checked' if auto_pay.get('enabled') else ''} /> 审核通过后自动微信打款</label>
+          <button type="submit">保存</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>抖音邀约队列</h2>
+        <form class="toolbar" method="post" action="/admin/referrals/douyin/queue">
+          <input type="hidden" name="batch" value="1" />
+          <button type="submit">批量入队（有抖音号且未邀约）</button>
+        </form>
+        <form class="toolbar" method="post" action="/admin/referrals/douyin/template">
+          <textarea name="template" rows="3" style="min-width:480px">{escape(template)}</textarea>
+          <button type="submit">保存话术模板</button>
+        </form>
+        <p class="muted">模板变量：{{昵称}}、{{抖音号}}、{{邀请码}}</p>
+        <table><thead><tr><th>ID</th><th>达人</th><th>抖音号</th><th>邀约话术</th><th>状态</th><th>操作</th></tr></thead><tbody>{invite_rows}</tbody></table>
+      </div>
+      <div class="card">
+        <h2>达人 FAQ 管理</h2>
+        <form class="toolbar" method="post" action="/admin/referrals/faqs/save">
+          <input name="question" placeholder="问题" style="min-width:200px" />
+          <input name="answer" placeholder="回答" style="min-width:320px" />
+          <input name="sort_order" value="0" style="width:72px" />
+          <button type="submit">新增 FAQ</button>
+        </form>
+        <table><thead><tr><th>ID</th><th>问题</th><th>回答</th><th>排序</th><th>操作</th></tr></thead><tbody>{faq_rows}</tbody></table>
+      </div>
+    '''
+    return render_page('推广全局大盘', body)
+
+
 def admin_referral_withdrawals(keyword: str = '', message: str = ''):
     from referral_p1 import list_withdrawals
+    from referral_p3 import get_auto_pay_settings
+    auto_pay = get_auto_pay_settings()
     rows_data = list_withdrawals(keyword)
     rows = ''.join(
         f'''<tr>
@@ -1610,6 +1780,7 @@ def admin_referral_withdrawals(keyword: str = '', message: str = ''):
           <td>
             {'<form method="post" action="/admin/referrals/withdrawals/review" style="display:inline"><input type="hidden" name="withdrawal_id" value="' + str(item.get("withdrawal_id")) + '" /><input type="hidden" name="action" value="approved" /><button type="submit">通过</button></form>' if item.get('status') == 'pending' else ''}
             {'<form method="post" action="/admin/referrals/withdrawals/review" style="display:inline"><input type="hidden" name="withdrawal_id" value="' + str(item.get("withdrawal_id")) + '" /><input type="hidden" name="action" value="paid" /><button type="submit">已打款</button></form>' if item.get('status') in ('pending', 'approved') else ''}
+            {'<form method="post" action="/admin/referrals/withdrawals/auto-pay" style="display:inline"><input type="hidden" name="withdrawal_id" value="' + str(item.get("withdrawal_id")) + '" /><button type="submit">微信自动打款</button></form>' if item.get('status') == 'approved' and item.get('pay_method') in ('wechat', '微信') and not item.get('transfer_bill_no') else ''}
             {'<form method="post" action="/admin/referrals/withdrawals/review" style="display:inline"><input type="hidden" name="withdrawal_id" value="' + str(item.get("withdrawal_id")) + '" /><input type="hidden" name="action" value="rejected" /><button type="submit">驳回</button></form>' if item.get('status') == 'pending' else ''}
           </td>
         </tr>'''
@@ -1620,6 +1791,12 @@ def admin_referral_withdrawals(keyword: str = '', message: str = ''):
         <h2>达人提现审核</h2>
         {f'<div class="notice">{escape(message)}</div>' if message else ''}
         <a class="button" href="/admin/referrals">返回推广分账</a>
+        <a class="button" href="/admin/referrals/overview">全局大盘</a>
+        <form method="post" action="/admin/referrals/withdrawals/auto-pay" style="display:inline">
+          <input type="hidden" name="batch" value="1" />
+          <button type="submit" {'disabled' if not auto_pay.get('ready') else ''}>批量微信自动打款（已通过）</button>
+        </form>
+        <p class="muted">微信转账：{"已配置" if auto_pay.get("ready") else "未配置"}；自动打款开关：{"开启" if auto_pay.get("enabled") else "关闭"}（在全局大盘设置）</p>
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="达人名 / 邀请码 / 收款账号" />
           <button type="submit">搜索</button>

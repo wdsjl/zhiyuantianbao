@@ -32,7 +32,7 @@ from admin_views import (
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
-    admin_referrals, admin_referral_withdrawals,
+    admin_referrals, admin_referral_withdrawals, admin_referrals_overview,
 )
 from crawler_service import (
     crawl_and_import, crawl_and_import_years, import_schools_only, ensure_crawl_tables,
@@ -109,8 +109,10 @@ ensure_bean_tables()
 ensure_referral_tables()
 from referral_p1 import ensure_referral_p1_tables
 from referral_p2 import ensure_referral_p2_tables
+from referral_p3 import ensure_referral_p3_tables
 ensure_referral_p1_tables()
 ensure_referral_p2_tables()
+ensure_referral_p3_tables()
 sync_plan_catalog()
 expire_overdue_memberships()
 
@@ -622,6 +624,98 @@ def admin_referrals_export():
     )
 
 
+@app.get('/admin/referrals/overview')
+def admin_referrals_overview_page(days: int = Query(30), message: str = ''):
+    return admin_referrals_overview(days, message=message)
+
+
+@app.post('/admin/referrals/levels/save')
+def admin_referrals_levels_save(level_config_json: str = Form(...)):
+    from referral_p3 import save_level_config
+    import json
+    try:
+        levels = json.loads(level_config_json or '[]')
+        save_level_config(levels)
+        return RedirectResponse('/admin/referrals/overview?message=达人等级配置已保存', status_code=303)
+    except (json.JSONDecodeError, ValueError) as exc:
+        return RedirectResponse(f'/admin/referrals/overview?message=保存失败：{quote(str(exc))}', status_code=303)
+
+
+@app.post('/admin/referrals/faqs/save')
+def admin_referrals_faq_save(
+    question: str = Form(...),
+    answer: str = Form(...),
+    sort_order: int = Form(0),
+    faq_id: int = Form(0),
+):
+    from referral_p3 import save_faq
+    save_faq(faq_id or None, question, answer, sort_order)
+    return RedirectResponse('/admin/referrals/overview?message=FAQ 已保存', status_code=303)
+
+
+@app.post('/admin/referrals/faqs/delete')
+def admin_referrals_faq_delete(faq_id: int = Form(...)):
+    from referral_p3 import delete_faq
+    delete_faq(faq_id)
+    return RedirectResponse('/admin/referrals/overview?message=FAQ 已删除', status_code=303)
+
+
+@app.post('/admin/referrals/douyin/queue')
+def admin_referrals_douyin_queue(agent_id: int = Form(0), batch: int = Form(0)):
+    from referral_p3 import queue_douyin_invite, batch_queue_douyin_invites
+    try:
+        if batch:
+            result = batch_queue_douyin_invites()
+            msg = f'已入队 {result.get("queued", 0)} 条抖音邀约'
+        else:
+            queue_douyin_invite(agent_id)
+            msg = '抖音邀约已入队'
+        return RedirectResponse(f'/admin/referrals/overview?message={quote(msg)}', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals/overview?message=操作失败：{quote(str(exc))}', status_code=303)
+
+
+@app.post('/admin/referrals/douyin/status')
+def admin_referrals_douyin_status(invite_id: int = Form(...), status: str = Form(...), remark: str = Form('')):
+    from referral_p3 import update_douyin_invite_status
+    try:
+        update_douyin_invite_status(invite_id, status, remark)
+        return RedirectResponse('/admin/referrals/overview?message=邀约状态已更新', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals/overview?message=更新失败：{quote(str(exc))}', status_code=303)
+
+
+@app.post('/admin/referrals/douyin/template')
+def admin_referrals_douyin_template(template: str = Form(...)):
+    from referral_p3 import save_douyin_invite_template
+    save_douyin_invite_template(template)
+    return RedirectResponse('/admin/referrals/overview?message=邀约话术模板已保存', status_code=303)
+
+
+@app.post('/admin/referrals/auto-pay/settings')
+def admin_referrals_auto_pay_settings(enabled: int = Form(0)):
+    from referral_p3 import save_auto_pay_settings
+    save_auto_pay_settings(bool(enabled))
+    return RedirectResponse('/admin/referrals/overview?message=自动打款设置已保存', status_code=303)
+
+
+@app.post('/admin/referrals/withdrawals/auto-pay')
+def admin_referrals_withdrawals_auto_pay(withdrawal_id: int = Form(0), batch: int = Form(0)):
+    from referral_p3 import auto_pay_withdrawal, batch_auto_pay_withdrawals
+    try:
+        if batch:
+            result = batch_auto_pay_withdrawals()
+            msg = f'自动打款成功 {result.get("success", 0)} 笔'
+            if result.get('errors'):
+                msg += f'；失败 {len(result["errors"])} 笔'
+        else:
+            auto_pay_withdrawal(withdrawal_id)
+            msg = '微信自动打款已提交'
+        return RedirectResponse(f'/admin/referrals/withdrawals?message={quote(msg)}', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals/withdrawals?message=打款失败：{quote(str(exc))}', status_code=303)
+
+
 @app.get('/admin/referrals/withdrawals')
 def admin_referral_withdrawals_page(keyword: str = '', message: str = ''):
     return admin_referral_withdrawals(keyword, message)
@@ -630,8 +724,18 @@ def admin_referral_withdrawals_page(keyword: str = '', message: str = ''):
 @app.post('/admin/referrals/withdrawals/review')
 def admin_referral_withdrawals_review(withdrawal_id: int = Form(...), action: str = Form(...), remark: str = Form('')):
     from referral_p1 import review_withdrawal
+    from referral_p3 import auto_pay_withdrawal, get_auto_pay_settings
     try:
         review_withdrawal(withdrawal_id, action, remark)
+        if action == 'approved' and get_auto_pay_settings().get('enabled'):
+            try:
+                auto_pay_withdrawal(withdrawal_id)
+                return RedirectResponse('/admin/referrals/withdrawals?message=审核通过并已提交微信自动打款', status_code=303)
+            except ValueError as exc:
+                return RedirectResponse(
+                    f'/admin/referrals/withdrawals?message=审核已通过，自动打款失败：{quote(str(exc))}',
+                    status_code=303,
+                )
         return RedirectResponse('/admin/referrals/withdrawals?message=提现审核已更新', status_code=303)
     except ValueError as exc:
         return RedirectResponse(f'/admin/referrals/withdrawals?message=审核失败：{exc}', status_code=303)
@@ -1258,10 +1362,31 @@ def api_referral_agent_register(request: ReferralAgentRegisterRequest):
 def api_referral_dashboard(user_id: int = Query(...), days: int = Query(30)):
     try:
         from referral_p2 import get_agent_stats
+        from referral_p3 import sync_agent_level, get_agent_level_info
         dashboard = get_agent_dashboard(user_id)
         agent_id = dashboard['agent']['agent_id']
         dashboard['range_stats'] = get_agent_stats(agent_id, days)
+        dashboard['level'] = sync_agent_level(agent_id)
+        dashboard['agent']['level'] = dashboard['level']
+        dashboard['agent']['effective_commission_rate'] = dashboard['level'].get('effective_commission_rate')
         return dashboard
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/referral/faqs')
+def api_referral_faqs():
+    from referral_p3 import list_faqs
+    return {'list': list_faqs()}
+
+
+@app.get('/api/referral/levels')
+def api_referral_levels(user_id: int = Query(...)):
+    from referral_p3 import sync_agent_level
+    from referral_service import register_agent
+    try:
+        agent = register_agent(user_id)
+        return {'level': sync_agent_level(int(agent['agent_id']))}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

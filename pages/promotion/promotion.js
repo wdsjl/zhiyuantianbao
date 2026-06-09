@@ -16,7 +16,10 @@ Page({
     templates: [],
     templateKey: 'blue',
     qrImage: '',
-    composedPoster: ''
+    composedPoster: '',
+    level: {},
+    faqs: [],
+    expandedFaqId: null
   },
   onShow() {
     this.loadDashboard();
@@ -31,10 +34,11 @@ Page({
           .then(() => Promise.all([
             request({ url: '/api/referral/dashboard', data: { user_id: Number(userId), days: this.data.days } }),
             request({ url: '/api/referral/poster', data: { user_id: Number(userId), template_key: this.data.templateKey } }),
-            request({ url: '/api/referral/materials' })
+            request({ url: '/api/referral/materials' }),
+            request({ url: '/api/referral/faqs' })
           ]));
       })
-      .then(([dashboard, poster, materialsRes]) => {
+      .then(([dashboard, poster, materialsRes, faqRes]) => {
         const qrImage = poster && poster.image_base64 ? `data:image/png;base64,${poster.image_base64}` : '';
         this.setData({
           loading: false,
@@ -48,7 +52,9 @@ Page({
           templates: poster.templates || [],
           templateKey: (poster.template && poster.template.template_key) || 'blue',
           qrImage,
-          composedPoster: ''
+          composedPoster: '',
+          level: dashboard.level || {},
+          faqs: faqRes.list || []
         });
       })
       .catch((error) => {
@@ -126,6 +132,10 @@ Page({
   },
   goWithdraw() {
     wx.navigateTo({ url: '/pages/promotion/withdraw' });
+  },
+  toggleFaq(e) {
+    const faqId = Number(e.currentTarget.dataset.id);
+    this.setData({ expandedFaqId: this.data.expandedFaqId === faqId ? null : faqId });
   },
   onShareAppMessage() {
     const code = this.data.agent.invite_code || '';
