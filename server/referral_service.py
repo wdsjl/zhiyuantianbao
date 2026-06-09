@@ -86,9 +86,58 @@ def _get_setting(key: str, default: str = '') -> str:
 def get_default_commission_rate() -> float:
     raw = _get_setting('referral_commission_rate', str(DEFAULT_COMMISSION_RATE))
     try:
-        return float(raw)
+        rate = float(raw)
     except ValueError:
-        return DEFAULT_COMMISSION_RATE
+        rate = DEFAULT_COMMISSION_RATE
+    return max(0.0, min(rate, 100.0))
+
+
+def get_referral_settings() -> dict[str, Any]:
+    return {
+        'commission_rate': get_default_commission_rate(),
+    }
+
+
+def save_referral_settings(commission_rate: float) -> dict[str, Any]:
+    rate = max(0.0, min(float(commission_rate), 100.0))
+    with get_connection() as connection:
+        connection.execute(
+            '''
+            INSERT INTO app_settings (setting_key, setting_value)
+            VALUES ('referral_commission_rate', ?)
+            ON CONFLICT(setting_key) DO UPDATE SET
+              setting_value = excluded.setting_value,
+              updated_at = CURRENT_TIMESTAMP
+            ''',
+            [str(rate)]
+        )
+        connection.commit()
+    return get_referral_settings()
+
+
+def update_agent_commission_rate(agent_id: int, commission_rate: float) -> dict[str, Any]:
+    ensure_referral_tables()
+    rate = max(0.0, min(float(commission_rate), 100.0))
+    with get_connection() as connection:
+        agent = row_to_dict(connection.execute(
+            'SELECT * FROM referral_agents WHERE agent_id = ?',
+            [agent_id]
+        ).fetchone())
+        if not agent:
+            raise ValueError('博主不存在')
+        connection.execute(
+            '''
+            UPDATE referral_agents
+            SET commission_rate = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE agent_id = ?
+            ''',
+            [rate, agent_id]
+        )
+        connection.commit()
+        return row_to_dict(connection.execute(
+            'SELECT * FROM referral_agents WHERE agent_id = ?',
+            [agent_id]
+        ).fetchone())
 
 
 def _generate_invite_code(connection) -> str:

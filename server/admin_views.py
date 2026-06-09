@@ -1399,8 +1399,10 @@ def admin_payments(keyword: str = '', message: str = ''):
 
 
 def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
-    from referral_service import list_agents, list_bindings, list_commissions, get_default_commission_rate
+    from referral_service import list_agents, list_bindings, list_commissions, get_referral_settings
 
+    settings = get_referral_settings()
+    default_rate = settings.get('commission_rate', 10)
     agents = list_agents(keyword)
     bindings = list_bindings(keyword)
     commissions = list_commissions(keyword)
@@ -1413,7 +1415,13 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           <td>{escape(str(item.get("display_name") or ""))}</td>
           <td><code>{escape(str(item.get("invite_code") or ""))}</code></td>
           <td>{escape(str(item.get("user_name") or ""))}<br><span class="muted">{escape(str(item.get("user_phone") or ""))}</span></td>
-          <td>{item.get("commission_rate")}%</td>
+          <td>
+            <form method="post" action="/admin/referrals/agent-rate" class="inline-form">
+              <input type="hidden" name="agent_id" value="{item.get('agent_id')}" />
+              <input name="commission_rate" value="{item.get('commission_rate')}" style="width:72px" />%
+              <button type="submit" class="btn-sm">改</button>
+            </form>
+          </td>
           <td>{item.get("total_invites")}</td>
           <td>{item.get("total_paid_orders")}</td>
           <td>¥{item.get("total_commission")}</td>
@@ -1462,8 +1470,15 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           <div class="stat"><div class="stat-label">推广用户</div><div class="stat-value">{len(bindings)}</div></div>
           <div class="stat"><div class="stat-label">待分账</div><div class="stat-value">¥{pending_total:.2f}</div></div>
           <div class="stat"><div class="stat-label">已分账</div><div class="stat-value">¥{settled_total:.2f}</div></div>
-          <div class="stat"><div class="stat-label">默认佣金比例</div><div class="stat-value">{get_default_commission_rate()}%</div></div>
+          <div class="stat"><div class="stat-label">默认佣金比例</div><div class="stat-value">{default_rate}%</div></div>
         </div>
+        <form class="toolbar" method="post" action="/admin/referrals/settings">
+          <label>默认分账比例（新博主生效）</label>
+          <input name="commission_rate" value="{default_rate}" style="width:96px" />
+          <span>%</span>
+          <button type="submit">保存比例</button>
+        </form>
+        <p class="muted">修改默认比例后，新注册的博主将按此比例分账；已有博主可在下表单独调整。已生成订单的分账记录不会回溯修改。</p>
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="博主 / 邀请码 / 用户手机 / 订单号" />
           <button type="submit">搜索</button>

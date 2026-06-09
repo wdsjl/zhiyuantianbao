@@ -58,7 +58,7 @@ from payment_service import ensure_payment_tables, create_manual_order, create_o
 from wechat_pay_service import create_wechat_payment, handle_wechat_pay_notify, sync_wechat_order_status, is_wechat_pay_ready
 from referral_service import (
     ensure_referral_tables, register_agent, get_agent_dashboard, bind_invitee,
-    poster_image_base64, get_binding_for_user,
+    poster_image_base64, get_binding_for_user, save_referral_settings, update_agent_commission_rate,
 )
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
@@ -474,6 +474,24 @@ def admin_referrals_settle(commission_id: int = Form(...)):
         return RedirectResponse('/admin/referrals?message=分账已确认结算', status_code=303)
     except ValueError as exc:
         return RedirectResponse(f'/admin/referrals?message=分账失败：{exc}', status_code=303)
+
+
+@app.post('/admin/referrals/settings')
+def admin_referrals_settings(commission_rate: float = Form(...)):
+    try:
+        save_referral_settings(commission_rate)
+        return RedirectResponse('/admin/referrals?message=默认分账比例已保存', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals?message=保存失败：{exc}', status_code=303)
+
+
+@app.post('/admin/referrals/agent-rate')
+def admin_referrals_agent_rate(agent_id: int = Form(...), commission_rate: float = Form(...)):
+    try:
+        update_agent_commission_rate(agent_id, commission_rate)
+        return RedirectResponse('/admin/referrals?message=博主分账比例已更新', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals?message=更新失败：{exc}', status_code=303)
 
 
 @app.get('/admin/payments/requests/export')
