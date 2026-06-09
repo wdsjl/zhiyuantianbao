@@ -104,9 +104,12 @@ GET https://api.zntb.lhyun.net/api/auth/wechat/status
 
 ```powershell
 cd C:\zhiyuantianbao\server
+python -u crawler_service.py --progress
 python -u crawler_service.py --province 河南 --preset full_recent_3y
 # 或全国：python -u crawler_service.py --all-provinces --preset full_recent_3y
 ```
+
+不确定哪些省已爬完时，先执行 `--progress`，会列出 31 省状态并自动生成续爬命令。
 
 爬取结果保存在项目根目录：
 
