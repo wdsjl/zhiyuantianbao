@@ -35,8 +35,8 @@
       <text>去支付 ›</text>
     </view>
     <view class="menu-item" bindtap="goPromotion">
-      <text>推广中心 / 专属海报</text>
-      <text>博主 ›</text>
+      <text>达人推广 / 专属海报</text>
+      <text>进入 ›</text>
     </view>
     <view class="menu-item" bindtap="goDrafts">
       <text>我的志愿草稿</text>

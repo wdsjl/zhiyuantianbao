@@ -37,6 +37,28 @@
   font-size: 26rpx;
 }
 
+.promo-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20rpx;
+  background: linear-gradient(135deg, #eef5ff, #fff);
+  border: 2rpx solid #91caff;
+}
+
+.promo-title {
+  font-size: 32rpx;
+  font-weight: 800;
+  color: #1677ff;
+  margin-bottom: 10rpx;
+}
+
+.promo-btn {
+  width: 180rpx;
+  flex-shrink: 0;
+  font-size: 26rpx;
+}
+
 .menu-item {
   display: flex;
   align-items: center;
