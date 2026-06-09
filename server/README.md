@@ -225,10 +225,10 @@ http://192.168.1.8:8001
 https://api.zntb.lhyun.net
 ```
 
-小程序 `utils/request.js` 中 `BASE_URL` 已指向该地址。微信公众平台 request 合法域名填写：
+小程序 `utils/request.js` 中 `BASE_URL` 已指向该地址。微信公众平台 request 合法域名填写（须带 `https://`，末尾不要加分号）：
 
 ```text
-api.zntb.lhyun.net
+https://api.zntb.lhyun.net
 ```
 
 ## 虚拟支付（会员）
