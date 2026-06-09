@@ -1601,7 +1601,7 @@ def admin_referrals_overview(days: int = 30, message: str = ''):
     import json
     from referral_p3 import (
         get_global_stats, get_level_config, list_faqs, list_douyin_invites,
-        get_douyin_invite_template, get_auto_pay_settings,
+        get_douyin_invite_template, get_auto_pay_settings, FOLLOW_UP_COMPLIANCE_NOTICE,
     )
 
     stats = get_global_stats(days)
@@ -1672,17 +1672,17 @@ def admin_referrals_overview(days: int = 30, message: str = ''):
             <form method="post" action="/admin/referrals/douyin/status" style="display:inline">
               <input type="hidden" name="invite_id" value="{item.get('invite_id')}" />
               <input type="hidden" name="status" value="sent" />
-              <button type="submit">标记已发</button>
+              <button type="submit">标记已联系</button>
             </form>
             <form method="post" action="/admin/referrals/douyin/status" style="display:inline">
               <input type="hidden" name="invite_id" value="{item.get('invite_id')}" />
               <input type="hidden" name="status" value="joined" />
-              <button type="submit">已入驻</button>
+              <button type="submit">已合作</button>
             </form>
           </td>
         </tr>'''
         for item in invites[:50]
-    ) or '<tr><td colspan="6" class="muted">暂无邀约记录</td></tr>'
+    ) or '<tr><td colspan="6" class="muted">暂无跟进任务</td></tr>'
 
     level_json = escape(json.dumps(levels, ensure_ascii=False))
     body = f'''
@@ -1704,7 +1704,7 @@ def admin_referrals_overview(days: int = 30, message: str = ''):
           <div class="stat"><div class="stat-label">待分账</div><div class="stat-value">¥{stats.get("commission_pending")}</div></div>
           <div class="stat"><div class="stat-label">已分账</div><div class="stat-value">¥{stats.get("commission_settled")}</div></div>
           <div class="stat"><div class="stat-label">待提现</div><div class="stat-value">¥{stats.get("withdraw_pending")}</div></div>
-          <div class="stat"><div class="stat-label">抖音待邀约</div><div class="stat-value">{stats.get("douyin_invites_pending")}</div></div>
+          <div class="stat"><div class="stat-label">待跟进任务</div><div class="stat-value">{stats.get("douyin_invites_pending")}</div></div>
         </div>
       </div>
       <div class="card">
@@ -1737,17 +1737,19 @@ def admin_referrals_overview(days: int = 30, message: str = ''):
         </form>
       </div>
       <div class="card">
-        <h2>抖音邀约队列</h2>
+        <h2>达人跟进任务（内部 CRM）</h2>
+        <div class="warn-box">{escape(FOLLOW_UP_COMPLIANCE_NOTICE)}</div>
+        <p class="muted">说明：批量操作仅在系统内生成待跟进记录与参考话术，不会调用抖音接口或自动发信。请由运营人工联系，且仅联系已授权/已有合作意向的达人。</p>
         <form class="toolbar" method="post" action="/admin/referrals/douyin/queue">
           <input type="hidden" name="batch" value="1" />
-          <button type="submit">批量入队（有抖音号且未邀约）</button>
+          <button type="submit">批量生成跟进任务（已有平台账号）</button>
         </form>
         <form class="toolbar" method="post" action="/admin/referrals/douyin/template">
           <textarea name="template" rows="3" style="min-width:480px">{escape(template)}</textarea>
-          <button type="submit">保存话术模板</button>
+          <button type="submit">保存跟进话术模板</button>
         </form>
         <p class="muted">模板变量：{{昵称}}、{{抖音号}}、{{邀请码}}</p>
-        <table><thead><tr><th>ID</th><th>达人</th><th>抖音号</th><th>邀约话术</th><th>状态</th><th>操作</th></tr></thead><tbody>{invite_rows}</tbody></table>
+        <table><thead><tr><th>ID</th><th>达人</th><th>平台账号</th><th>跟进话术</th><th>状态</th><th>操作</th></tr></thead><tbody>{invite_rows}</tbody></table>
       </div>
       <div class="card">
         <h2>达人 FAQ 管理</h2>

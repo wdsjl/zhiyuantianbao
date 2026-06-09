@@ -1,4 +1,4 @@
-"""达人分销 P3：等级体系、全局大盘、FAQ、抖音邀约队列、微信自动打款。"""
+"""达人分销 P3：等级体系、全局大盘、FAQ、达人跟进任务、微信自动打款。"""
 
 from __future__ import annotations
 
@@ -46,8 +46,13 @@ DEFAULT_FAQS = [
 ]
 
 DEFAULT_DOUYIN_INVITE_TEMPLATE = (
-    '您好，我是智愿填报合作运营。看到您在高考志愿领域有优质内容，诚邀加入我们的达人分销计划：'
-    '专属海报+推广物料+佣金分账。回复「合作」或添加微信详聊。'
+    '您好，我是智愿填报合作运营。如您已有合作意向，欢迎了解我们的达人分销计划：'
+    '专属海报、推广物料与佣金分账。如需详聊请回复「合作」。'
+)
+
+FOLLOW_UP_COMPLIANCE_NOTICE = (
+    '本功能仅用于内部跟进已授权或已建立合作意向的达人，系统不会向抖音自动发送任何消息。'
+    '禁止将生成的任务用于未授权名单的批量私信或骚扰式营销；对外联系须人工一对一沟通，并遵守平台规则与个人信息保护法。'
 )
 
 
@@ -513,7 +518,7 @@ def batch_queue_douyin_invites(limit: int = 50) -> dict[str, Any]:
         ).fetchall())
     created = 0
     for agent in agents:
-        queue_douyin_invite(int(agent['agent_id']), remark='批量自动入队')
+        queue_douyin_invite(int(agent['agent_id']), remark='批量生成跟进任务')
         created += 1
     return {'queued': created, 'agents': len(agents)}
 
@@ -521,7 +526,7 @@ def batch_queue_douyin_invites(limit: int = 50) -> dict[str, Any]:
 def update_douyin_invite_status(invite_id: int, status: str, remark: str = '') -> dict[str, Any]:
     ensure_referral_p3_tables()
     if status not in ('pending', 'sent', 'joined', 'rejected', 'skipped'):
-        raise ValueError('无效邀约状态')
+        raise ValueError('无效跟进状态')
     sent_at = datetime.now().isoformat(timespec='seconds') if status == 'sent' else None
     with get_connection() as connection:
         row = row_to_dict(connection.execute(
@@ -529,7 +534,7 @@ def update_douyin_invite_status(invite_id: int, status: str, remark: str = '') -
             [invite_id]
         ).fetchone())
         if not row:
-            raise ValueError('邀约记录不存在')
+            raise ValueError('跟进记录不存在')
         connection.execute(
             '''
             UPDATE referral_douyin_invites

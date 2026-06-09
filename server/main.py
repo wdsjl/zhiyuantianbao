@@ -666,10 +666,10 @@ def admin_referrals_douyin_queue(agent_id: int = Form(0), batch: int = Form(0)):
     try:
         if batch:
             result = batch_queue_douyin_invites()
-            msg = f'已入队 {result.get("queued", 0)} 条抖音邀约'
+            msg = f'已生成 {result.get("queued", 0)} 条达人跟进任务'
         else:
             queue_douyin_invite(agent_id)
-            msg = '抖音邀约已入队'
+            msg = '达人跟进任务已生成'
         return RedirectResponse(f'/admin/referrals/overview?message={quote(msg)}', status_code=303)
     except ValueError as exc:
         return RedirectResponse(f'/admin/referrals/overview?message=操作失败：{quote(str(exc))}', status_code=303)
@@ -680,7 +680,7 @@ def admin_referrals_douyin_status(invite_id: int = Form(...), status: str = Form
     from referral_p3 import update_douyin_invite_status
     try:
         update_douyin_invite_status(invite_id, status, remark)
-        return RedirectResponse('/admin/referrals/overview?message=邀约状态已更新', status_code=303)
+        return RedirectResponse('/admin/referrals/overview?message=跟进任务状态已更新', status_code=303)
     except ValueError as exc:
         return RedirectResponse(f'/admin/referrals/overview?message=更新失败：{quote(str(exc))}', status_code=303)
 
@@ -689,7 +689,7 @@ def admin_referrals_douyin_status(invite_id: int = Form(...), status: str = Form
 def admin_referrals_douyin_template(template: str = Form(...)):
     from referral_p3 import save_douyin_invite_template
     save_douyin_invite_template(template)
-    return RedirectResponse('/admin/referrals/overview?message=邀约话术模板已保存', status_code=303)
+    return RedirectResponse('/admin/referrals/overview?message=跟进话术模板已保存', status_code=303)
 
 
 @app.post('/admin/referrals/auto-pay/settings')
