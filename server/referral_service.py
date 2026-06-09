@@ -74,6 +74,14 @@ def ensure_referral_tables() -> None:
             )
             '''
         )
+        connection.execute(
+            '''
+            INSERT INTO app_settings (setting_key, setting_value)
+            VALUES ('referral_commission_rate', ?)
+            ON CONFLICT(setting_key) DO NOTHING
+            ''',
+            [str(DEFAULT_COMMISSION_RATE)]
+        )
         connection.commit()
 
 
