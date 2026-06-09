@@ -50,17 +50,25 @@
 
     <view class="card poster-card">
       <view class="section-title">专属推广海报</view>
-      <view class="sub-text">选择模板后生成带昵称的海报，一键保存到相册。</view>
+      <view class="sub-text">用户扫小程序码进入后将绑定为您的推广用户，并领取 {{scanReward.bonus_beans || 0}} 星鼎豆（后台可配置）。</view>
+      <view class="reward-tip" wx:if="{{scanReward.enabled}}">{{scanReward.reward_text}}</view>
+      <view class="warn-box" wx:if="{{qrError}}">{{qrError}}。请确认服务端已配置 WECHAT_SECRET，且体验版二维码环境为 trial。</view>
+      <view class="qr-preview" wx:if="{{qrImage}}">
+        <image class="qr-image" src="{{qrImage}}" mode="aspectFit" show-menu-by-longpress="{{true}}" />
+        <view class="sub-text">长按小程序码可转发；也可保存后发到朋友圈/群聊</view>
+        <button class="secondary-btn mini-btn" bindtap="saveQrImage">保存小程序码</button>
+      </view>
       <view class="template-row">
         <view wx:for="{{templates}}" wx:key="template_key" class="template-item {{templateKey===item.template_key?'active':''}}" data-key="{{item.template_key}}" bindtap="onTemplateChange">
           <view class="template-color" style="background: {{item.bg_color}}"></view>
           <view class="template-name">{{item.template_name}}</view>
         </view>
       </view>
-      <canvas canvas-id="posterCanvas" class="poster-canvas" style="width: 600rpx; height: 900rpx;"></canvas>
+      <canvas canvas-id="posterCanvas" class="poster-canvas" style="width: 600rpx; height: 960rpx;"></canvas>
       <image wx:if="{{composedPoster}}" class="poster-image" src="{{composedPoster}}" mode="widthFix" show-menu-by-longpress="{{true}}" />
-      <button class="primary-btn" bindtap="composePoster">生成海报</button>
+      <button class="primary-btn" bindtap="composePoster">生成带二维码海报</button>
       <button class="secondary-btn" bindtap="savePoster" disabled="{{!composedPoster}}">保存海报到相册</button>
+      <button class="secondary-btn" bindtap="copyInviteCode">复制推广码（备用）</button>
     </view>
 
     <view class="card">

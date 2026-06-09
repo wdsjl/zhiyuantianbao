@@ -40,12 +40,16 @@ Page({
       clearPendingInviteCode();
       if (!res || !res.success) return;
       const userId = getCurrentUserId();
+      const scanReward = res.scan_reward || {};
       const showResult = (bonusRes) => {
         let content = res.message || '渠道绑定成功';
+        const expectedBeans = (scanReward && scanReward.bonus_beans) || (bonusRes && bonusRes.bonus_beans) || 0;
         if (bonusRes && bonusRes.claimed) {
           content += `\n\n已领取达人专属 ${bonusRes.bonus_beans} 星鼎豆`;
-        } else if (bonusRes && bonusRes.message && bonusRes.message.indexOf('已领取') < 0) {
+        } else if (expectedBeans > 0 && bonusRes && bonusRes.message) {
           content += `\n\n${bonusRes.message}`;
+        } else if (expectedBeans > 0) {
+          content += `\n\n可领取 ${expectedBeans} 星鼎豆，请稍后在「会员」页查看余额`;
         }
         wx.showModal({
           title: res.reason === 'already_bound_same' ? '已绑定' : '绑定成功',

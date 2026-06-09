@@ -110,9 +110,23 @@ def _get_setting(key: str, default: str = '') -> str:
 
 def get_bonus_settings() -> dict[str, Any]:
     ensure_referral_p2_tables()
+    beans = int(_get_setting('referral_bonus_beans', '200') or 200)
+    days = int(_get_setting('referral_bonus_days', '3') or 3)
     return {
-        'bonus_beans': int(_get_setting('referral_bonus_beans', '200') or 200),
-        'bonus_days': int(_get_setting('referral_bonus_days', '3') or 3),
+        'bonus_beans': beans,
+        'bonus_days': days,
+        'enabled': beans > 0,
+        'reward_text': f'扫码领 {beans} 星鼎豆' if beans > 0 else '扫码领取专属权益',
+    }
+
+
+def get_public_scan_reward() -> dict[str, Any]:
+    settings = get_bonus_settings()
+    return {
+        'bonus_beans': settings['bonus_beans'],
+        'bonus_days': settings['bonus_days'],
+        'enabled': settings['enabled'],
+        'reward_text': settings['reward_text'],
     }
 
 

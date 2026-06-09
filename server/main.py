@@ -1395,8 +1395,9 @@ def api_referral_levels(user_id: int = Query(...)):
 def api_referral_poster(user_id: int = Query(...), template_key: str = Query('blue')):
     try:
         from referral_p2 import list_poster_templates
+        from referral_service import build_poster_payload
         agent = register_agent(user_id)
-        image_base64 = poster_image_base64(agent['invite_code'])
+        poster_data = build_poster_payload(agent['invite_code'])
         templates = list_poster_templates()
         template = next((item for item in templates if item.get('template_key') == template_key), templates[0] if templates else None)
         return {
@@ -1404,13 +1405,22 @@ def api_referral_poster(user_id: int = Query(...), template_key: str = Query('bl
             'agent_id': agent.get('agent_id'),
             'display_name': agent.get('display_name'),
             'commission_rate': agent.get('commission_rate'),
-            'image_base64': image_base64,
+            'image_base64': poster_data.get('image_base64') or '',
+            'qr_error': poster_data.get('qr_error') or '',
+            'scan_reward': poster_data.get('scan_reward') or {},
+            'qrcode_env_version': poster_data.get('qrcode_env_version') or 'trial',
             'template': template,
             'templates': templates,
             'share_path': f'pages/home/home?invite={agent["invite_code"]}',
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/referral/scan-reward')
+def api_referral_scan_reward():
+    from referral_p2 import get_public_scan_reward
+    return get_public_scan_reward()
 
 
 @app.get('/api/referral/materials')
@@ -1455,7 +1465,8 @@ def api_referral_bind(request: ReferralBindRequest):
         request.device_id or '',
         request.ip or '',
     )
-    return {**result, 'free_claim': free_claim}
+    from referral_p2 import get_public_scan_reward
+    return {**result, 'free_claim': free_claim, 'scan_reward': get_public_scan_reward()}
 
 
 @app.get('/api/referral/my-binding')

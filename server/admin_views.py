@@ -1546,8 +1546,9 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
             <option value="monthly" {'selected' if policy.get('settlement_cycle') == 'monthly' else ''}>月结</option>
           </select>
           <label>最低提现</label><input name="min_withdraw_amount" value="{policy.get('min_withdraw_amount', 10)}" style="width:72px" />
-          <label>达人福利豆</label><input name="bonus_beans" value="{bonus.get('bonus_beans', 200)}" style="width:72px" />
+          <label>扫码福利豆</label><input name="bonus_beans" value="{bonus.get('bonus_beans', 200)}" style="width:72px" title="用户扫达人海报绑定后自动发放" />
           <label>体验天数</label><input name="bonus_days" value="{bonus.get('bonus_days', 3)}" style="width:72px" />
+          <span class="muted">用户扫码绑定达人后领取 {bonus.get('bonus_beans', 200)} 星鼎豆（海报与弹窗展示）</span>
           <button type="submit">保存策略</button>
           <a class="button" href="/admin/referrals/overview">全局大盘</a>
           <a class="button" href="/admin/referrals/export">导出对账CSV</a>
