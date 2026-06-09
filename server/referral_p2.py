@@ -26,6 +26,12 @@ POSTER_TEMPLATES = [
 AGENT_TAG_OPTIONS = ['头部', '腰部', '素人', '优质', '待观察']
 
 
+def _ensure_column(connection, table: str, column: str, ddl: str) -> None:
+    cols = [row['name'] for row in connection.execute(f'PRAGMA table_info({table})').fetchall()]
+    if column not in cols:
+        connection.execute(f'ALTER TABLE {table} ADD COLUMN {column} {ddl}')
+
+
 def ensure_referral_p2_tables() -> None:
     ensure_referral_p1_tables()
     with get_connection() as connection:
@@ -89,6 +95,7 @@ def ensure_referral_p2_tables() -> None:
                     ''',
                     [item['category'], item['title'], item['content'], index + 1]
                 )
+        _ensure_column(connection, 'referral_poster_templates', 'bg_image_path', "TEXT NOT NULL DEFAULT ''")
         tpl_count = connection.execute('SELECT COUNT(*) AS c FROM referral_poster_templates').fetchone()['c']
         if tpl_count == 0:
             for index, item in enumerate(POSTER_TEMPLATES):
@@ -197,6 +204,30 @@ def list_poster_templates() -> list[dict[str, Any]]:
         return rows_to_dicts(connection.execute(
             'SELECT * FROM referral_poster_templates WHERE is_active = 1 ORDER BY sort_order ASC'
         ).fetchall())
+
+
+def attach_poster_background(template_key: str, bg_filename: str) -> dict[str, Any]:
+    ensure_referral_p2_tables()
+    with get_connection() as connection:
+        row = row_to_dict(connection.execute(
+            'SELECT * FROM referral_poster_templates WHERE template_key = ?',
+            [template_key]
+        ).fetchone())
+        if not row:
+            raise ValueError('海报模板不存在')
+        connection.execute(
+            '''
+            UPDATE referral_poster_templates
+            SET bg_image_path = ?
+            WHERE template_key = ?
+            ''',
+            [bg_filename, template_key]
+        )
+        connection.commit()
+        return row_to_dict(connection.execute(
+            'SELECT * FROM referral_poster_templates WHERE template_key = ?',
+            [template_key]
+        ).fetchone())
 
 
 def save_poster_template(template_key: str, template_name: str, bg_color: str, text_color: str = '#ffffff') -> dict[str, Any]:

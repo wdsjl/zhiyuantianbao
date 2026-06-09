@@ -5,9 +5,17 @@ from __future__ import annotations
 import io
 import os
 import platform
+from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
+
+POSTER_WIDTH = 600
+POSTER_HEIGHT = 960
+QR_SIZE = 312
+QR_X = (POSTER_WIDTH - QR_SIZE) // 2
+QR_Y = 280
+POSTER_BG_DIR = Path(__file__).resolve().parent / 'assets' / 'poster-bg'
 
 FONT_CANDIDATES = [
     'C:/Windows/Fonts/msyh.ttc',
@@ -42,6 +50,34 @@ def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageF
     return ImageFont.load_default()
 
 
+def get_poster_layout() -> dict[str, Any]:
+    return {
+        'width': POSTER_WIDTH,
+        'height': POSTER_HEIGHT,
+        'ratio': '5:8',
+        'qr_size': QR_SIZE,
+        'qr_x': QR_X,
+        'qr_y': QR_Y,
+        'design_size_2x': {'width': POSTER_WIDTH * 2, 'height': POSTER_HEIGHT * 2},
+        'safe_zones': {
+            'top_text': {'x': 48, 'y': 56, 'width': 504, 'height': 200},
+            'qr': {'x': QR_X, 'y': QR_Y, 'width': QR_SIZE, 'height': QR_SIZE},
+            'bottom_text': {'x': 48, 'y': POSTER_HEIGHT - 140, 'width': 504, 'height': 120},
+        },
+    }
+
+
+def resolve_poster_bg_path(template: dict[str, Any] | None) -> str:
+    template = template or {}
+    raw = (template.get('bg_image_path') or '').strip()
+    if not raw:
+        return ''
+    path = Path(raw)
+    if not path.is_absolute():
+        path = POSTER_BG_DIR / path.name
+    return str(path) if path.exists() else ''
+
+
 def compose_promotion_poster(
     display_name: str,
     invite_code: str,
@@ -50,11 +86,16 @@ def compose_promotion_poster(
     reward_text: str = '扫码领取专属权益',
 ) -> bytes:
     template = template or {}
-    width, height = 600, 960
+    width, height = POSTER_WIDTH, POSTER_HEIGHT
     bg = _hex_to_rgb(template.get('bg_color') or '#1677ff')
     fg = _hex_to_rgb(template.get('text_color') or '#ffffff', (255, 255, 255))
 
-    image = Image.new('RGB', (width, height), bg)
+    bg_path = resolve_poster_bg_path(template)
+    if bg_path:
+        image = Image.open(bg_path).convert('RGBA')
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
+    else:
+        image = Image.new('RGBA', (width, height), (*bg, 255))
     draw = ImageDraw.Draw(image)
 
     font_title = _load_font(40, bold=True)
@@ -68,16 +109,23 @@ def compose_promotion_poster(
     draw.text((48, 212), (reward_text or '扫码领取专属权益')[:18], fill=fg, font=font_sub)
 
     qr_image = Image.open(io.BytesIO(qr_bytes)).convert('RGBA')
-    qr_size = 312
-    qr_image = qr_image.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
-    qr_x = (width - qr_size) // 2
-    qr_y = 280
-    image.paste(qr_image, (qr_x, qr_y), qr_image if qr_image.mode == 'RGBA' else None)
+    qr_image = qr_image.resize((QR_SIZE, QR_SIZE), Image.Resampling.LANCZOS)
+    image.paste(qr_image, (QR_X, QR_Y), qr_image)
 
     code_text = f'推广码 {invite_code}'
     draw.text((48, height - 120), code_text, fill=fg, font=font_small)
     draw.text((48, height - 76), '微信扫一扫小程序码', fill=fg, font=font_small)
 
     buffer = io.BytesIO()
-    image.save(buffer, format='PNG', optimize=True)
+    image.convert('RGB').save(buffer, format='PNG', optimize=True)
     return buffer.getvalue()
+
+
+def save_poster_background(template_key: str, file_bytes: bytes, filename: str = '') -> str:
+    POSTER_BG_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(filename or 'bg.png').suffix.lower() or '.png'
+    if ext not in ('.png', '.jpg', '.jpeg', '.webp'):
+        ext = '.png'
+    target = POSTER_BG_DIR / f'{template_key}{ext}'
+    target.write_bytes(file_bytes)
+    return target.name

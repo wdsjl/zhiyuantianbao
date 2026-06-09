@@ -425,6 +425,7 @@ def generate_poster_qrcode(invite_code: str) -> bytes:
         'check_path': False,
         'env_version': get_qrcode_env_version(),
         'width': 430,
+        'is_hyaline': True,
     }).encode('utf-8')
     request = urllib.request.Request(
         f'{WECHAT_API_HOST}/wxa/getwxacodeunlimit?access_token={token}',

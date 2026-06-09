@@ -1391,6 +1391,27 @@ def api_referral_levels(user_id: int = Query(...)):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get('/api/referral/poster-layout')
+def api_referral_poster_layout():
+    from poster_compose_service import get_poster_layout
+    return get_poster_layout()
+
+
+@app.post('/admin/referrals/poster-bg')
+async def admin_referrals_poster_bg(template_key: str = Form(...), file: UploadFile = File(...)):
+    from poster_compose_service import save_poster_background
+    from referral_p2 import attach_poster_background
+    try:
+        content = await file.read()
+        if not content:
+            raise ValueError('请上传背景图文件')
+        filename = save_poster_background(template_key, content, file.filename or 'bg.png')
+        attach_poster_background(template_key, filename)
+        return RedirectResponse(f'/admin/referrals?message=模板 {template_key} 背景图已上传', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals?message=上传失败：{quote(str(exc))}', status_code=303)
+
+
 @app.get('/api/referral/poster')
 def api_referral_poster(user_id: int = Query(...), template_key: str = Query('blue')):
     try:

@@ -1403,11 +1403,14 @@ def admin_payments(keyword: str = '', message: str = ''):
 def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
     from referral_service import list_agents, list_bindings, list_commissions
     from referral_p1 import get_referral_policy_settings, trace_attribution, list_verify_logs
-    from referral_p2 import get_bonus_settings, list_materials
+    from referral_p2 import get_bonus_settings, list_materials, list_poster_templates
+    from poster_compose_service import get_poster_layout
 
     policy = get_referral_policy_settings()
     bonus = get_bonus_settings()
     materials = list_materials(active_only=False)
+    poster_templates = list_poster_templates()
+    poster_layout = get_poster_layout()
     default_rate = policy.get('commission_rate', 10)
     trace = trace_attribution(keyword) if keyword else {'bindings': [], 'commissions': [], 'orders': []}
     verify_logs = list_verify_logs(30)
@@ -1457,6 +1460,18 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           <button type="submit">保存达人#{item.get('agent_id')}</button>
         </form>'''
         for item in agents[:20]
+    )
+
+    poster_bg_forms = ''.join(
+        f'''<form class="toolbar" method="post" action="/admin/referrals/poster-bg" enctype="multipart/form-data">
+          <strong>{escape(str(item.get('template_name') or item.get('template_key') or ''))}</strong>
+          <code>{escape(str(item.get('template_key') or ''))}</code>
+          <span class="muted">当前背景：{escape(str(item.get('bg_image_path') or '纯色 ' + str(item.get('bg_color') or '')))}</span>
+          <input type="hidden" name="template_key" value="{escape(str(item.get('template_key') or ''))}" />
+          <input type="file" name="file" accept=".png,.jpg,.jpeg,.webp" />
+          <button type="submit">上传背景图</button>
+        </form>'''
+        for item in poster_templates
     )
 
     material_rows = ''.join(
@@ -1576,6 +1591,15 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
         <h2>推广博主</h2>
         <table><thead><tr><th>ID</th><th>博主名</th><th>邀请码</th><th>绑定微信用户</th><th>等级</th><th>标签/抖音</th><th>佣金%</th><th>推广人数</th><th>付费单</th><th>累计佣金</th><th>已结算</th><th>状态</th></tr></thead><tbody>{agent_rows}</tbody></table>
         {agent_profile_forms}
+      </div>
+      <div class="card">
+        <h2>海报背景图（自定义设计稿）</h2>
+        <p class="muted">标准尺寸 <strong>{poster_layout.get('width')} × {poster_layout.get('height')}</strong> 像素（比例 5:8）。
+        建议用 <strong>{poster_layout['design_size_2x']['width']} × {poster_layout['design_size_2x']['height']}</strong> 设计后导出 PNG/JPG。
+        小程序码区域请留白：居中 <strong>{poster_layout.get('qr_size')}×{poster_layout.get('qr_size')}</strong>，
+        坐标约 ({poster_layout.get('qr_x')}, {poster_layout.get('qr_y')})；顶部/底部留空给系统叠字。</p>
+        <p class="muted">小程序码已开启透明底（is_hyaline），可叠在自定义背景上。</p>
+        {poster_bg_forms}
       </div>
       <div class="card">
         <h2>推广素材库</h2>
