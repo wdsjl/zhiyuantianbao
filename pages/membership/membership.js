@@ -128,7 +128,9 @@ Page({
             amountText: `¥${item.amount || 0}`
           })),
           membershipNotice: this.buildMembershipNotice(entitlements, plans),
-          beanBalance: Number(beanRes.balance) || 0,
+          beanBalance: Number(
+            beanRes.balance ?? (entitlements.beans && entitlements.beans.balance)
+          ) || 0,
           loadError
         });
       })
