@@ -54,6 +54,8 @@ def render_page(title: str, body: str) -> HTMLResponse:
         input, select {{ height: 40px; border: 1px solid #d0d5dd; border-radius: 10px; padding: 0 12px; min-width: 180px; }}
         button, .button {{ height: 40px; border: 0; border-radius: 999px; padding: 0 18px; color: white; background: #1677ff; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }}
         .muted {{ color: #667085; line-height: 1.7; }}
+        .notice {{ background: #ecfdf3; color: #027a48; border-radius: 12px; padding: 12px 16px; margin: 12px 0; }}
+        .warn-box {{ background: #fff7e6; color: #b54708; border: 1px solid #fedf89; border-radius: 12px; padding: 12px 16px; margin: 12px 0; line-height: 1.7; }}
         .danger {{ color: #f04438; }}
         .success {{ color: #12b76a; }}
         .tag {{ display: inline-block; padding: 4px 8px; border-radius: 999px; background: #eef5ff; color: #1677ff; font-size: 12px; }}
