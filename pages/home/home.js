@@ -3,9 +3,11 @@ const { getFlowStatus, goNextStep, navigateToStep } = require('../../utils/apply
 const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode } = require('../../utils/referral');
 const { request } = require('../../utils/request');
 const { getCurrentUserId } = require('../../utils/membership');
+const { BUILD_TAG } = require('../../utils/miniappVersion');
 
 Page({
   data: {
+    buildTag: BUILD_TAG,
     profile: {},
     personality: {},
     flow: {
@@ -120,5 +122,8 @@ Page({
   },
   goStudentReport() {
     wx.navigateTo({ url: '/pages/student-report/student-report' });
+  },
+  goPromotion() {
+    wx.navigateTo({ url: '/pages/promotion/promotion' });
   }
 });

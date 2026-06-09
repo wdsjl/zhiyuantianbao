@@ -65,4 +65,6 @@
     <view class="section-title">免责声明</view>
     <view class="warn-box">本系统基于历年录取数据、招生计划及用户输入信息进行智能分析，结果仅供参考。最终录取结果以各省教育考试院及高校官方公布为准。</view>
   </view>
+
+  <view class="version-line">小程序版本 {{buildTag}}</view>
 </view>

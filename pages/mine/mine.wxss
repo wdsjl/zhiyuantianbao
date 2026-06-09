@@ -75,3 +75,10 @@
 .menu-item text:last-child {
   color: #98a2b3;
 }
+
+.version-line {
+  text-align: center;
+  font-size: 22rpx;
+  color: #98a2b3;
+  padding: 8rpx 0 24rpx;
+}
