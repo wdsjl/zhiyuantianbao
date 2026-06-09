@@ -1401,8 +1401,11 @@ def admin_payments(keyword: str = '', message: str = ''):
 def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
     from referral_service import list_agents, list_bindings, list_commissions
     from referral_p1 import get_referral_policy_settings, trace_attribution, list_verify_logs
+    from referral_p2 import get_bonus_settings, list_materials
 
     policy = get_referral_policy_settings()
+    bonus = get_bonus_settings()
+    materials = list_materials(active_only=False)
     default_rate = policy.get('commission_rate', 10)
     trace = trace_attribution(keyword) if keyword else {'bindings': [], 'commissions': [], 'orders': []}
     verify_logs = list_verify_logs(30)
@@ -1418,6 +1421,7 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           <td>{escape(str(item.get("display_name") or ""))}</td>
           <td><code>{escape(str(item.get("invite_code") or ""))}</code></td>
           <td>{escape(str(item.get("user_name") or ""))}<br><span class="muted">{escape(str(item.get("user_phone") or ""))}</span></td>
+          <td>{escape(str(item.get("tags") or ""))}<br><span class="muted">{escape(str(item.get("douyin_id") or ""))} {escape(str(item.get("fan_scale") or ""))}</span></td>
           <td>
             <form method="post" action="/admin/referrals/agent-rate" class="inline-form">
               <input type="hidden" name="agent_id" value="{item.get('agent_id')}" />
@@ -1438,7 +1442,35 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           </td>
         </tr>'''
         for item in agents
-    ) or '<tr><td colspan="10" class="muted">暂无博主</td></tr>'
+    ) or '<tr><td colspan="11" class="muted">暂无博主</td></tr>'
+
+    agent_profile_forms = ''.join(
+        f'''<form class="toolbar" method="post" action="/admin/referrals/agent-profile">
+          <input type="hidden" name="agent_id" value="{item.get('agent_id')}" />
+          <input name="display_name" value="{escape(str(item.get('display_name') or ''))}" placeholder="昵称" />
+          <input name="tags" value="{escape(str(item.get('tags') or ''))}" placeholder="标签(头部/腰部/素人)" />
+          <input name="douyin_id" value="{escape(str(item.get('douyin_id') or ''))}" placeholder="抖音号" />
+          <input name="fan_scale" value="{escape(str(item.get('fan_scale') or ''))}" placeholder="粉丝量级" />
+          <button type="submit">保存达人#{item.get('agent_id')}</button>
+        </form>'''
+        for item in agents[:20]
+    )
+
+    material_rows = ''.join(
+        f'''<tr>
+          <td>{item.get('material_id')}</td>
+          <td>{escape(str(item.get('category') or ''))}</td>
+          <td>{escape(str(item.get('title') or ''))}</td>
+          <td><pre style="white-space:pre-wrap">{escape(str(item.get('content') or ''))}</pre></td>
+          <td>
+            <form method="post" action="/admin/referrals/materials/delete" style="display:inline">
+              <input type="hidden" name="material_id" value="{item.get('material_id')}" />
+              <button type="submit">删除</button>
+            </form>
+          </td>
+        </tr>'''
+        for item in materials
+    ) or '<tr><td colspan="5" class="muted">暂无素材</td></tr>'
 
     binding_rows = ''.join(
         f'''<tr>
@@ -1511,9 +1543,16 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
             <option value="monthly" {'selected' if policy.get('settlement_cycle') == 'monthly' else ''}>月结</option>
           </select>
           <label>最低提现</label><input name="min_withdraw_amount" value="{policy.get('min_withdraw_amount', 10)}" style="width:72px" />
+          <label>达人福利豆</label><input name="bonus_beans" value="{bonus.get('bonus_beans', 200)}" style="width:72px" />
+          <label>体验天数</label><input name="bonus_days" value="{bonus.get('bonus_days', 3)}" style="width:72px" />
           <button type="submit">保存策略</button>
           <a class="button" href="/admin/referrals/export">导出对账CSV</a>
+          <a class="button" href="/admin/referrals/agents/export">导出达人CSV</a>
           <a class="button" href="/admin/referrals/withdrawals">提现审核</a>
+        </form>
+        <form class="toolbar" method="post" action="/admin/referrals/agents/import" enctype="multipart/form-data">
+          <input type="file" name="file" accept=".csv,.xlsx" />
+          <button type="submit">批量导入达人</button>
         </form>
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="用户ID / 手机号 / 订单号 / 达人ID / 邀请码（归属溯源）" />
@@ -1530,7 +1569,19 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
       </div>
       <div class="card">
         <h2>推广博主</h2>
-        <table><thead><tr><th>ID</th><th>博主名</th><th>邀请码</th><th>绑定微信用户</th><th>佣金%</th><th>推广人数</th><th>付费单</th><th>累计佣金</th><th>已结算</th><th>状态</th></tr></thead><tbody>{agent_rows}</tbody></table>
+        <table><thead><tr><th>ID</th><th>博主名</th><th>邀请码</th><th>绑定微信用户</th><th>标签/抖音</th><th>佣金%</th><th>推广人数</th><th>付费单</th><th>累计佣金</th><th>已结算</th><th>状态</th></tr></thead><tbody>{agent_rows}</tbody></table>
+        {agent_profile_forms}
+      </div>
+      <div class="card">
+        <h2>推广素材库</h2>
+        <form class="toolbar" method="post" action="/admin/referrals/materials/save">
+          <input name="category" placeholder="分类(话术/口播/短视频)" />
+          <input name="title" placeholder="标题" />
+          <input name="content" placeholder="内容" style="min-width:320px" />
+          <input name="sort_order" value="0" style="width:72px" />
+          <button type="submit">新增素材</button>
+        </form>
+        <table><thead><tr><th>ID</th><th>分类</th><th>标题</th><th>内容</th><th>操作</th></tr></thead><tbody>{material_rows}</tbody></table>
       </div>
       <div class="card">
         <h2>推广用户绑定</h2>

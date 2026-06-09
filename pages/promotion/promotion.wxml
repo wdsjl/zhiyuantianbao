@@ -1,6 +1,6 @@
 <view class="container">
   <view class="card hero-card">
-    <view class="section-title">博主推广中心</view>
+    <view class="section-title">达人推广中心</view>
     <view class="sub-text">领取专属海报，用户扫码后将绑定为您的推广用户。用户充值会员后，您与平台均可查看订单并参与分账。</view>
   </view>
 
@@ -11,34 +11,53 @@
   <view wx:else>
     <view class="card stats-card">
       <view class="section-title">数据看板</view>
+      <view class="filter-row">
+        <view class="filter-item {{days===7?'active':''}}" data-days="7" bindtap="onDaysChange">近7天</view>
+        <view class="filter-item {{days===30?'active':''}}" data-days="30" bindtap="onDaysChange">近30天</view>
+        <view class="filter-item {{days===90?'active':''}}" data-days="90" bindtap="onDaysChange">近90天</view>
+      </view>
       <view class="stats-row">
-        <view class="stat-item"><view class="stat-num">{{stats.scan_bind_users || 0}}</view><view class="stat-label">绑定用户</view></view>
-        <view class="stat-item"><view class="stat-num">{{stats.paid_orders || 0}}</view><view class="stat-label">付费订单</view></view>
-        <view class="stat-item"><view class="stat-num">{{stats.conversion_rate || 0}}%</view><view class="stat-label">转化率</view></view>
+        <view class="stat-item"><view class="stat-num">{{rangeStats.scan_count || 0}}</view><view class="stat-label">扫码次数</view></view>
+        <view class="stat-item"><view class="stat-num">{{rangeStats.bind_users || 0}}</view><view class="stat-label">绑定用户</view></view>
+        <view class="stat-item"><view class="stat-num">{{rangeStats.paid_orders || 0}}</view><view class="stat-label">付费订单</view></view>
+        <view class="stat-item"><view class="stat-num">{{rangeStats.conversion_rate || 0}}%</view><view class="stat-label">转化率</view></view>
+      </view>
+      <view class="stats-row">
+        <view class="stat-item"><view class="stat-num">¥{{rangeStats.commission_amount || 0}}</view><view class="stat-label">区间佣金</view></view>
         <view class="stat-item"><view class="stat-num">¥{{wallet.available_amount || 0}}</view><view class="stat-label">可提现</view></view>
       </view>
       <button class="secondary-btn" bindtap="goWithdraw">提现中心</button>
     </view>
 
     <view class="card">
-      <view class="section-title">我的推广码（达人ID）</view>
+      <view class="section-title">我的推广码（达人ID：{{agent.agent_id || '--'}}）</view>
       <view class="invite-code">{{agent.invite_code || '--'}}</view>
       <view class="sub-text">佣金比例：{{agent.commission_rate || 0}}%</view>
-      <view class="stats-row">
-        <view class="stat-item"><view class="stat-num">{{agent.total_invites || 0}}</view><view class="stat-label">推广用户</view></view>
-        <view class="stat-item"><view class="stat-num">{{agent.total_paid_orders || 0}}</view><view class="stat-label">付费订单</view></view>
-        <view class="stat-item"><view class="stat-num">¥{{agent.total_commission || 0}}</view><view class="stat-label">累计佣金</view></view>
-        <view class="stat-item"><view class="stat-num">¥{{pendingCommission}}</view><view class="stat-label">待结算</view></view>
-      </view>
     </view>
 
     <view class="card poster-card">
       <view class="section-title">专属推广海报</view>
-      <view class="sub-text">保存海报或转发给家长/学生扫码，即可绑定推广关系。</view>
-      <image wx:if="{{posterImage}}" class="poster-image" src="{{posterImage}}" mode="widthFix" show-menu-by-longpress="{{true}}" />
-      <view wx:else class="sub-text warn-text">海报生成失败，请确认服务端已配置 WECHAT_SECRET</view>
-      <button class="primary-btn" bindtap="savePoster" disabled="{{!posterImage}}">保存海报到相册</button>
-      <button class="secondary-btn" bindtap="refreshPoster">刷新海报</button>
+      <view class="sub-text">选择模板后生成带昵称的海报，一键保存到相册。</view>
+      <view class="template-row">
+        <view wx:for="{{templates}}" wx:key="template_key" class="template-item {{templateKey===item.template_key?'active':''}}" data-key="{{item.template_key}}" bindtap="onTemplateChange">
+          <view class="template-color" style="background: {{item.bg_color}}"></view>
+          <view class="template-name">{{item.template_name}}</view>
+        </view>
+      </view>
+      <canvas canvas-id="posterCanvas" class="poster-canvas" style="width: 600rpx; height: 900rpx;"></canvas>
+      <image wx:if="{{composedPoster}}" class="poster-image" src="{{composedPoster}}" mode="widthFix" show-menu-by-longpress="{{true}}" />
+      <button class="primary-btn" bindtap="composePoster">生成海报</button>
+      <button class="secondary-btn" bindtap="savePoster" disabled="{{!composedPoster}}">保存海报到相册</button>
+    </view>
+
+    <view class="card">
+      <view class="section-title">推广物料库</view>
+      <view wx:if="{{!materials.length}}" class="sub-text">暂无素材，请联系运营上传。</view>
+      <view wx:for="{{materials}}" wx:key="material_id" class="list-item">
+        <view class="item-title">{{item.category}} · {{item.title}}</view>
+        <view class="material-content">{{item.content}}</view>
+        <button class="secondary-btn mini-btn" data-content="{{item.content}}" bindtap="copyMaterial">一键复制</button>
+      </view>
     </view>
 
     <view class="card">
