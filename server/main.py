@@ -1,3 +1,5 @@
+import csv
+import io
 from urllib.parse import quote
 
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
@@ -106,7 +108,9 @@ from bean_service import ensure_bean_tables, sync_plan_catalog
 ensure_bean_tables()
 ensure_referral_tables()
 from referral_p1 import ensure_referral_p1_tables
+from referral_p2 import ensure_referral_p2_tables
 ensure_referral_p1_tables()
+ensure_referral_p2_tables()
 sync_plan_catalog()
 expire_overdue_memberships()
 
@@ -503,8 +507,11 @@ def admin_referrals_policy(
     attribution_days: int = Form(30),
     settlement_cycle: str = Form('monthly'),
     min_withdraw_amount: float = Form(10),
+    bonus_beans: int = Form(200),
+    bonus_days: int = Form(3),
 ):
     from referral_p1 import save_referral_policy_settings
+    from referral_p2 import save_bonus_settings
     save_referral_policy_settings({
         'commission_rate': commission_rate,
         'attribution_mode': attribution_mode,
@@ -512,7 +519,78 @@ def admin_referrals_policy(
         'settlement_cycle': settlement_cycle,
         'min_withdraw_amount': min_withdraw_amount,
     })
+    save_bonus_settings(bonus_beans, bonus_days)
     return RedirectResponse('/admin/referrals?message=推广策略已保存', status_code=303)
+
+
+@app.post('/admin/referrals/materials/save')
+def admin_referrals_material_save(
+    material_id: int | None = Form(None),
+    category: str = Form(...),
+    title: str = Form(...),
+    content: str = Form(...),
+    sort_order: int = Form(0),
+):
+    from referral_p2 import save_material
+    save_material(material_id or None, category, title, content, sort_order, 1)
+    return RedirectResponse('/admin/referrals?message=推广素材已保存', status_code=303)
+
+
+@app.post('/admin/referrals/materials/delete')
+def admin_referrals_material_delete(material_id: int = Form(...)):
+    from referral_p2 import delete_material
+    delete_material(material_id)
+    return RedirectResponse('/admin/referrals?message=推广素材已删除', status_code=303)
+
+
+@app.post('/admin/referrals/agents/import')
+async def admin_referrals_agents_import(file: UploadFile = File(...)):
+    from referral_p2 import import_agents_from_rows, parse_agents_xlsx
+    content = await file.read()
+    filename = (file.filename or '').lower()
+    try:
+        if filename.endswith('.xlsx'):
+            rows = parse_agents_xlsx(content)
+        else:
+            text = content.decode('utf-8-sig')
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+        result = import_agents_from_rows(rows)
+        msg = f'导入完成：新增 {result["created"]}，更新 {result["updated"]}'
+        if result['errors']:
+            msg += '；' + '；'.join(result['errors'][:3])
+        return RedirectResponse(f'/admin/referrals?message={quote(msg)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/referrals?message=导入失败：{quote(str(exc))}', status_code=303)
+
+
+@app.get('/admin/referrals/agents/export')
+def admin_referrals_agents_export():
+    from referral_p2 import export_agents_csv
+    csv_text = export_agents_csv()
+    return Response(
+        content=csv_text.encode('utf-8-sig'),
+        media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition': 'attachment; filename="referral_agents.csv"'}
+    )
+
+
+@app.post('/admin/referrals/agent-profile')
+def admin_referrals_agent_profile(
+    agent_id: int = Form(...),
+    tags: str = Form(''),
+    douyin_id: str = Form(''),
+    fan_scale: str = Form(''),
+    display_name: str = Form(''),
+):
+    from referral_p2 import update_agent_profile
+    update_agent_profile(agent_id, {
+        'tags': tags,
+        'douyin_id': douyin_id,
+        'fan_scale': fan_scale,
+        'display_name': display_name or None,
+    })
+    return RedirectResponse('/admin/referrals?message=达人资料已更新', status_code=303)
 
 
 @app.post('/admin/referrals/agent-blacklist')
@@ -1177,25 +1255,56 @@ def api_referral_agent_register(request: ReferralAgentRegisterRequest):
 
 
 @app.get('/api/referral/dashboard')
-def api_referral_dashboard(user_id: int = Query(...)):
+def api_referral_dashboard(user_id: int = Query(...), days: int = Query(30)):
     try:
-        return get_agent_dashboard(user_id)
+        from referral_p2 import get_agent_stats
+        dashboard = get_agent_dashboard(user_id)
+        agent_id = dashboard['agent']['agent_id']
+        dashboard['range_stats'] = get_agent_stats(agent_id, days)
+        return dashboard
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get('/api/referral/poster')
-def api_referral_poster(user_id: int = Query(...)):
+def api_referral_poster(user_id: int = Query(...), template_key: str = Query('blue')):
     try:
+        from referral_p2 import list_poster_templates
         agent = register_agent(user_id)
         image_base64 = poster_image_base64(agent['invite_code'])
+        templates = list_poster_templates()
+        template = next((item for item in templates if item.get('template_key') == template_key), templates[0] if templates else None)
         return {
             'invite_code': agent['invite_code'],
+            'agent_id': agent.get('agent_id'),
             'display_name': agent.get('display_name'),
             'commission_rate': agent.get('commission_rate'),
             'image_base64': image_base64,
+            'template': template,
+            'templates': templates,
             'share_path': f'pages/home/home?invite={agent["invite_code"]}',
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/referral/materials')
+def api_referral_materials():
+    from referral_p2 import list_materials
+    return {'list': list_materials()}
+
+
+@app.get('/api/referral/membership-compare')
+def api_referral_membership_compare():
+    from referral_p2 import get_membership_compare
+    return {'list': get_membership_compare()}
+
+
+@app.post('/api/referral/claim-bonus')
+def api_referral_claim_bonus(user_id: int = Query(...)):
+    from referral_p2 import claim_referral_bonus
+    try:
+        return claim_referral_bonus(user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

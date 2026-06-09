@@ -23,6 +23,37 @@
     <button class="primary-btn renew-btn" loading="{{paying}}" disabled="{{paying}}" bindtap="renewCurrentPlan">立即续费</button>
   </view>
 
+  <view wx:if="{{comparePlans.length}}" class="card compare-card">
+    <view class="section-title">会员权益对比</view>
+    <scroll-view scroll-x class="compare-scroll" enable-flex>
+      <view class="compare-table">
+        <view class="compare-row compare-header">
+          <view class="compare-cell sticky-cell">权益项</view>
+          <view wx:for="{{comparePlans}}" wx:key="plan_code" class="compare-cell plan-head-cell {{item.plan_code === currentPlanCode ? 'current-col' : ''}}">
+            <view class="compare-plan-name">{{item.plan_name}}</view>
+            <view class="compare-plan-price">{{item.price_text}}</view>
+          </view>
+        </view>
+        <view class="compare-row">
+          <view class="compare-cell sticky-cell">有效期</view>
+          <view wx:for="{{comparePlans}}" wx:key="plan_code" class="compare-cell">{{item.duration_text}}</view>
+        </view>
+        <view class="compare-row">
+          <view class="compare-cell sticky-cell">到账星鼎豆</view>
+          <view wx:for="{{comparePlans}}" wx:key="plan_code" class="compare-cell">{{item.beanGrantText}}</view>
+        </view>
+        <view class="compare-row">
+          <view class="compare-cell sticky-cell">报告消耗</view>
+          <view wx:for="{{comparePlans}}" wx:key="plan_code" class="compare-cell">{{item.reportCostText}}</view>
+        </view>
+        <view wx:for="{{compareFeatures}}" wx:key="name" class="compare-row">
+          <view class="compare-cell sticky-cell">{{item.name}}</view>
+          <view wx:for="{{item.cells}}" wx:for-item="cell" wx:key="*this" class="compare-cell {{cell === '✓' ? 'check-cell' : ''}}">{{cell}}</view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
   <view wx:for="{{plans}}" wx:key="plan_code" class="card plan-card {{item.plan_code === currentPlanCode ? 'current-plan' : ''}}">
     <view class="plan-head">
       <view>

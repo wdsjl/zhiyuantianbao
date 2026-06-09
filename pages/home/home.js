@@ -36,13 +36,30 @@ Page({
       }
     }).then((res) => {
       clearPendingInviteCode();
-      if (res && res.message) {
+      if (!res || !res.success) return;
+      const userId = getCurrentUserId();
+      const showResult = (bonusRes) => {
+        let content = res.message || '渠道绑定成功';
+        if (bonusRes && bonusRes.claimed) {
+          content += `\n\n已领取达人专属 ${bonusRes.bonus_beans} 星鼎豆`;
+        } else if (bonusRes && bonusRes.message && bonusRes.message.indexOf('已领取') < 0) {
+          content += `\n\n${bonusRes.message}`;
+        }
         wx.showModal({
           title: res.reason === 'already_bound_same' ? '已绑定' : '绑定成功',
-          content: res.message,
+          content,
           showCancel: false
         });
+      };
+      if (!userId) {
+        showResult(null);
+        return;
       }
+      request({
+        url: '/api/referral/claim-bonus',
+        method: 'POST',
+        data: { user_id: Number(userId) }
+      }).then(showResult).catch(() => showResult(null));
     }).catch((error) => {
       if (error && error.message && error.message.indexOf('已绑定其他渠道') >= 0) {
         wx.showModal({ title: '无法更换渠道', content: error.message, showCancel: false });
