@@ -236,51 +236,19 @@ def register_agent(user_id: int, display_name: str | None = None) -> dict[str, A
 
 
 def bind_invitee(invitee_user_id: int, invite_code: str, bind_source: str = 'poster') -> dict[str, Any] | None:
-    ensure_referral_tables()
-    code = (invite_code or '').strip().upper()
-    if not code:
-        return None
-    agent = get_agent_by_invite_code(code)
-    if not agent:
-        return None
-    if int(agent['user_id']) == int(invitee_user_id):
-        return None
-
-    with get_connection() as connection:
-        existing = row_to_dict(connection.execute(
-            'SELECT * FROM referral_bindings WHERE invitee_user_id = ?',
-            [invitee_user_id]
-        ).fetchone())
-        if existing:
-            return existing
-
-        cursor = connection.execute(
-            '''
-            INSERT INTO referral_bindings (invitee_user_id, agent_id, invite_code, bind_source)
-            VALUES (?, ?, ?, ?)
-            ''',
-            [invitee_user_id, agent['agent_id'], code, bind_source]
-        )
-        connection.execute(
-            '''
-            UPDATE referral_agents
-            SET total_invites = total_invites + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE agent_id = ?
-            ''',
-            [agent['agent_id']]
-        )
-        connection.commit()
-        return row_to_dict(connection.execute(
-            'SELECT * FROM referral_bindings WHERE binding_id = ?',
-            [cursor.lastrowid]
-        ).fetchone())
+    from referral_p1 import attempt_bind_invitee
+    result = attempt_bind_invitee(invitee_user_id, invite_code, bind_source)
+    if result.get('success'):
+        return result.get('binding')
+    return None
 
 
 def try_bind_on_login(user_id: int, invite_code: str | None, is_new_user: bool) -> dict[str, Any] | None:
     if not invite_code:
         return None
-    binding = bind_invitee(user_id, invite_code, 'poster' if is_new_user else 'scan')
-    return binding
+    from referral_p1 import attempt_bind_invitee
+    result = attempt_bind_invitee(user_id, invite_code, 'poster' if is_new_user else 'scan')
+    return result.get('binding') if result.get('success') else None
 
 
 def get_binding_for_user(user_id: int) -> dict[str, Any] | None:
@@ -318,18 +286,22 @@ def record_commission_for_order(order: dict[str, Any]) -> dict[str, Any] | None:
                 [order_id]
             ).fetchone())
 
+        from referral_p1 import binding_valid_for_commission, is_user_blacklisted
+        if is_user_blacklisted(user_id):
+            return None
+
         binding = row_to_dict(connection.execute(
             'SELECT * FROM referral_bindings WHERE invitee_user_id = ?',
             [user_id]
         ).fetchone())
-        if not binding:
+        if not binding or not binding_valid_for_commission(binding):
             return None
 
         agent = row_to_dict(connection.execute(
             'SELECT * FROM referral_agents WHERE agent_id = ?',
             [binding['agent_id']]
         ).fetchone())
-        if not agent or agent.get('status') != 'active':
+        if not agent or agent.get('status') != 'active' or int(agent.get('is_blacklisted') or 0) == 1:
             return None
 
         rate = float(agent.get('commission_rate') or get_default_commission_rate())
@@ -488,11 +460,20 @@ def get_agent_dashboard(user_id: int) -> dict[str, Any]:
             [agent['agent_id']]
         ).fetchall())
     pending_amount = sum(float(item.get('commission_amount') or 0) for item in commissions if item.get('status') == 'pending')
+    from referral_p1 import get_agent_wallet
+    wallet = get_agent_wallet(agent['agent_id'])
     return {
         'agent': agent,
         'invitees': invitees,
         'commissions': commissions,
         'pending_commission': round(pending_amount, 2),
+        'wallet': wallet,
+        'stats': {
+            'scan_bind_users': agent.get('total_invites') or 0,
+            'paid_orders': agent.get('total_paid_orders') or 0,
+            'total_commission': agent.get('total_commission') or 0,
+            'conversion_rate': round((int(agent.get('total_paid_orders') or 0) / max(int(agent.get('total_invites') or 0), 1)) * 100, 1),
+        },
     }
 
 

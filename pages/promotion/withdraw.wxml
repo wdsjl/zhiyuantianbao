@@ -1,0 +1,40 @@
+<view class="container">
+  <view class="card">
+    <view class="section-title">可提现佣金</view>
+    <view class="amount">¥{{wallet.available_amount || 0}}</view>
+    <view class="sub-text">待结算 ¥{{wallet.pending_commission || 0}} · 已结算 ¥{{wallet.settled_commission || 0}}</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">申请提现</view>
+    <view class="field">
+      <view class="label">提现金额</view>
+      <input class="input" type="digit" placeholder="请输入金额" value="{{amount}}" bindinput="onAmountInput" />
+    </view>
+    <view class="field">
+      <view class="label">收款方式</view>
+      <picker mode="selector" range="{{payMethods}}" value="{{payMethodIndex}}" bindchange="onPayMethodChange">
+        <view class="picker">{{payMethods[payMethodIndex]}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <view class="label">收款账号</view>
+      <input class="input" placeholder="微信/支付宝/银行卡账号" value="{{payAccount}}" bindinput="onAccountInput" />
+    </view>
+    <view class="field">
+      <view class="label">收款人姓名</view>
+      <input class="input" placeholder="可选" value="{{payName}}" bindinput="onNameInput" />
+    </view>
+    <button class="primary-btn" loading="{{submitting}}" bindtap="submitWithdraw">提交提现申请</button>
+  </view>
+
+  <view class="card">
+    <view class="section-title">提现记录</view>
+    <view wx:if="{{!withdrawals.length}}" class="sub-text">暂无记录</view>
+    <view wx:for="{{withdrawals}}" wx:key="withdrawal_id" class="list-item">
+      <view class="item-title">¥{{item.amount}} · {{item.statusText}}</view>
+      <view class="sub-text">{{item.pay_method}} · {{item.pay_account}}</view>
+      <view class="sub-text">{{item.created_at}}</view>
+    </view>
+  </view>
+</view>

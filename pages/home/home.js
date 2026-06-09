@@ -25,11 +25,30 @@ Page({
     const inviteCode = getPendingInviteCode();
     const userId = getCurrentUserId();
     if (!inviteCode || !userId) return;
+    const deviceId = wx.getStorageSync('deviceId') || '';
     request({
-      url: `/api/referral/bind?user_id=${Number(userId)}&invite_code=${encodeURIComponent(inviteCode)}`,
+      url: '/api/referral/bind',
       method: 'POST',
-      data: {}
-    }).then(() => clearPendingInviteCode()).catch(() => {});
+      data: {
+        user_id: Number(userId),
+        invite_code: inviteCode,
+        device_id: deviceId
+      }
+    }).then((res) => {
+      clearPendingInviteCode();
+      if (res && res.message) {
+        wx.showModal({
+          title: res.reason === 'already_bound_same' ? '已绑定' : '绑定成功',
+          content: res.message,
+          showCancel: false
+        });
+      }
+    }).catch((error) => {
+      if (error && error.message && error.message.indexOf('已绑定其他渠道') >= 0) {
+        wx.showModal({ title: '无法更换渠道', content: error.message, showCancel: false });
+        clearPendingInviteCode();
+      }
+    });
   },
   onShow() {
     this.tryBindInvite();

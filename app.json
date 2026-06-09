@@ -11,7 +11,8 @@
     "pages/membership/membership",
     "pages/compare/compare",
     "pages/student-report/student-report",
-    "pages/promotion/promotion"
+    "pages/promotion/promotion",
+    "pages/promotion/withdraw"
   ],
   "window": {
     "navigationBarTitleText": "智愿填报",

@@ -16,6 +16,21 @@ class ReferralAgentRegisterRequest(BaseModel):
     display_name: Optional[str] = None
 
 
+class ReferralBindRequest(BaseModel):
+    user_id: int
+    invite_code: str
+    device_id: Optional[str] = None
+    ip: Optional[str] = None
+
+
+class ReferralWithdrawRequest(BaseModel):
+    user_id: int
+    amount: float
+    pay_method: str = 'wechat'
+    pay_account: str
+    pay_name: Optional[str] = None
+
+
 class ParentBindRequest(BaseModel):
     parent_user_id: int
     student_phone: Optional[str] = None

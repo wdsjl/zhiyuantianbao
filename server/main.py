@@ -9,7 +9,7 @@ from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import (
     RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
-    ReferralAgentRegisterRequest,
+    ReferralAgentRegisterRequest, ReferralBindRequest, ReferralWithdrawRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
     BeanConsumeReportRequest,
 )
@@ -30,7 +30,7 @@ from admin_views import (
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
-    admin_referrals,
+    admin_referrals, admin_referral_withdrawals,
 )
 from crawler_service import (
     crawl_and_import, crawl_and_import_years, import_schools_only, ensure_crawl_tables,
@@ -105,6 +105,8 @@ ensure_student_report_tables()
 from bean_service import ensure_bean_tables, sync_plan_catalog
 ensure_bean_tables()
 ensure_referral_tables()
+from referral_p1 import ensure_referral_p1_tables
+ensure_referral_p1_tables()
 sync_plan_catalog()
 expire_overdue_memberships()
 
@@ -492,6 +494,69 @@ def admin_referrals_agent_rate(agent_id: int = Form(...), commission_rate: float
         return RedirectResponse('/admin/referrals?message=博主分账比例已更新', status_code=303)
     except ValueError as exc:
         return RedirectResponse(f'/admin/referrals?message=更新失败：{exc}', status_code=303)
+
+
+@app.post('/admin/referrals/policy')
+def admin_referrals_policy(
+    commission_rate: float = Form(...),
+    attribution_mode: str = Form('permanent'),
+    attribution_days: int = Form(30),
+    settlement_cycle: str = Form('monthly'),
+    min_withdraw_amount: float = Form(10),
+):
+    from referral_p1 import save_referral_policy_settings
+    save_referral_policy_settings({
+        'commission_rate': commission_rate,
+        'attribution_mode': attribution_mode,
+        'attribution_days': attribution_days,
+        'settlement_cycle': settlement_cycle,
+        'min_withdraw_amount': min_withdraw_amount,
+    })
+    return RedirectResponse('/admin/referrals?message=推广策略已保存', status_code=303)
+
+
+@app.post('/admin/referrals/agent-blacklist')
+def admin_referrals_agent_blacklist(agent_id: int = Form(...), blacklisted: int = Form(1)):
+    from referral_p1 import set_agent_blacklist
+    set_agent_blacklist(agent_id, bool(blacklisted))
+    label = '已拉黑达人' if blacklisted else '已解除拉黑'
+    return RedirectResponse(f'/admin/referrals?message={label}', status_code=303)
+
+
+@app.post('/admin/referrals/commission-adjust')
+def admin_referrals_commission_adjust(commission_id: int = Form(...), commission_amount: float = Form(...), remark: str = Form('')):
+    from referral_p1 import adjust_commission_amount
+    try:
+        adjust_commission_amount(commission_id, commission_amount, remark)
+        return RedirectResponse('/admin/referrals?message=佣金已调整', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals?message=调整失败：{exc}', status_code=303)
+
+
+@app.get('/admin/referrals/export')
+def admin_referrals_export():
+    from referral_p1 import export_referral_csv
+    csv_text = export_referral_csv()
+    return Response(
+        content=csv_text.encode('utf-8-sig'),
+        media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition': 'attachment; filename="referral_commissions.csv"'}
+    )
+
+
+@app.get('/admin/referrals/withdrawals')
+def admin_referral_withdrawals_page(keyword: str = '', message: str = ''):
+    return admin_referral_withdrawals(keyword, message)
+
+
+@app.post('/admin/referrals/withdrawals/review')
+def admin_referral_withdrawals_review(withdrawal_id: int = Form(...), action: str = Form(...), remark: str = Form('')):
+    from referral_p1 import review_withdrawal
+    try:
+        review_withdrawal(withdrawal_id, action, remark)
+        return RedirectResponse('/admin/referrals/withdrawals?message=提现审核已更新', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals/withdrawals?message=审核失败：{exc}', status_code=303)
 
 
 @app.get('/admin/payments/requests/export')
@@ -1136,17 +1201,70 @@ def api_referral_poster(user_id: int = Query(...)):
 
 
 @app.post('/api/referral/bind')
-def api_referral_bind(user_id: int = Query(...), invite_code: str = Query(...)):
-    binding = bind_invitee(user_id, invite_code, 'manual')
-    if not binding:
-        raise HTTPException(status_code=400, detail='邀请码无效或已绑定其他博主')
-    return {'binding': binding}
+def api_referral_bind(request: ReferralBindRequest):
+    from referral_p1 import attempt_bind_invitee, claim_free_trial_once
+    result = attempt_bind_invitee(
+        request.user_id,
+        request.invite_code,
+        'scan',
+        ip=request.ip or '',
+        device_id=request.device_id or '',
+    )
+    if not result.get('success'):
+        raise HTTPException(status_code=400, detail=result.get('message') or '绑定失败')
+    with get_connection() as connection:
+        user = row_to_dict(connection.execute('SELECT openid FROM users WHERE user_id = ?', [request.user_id]).fetchone())
+    free_claim = claim_free_trial_once(
+        request.user_id,
+        (user or {}).get('openid') or '',
+        (result.get('agent') or {}).get('agent_id'),
+        request.device_id or '',
+        request.ip or '',
+    )
+    return {**result, 'free_claim': free_claim}
 
 
 @app.get('/api/referral/my-binding')
 def api_referral_my_binding(user_id: int = Query(...)):
     binding = get_binding_for_user(user_id)
     return {'binding': binding}
+
+
+@app.get('/api/referral/policy')
+def api_referral_policy():
+    from referral_p1 import get_referral_policy_settings
+    return get_referral_policy_settings()
+
+
+@app.post('/api/referral/withdraw')
+def api_referral_withdraw(request: ReferralWithdrawRequest):
+    from referral_p1 import create_withdrawal
+    agent = register_agent(request.user_id)
+    try:
+        withdrawal = create_withdrawal(
+            int(agent['agent_id']),
+            request.amount,
+            request.pay_method,
+            request.pay_account,
+            request.pay_name or '',
+        )
+        return {'withdrawal': withdrawal}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/referral/withdrawals')
+def api_referral_withdrawals(user_id: int = Query(...)):
+    from referral_p1 import list_withdrawals
+    agent = register_agent(user_id)
+    rows = [item for item in list_withdrawals() if int(item.get('agent_id') or 0) == int(agent['agent_id'])]
+    return {'list': rows}
+
+
+@app.get('/api/referral/trace')
+def api_referral_trace(keyword: str = Query(...)):
+    from referral_p1 import trace_attribution
+    return trace_attribution(keyword)
 
 
 @app.get('/api/profile')

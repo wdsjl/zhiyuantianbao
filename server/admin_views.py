@@ -1399,10 +1399,13 @@ def admin_payments(keyword: str = '', message: str = ''):
 
 
 def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
-    from referral_service import list_agents, list_bindings, list_commissions, get_referral_settings
+    from referral_service import list_agents, list_bindings, list_commissions
+    from referral_p1 import get_referral_policy_settings, trace_attribution, list_verify_logs
 
-    settings = get_referral_settings()
-    default_rate = settings.get('commission_rate', 10)
+    policy = get_referral_policy_settings()
+    default_rate = policy.get('commission_rate', 10)
+    trace = trace_attribution(keyword) if keyword else {'bindings': [], 'commissions': [], 'orders': []}
+    verify_logs = list_verify_logs(30)
     agents = list_agents(keyword)
     bindings = list_bindings(keyword)
     commissions = list_commissions(keyword)
@@ -1426,7 +1429,13 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           <td>{item.get("total_paid_orders")}</td>
           <td>¥{item.get("total_commission")}</td>
           <td>¥{item.get("settled_commission")}</td>
-          <td>{escape(str(item.get("status") or ""))}</td>
+          <td>{escape(str(item.get("status") or ""))}
+            <form method="post" action="/admin/referrals/agent-blacklist" style="display:inline">
+              <input type="hidden" name="agent_id" value="{item.get('agent_id')}" />
+              <input type="hidden" name="blacklisted" value="{0 if int(item.get('is_blacklisted') or 0) else 1}" />
+              <button type="submit" class="btn-sm">{'解除拉黑' if int(item.get('is_blacklisted') or 0) else '拉黑'}</button>
+            </form>
+          </td>
         </tr>'''
         for item in agents
     ) or '<tr><td colspan="10" class="muted">暂无博主</td></tr>'
@@ -1455,10 +1464,25 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           <td>{escape(str(item.get("created_at") or ""))}</td>
           <td>
             {'<form method="post" action="/admin/referrals/settle" style="display:inline"><input type="hidden" name="commission_id" value="' + str(item.get("commission_id")) + '" /><button type="submit">确认分账</button></form>' if item.get('status') == 'pending' else escape(str(item.get('settled_at') or ''))}
+            <form method="post" action="/admin/referrals/commission-adjust" style="display:inline;margin-left:6px">
+              <input type="hidden" name="commission_id" value="{item.get('commission_id')}" />
+              <input name="commission_amount" value="{item.get('commission_amount')}" style="width:72px" />
+              <button type="submit" class="btn-sm">调佣金</button>
+            </form>
           </td>
         </tr>'''
         for item in commissions
     ) or '<tr><td colspan="10" class="muted">暂无分账记录</td></tr>'
+
+    trace_binding_rows = ''.join(
+        f'<tr><td>{escape(str(i.get("invitee_name") or ""))}</td><td>{escape(str(i.get("invitee_phone") or ""))}</td><td>{i.get("user_id")}</td><td>{escape(str(i.get("agent_name") or ""))}</td><td>{i.get("agent_id")}</td><td>{escape(str(i.get("bound_at") or ""))}</td></tr>'
+        for i in trace.get('bindings', [])
+    ) or '<tr><td colspan="6" class="muted">无匹配绑定</td></tr>'
+
+    verify_rows = ''.join(
+        f'<tr><td>{i.get("log_id")}</td><td>{escape(str(i.get("action") or ""))}</td><td>{escape(str(i.get("result") or ""))}</td><td>{escape(str(i.get("invite_code") or ""))}</td><td>{i.get("user_id") or ""}</td><td>{escape(str(i.get("detail") or ""))}</td><td>{escape(str(i.get("created_at") or ""))}</td></tr>'
+        for i in verify_logs
+    )
 
     body = f'''
       <div class="card">
@@ -1472,17 +1496,37 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
           <div class="stat"><div class="stat-label">已分账</div><div class="stat-value">¥{settled_total:.2f}</div></div>
           <div class="stat"><div class="stat-label">默认佣金比例</div><div class="stat-value">{default_rate}%</div></div>
         </div>
-        <form class="toolbar" method="post" action="/admin/referrals/settings">
-          <label>默认分账比例（新博主生效）</label>
-          <input name="commission_rate" value="{default_rate}" style="width:96px" />
-          <span>%</span>
-          <button type="submit">保存比例</button>
+        <form class="toolbar" method="post" action="/admin/referrals/policy">
+          <label>默认分账%</label><input name="commission_rate" value="{default_rate}" style="width:72px" />
+          <label>归属规则</label>
+          <select name="attribution_mode">
+            <option value="permanent" {'selected' if policy.get('attribution_mode') == 'permanent' else ''}>永久归属</option>
+            <option value="timed" {'selected' if policy.get('attribution_mode') == 'timed' else ''}>限时归属</option>
+          </select>
+          <label>限时天数</label><input name="attribution_days" value="{policy.get('attribution_days', 30)}" style="width:72px" />
+          <label>结算周期</label>
+          <select name="settlement_cycle">
+            <option value="daily" {'selected' if policy.get('settlement_cycle') == 'daily' else ''}>日结</option>
+            <option value="weekly" {'selected' if policy.get('settlement_cycle') == 'weekly' else ''}>周结</option>
+            <option value="monthly" {'selected' if policy.get('settlement_cycle') == 'monthly' else ''}>月结</option>
+          </select>
+          <label>最低提现</label><input name="min_withdraw_amount" value="{policy.get('min_withdraw_amount', 10)}" style="width:72px" />
+          <button type="submit">保存策略</button>
+          <a class="button" href="/admin/referrals/export">导出对账CSV</a>
+          <a class="button" href="/admin/referrals/withdrawals">提现审核</a>
         </form>
-        <p class="muted">修改默认比例后，新注册的博主将按此比例分账；已有博主可在下表单独调整。已生成订单的分账记录不会回溯修改。</p>
         <form class="toolbar" method="get">
-          <input name="keyword" value="{escape(keyword)}" placeholder="博主 / 邀请码 / 用户手机 / 订单号" />
-          <button type="submit">搜索</button>
+          <input name="keyword" value="{escape(keyword)}" placeholder="用户ID / 手机号 / 订单号 / 达人ID / 邀请码（归属溯源）" />
+          <button type="submit">搜索/溯源</button>
         </form>
+      </div>
+      <div class="card">
+        <h2>归属溯源</h2>
+        <table><thead><tr><th>用户</th><th>手机</th><th>用户ID</th><th>达人</th><th>达人ID</th><th>绑定时间</th></tr></thead><tbody>{trace_binding_rows}</tbody></table>
+      </div>
+      <div class="card">
+        <h2>核销/绑定日志（最近30条）</h2>
+        <table><thead><tr><th>ID</th><th>动作</th><th>结果</th><th>邀请码</th><th>用户ID</th><th>详情</th><th>时间</th></tr></thead><tbody>{verify_rows}</tbody></table>
       </div>
       <div class="card">
         <h2>推广博主</h2>
@@ -1498,3 +1542,38 @@ def admin_referrals(keyword: str = '', tab: str = 'agents', message: str = ''):
       </div>
     '''
     return render_page('推广分账', body)
+
+
+def admin_referral_withdrawals(keyword: str = '', message: str = ''):
+    from referral_p1 import list_withdrawals
+    rows_data = list_withdrawals(keyword)
+    rows = ''.join(
+        f'''<tr>
+          <td>{item.get("withdrawal_id")}</td>
+          <td>{escape(str(item.get("display_name") or ""))}<br><code>{escape(str(item.get("invite_code") or ""))}</code></td>
+          <td>¥{item.get("amount")}</td>
+          <td>{escape(str(item.get("pay_method") or ""))}</td>
+          <td>{escape(str(item.get("pay_account") or ""))}</td>
+          <td>{escape(str(item.get("status") or ""))}</td>
+          <td>{escape(str(item.get("created_at") or ""))}</td>
+          <td>
+            {'<form method="post" action="/admin/referrals/withdrawals/review" style="display:inline"><input type="hidden" name="withdrawal_id" value="' + str(item.get("withdrawal_id")) + '" /><input type="hidden" name="action" value="approved" /><button type="submit">通过</button></form>' if item.get('status') == 'pending' else ''}
+            {'<form method="post" action="/admin/referrals/withdrawals/review" style="display:inline"><input type="hidden" name="withdrawal_id" value="' + str(item.get("withdrawal_id")) + '" /><input type="hidden" name="action" value="paid" /><button type="submit">已打款</button></form>' if item.get('status') in ('pending', 'approved') else ''}
+            {'<form method="post" action="/admin/referrals/withdrawals/review" style="display:inline"><input type="hidden" name="withdrawal_id" value="' + str(item.get("withdrawal_id")) + '" /><input type="hidden" name="action" value="rejected" /><button type="submit">驳回</button></form>' if item.get('status') == 'pending' else ''}
+          </td>
+        </tr>'''
+        for item in rows_data
+    ) or '<tr><td colspan="8" class="muted">暂无提现申请</td></tr>'
+    body = f'''
+      <div class="card">
+        <h2>达人提现审核</h2>
+        {f'<div class="notice">{escape(message)}</div>' if message else ''}
+        <a class="button" href="/admin/referrals">返回推广分账</a>
+        <form class="toolbar" method="get">
+          <input name="keyword" value="{escape(keyword)}" placeholder="达人名 / 邀请码 / 收款账号" />
+          <button type="submit">搜索</button>
+        </form>
+        <table><thead><tr><th>ID</th><th>达人</th><th>金额</th><th>方式</th><th>账号</th><th>状态</th><th>申请时间</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table>
+      </div>
+    '''
+    return render_page('达人提现审核', body)

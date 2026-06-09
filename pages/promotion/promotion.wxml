@@ -9,8 +9,19 @@
   </view>
 
   <view wx:else>
+    <view class="card stats-card">
+      <view class="section-title">数据看板</view>
+      <view class="stats-row">
+        <view class="stat-item"><view class="stat-num">{{stats.scan_bind_users || 0}}</view><view class="stat-label">绑定用户</view></view>
+        <view class="stat-item"><view class="stat-num">{{stats.paid_orders || 0}}</view><view class="stat-label">付费订单</view></view>
+        <view class="stat-item"><view class="stat-num">{{stats.conversion_rate || 0}}%</view><view class="stat-label">转化率</view></view>
+        <view class="stat-item"><view class="stat-num">¥{{wallet.available_amount || 0}}</view><view class="stat-label">可提现</view></view>
+      </view>
+      <button class="secondary-btn" bindtap="goWithdraw">提现中心</button>
+    </view>
+
     <view class="card">
-      <view class="section-title">我的推广码</view>
+      <view class="section-title">我的推广码（达人ID）</view>
       <view class="invite-code">{{agent.invite_code || '--'}}</view>
       <view class="sub-text">佣金比例：{{agent.commission_rate || 0}}%</view>
       <view class="stats-row">

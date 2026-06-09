@@ -5,8 +5,9 @@ function normalizeInviteCode(code) {
 function captureInviteFromLaunch(options) {
   options = options || {};
   let code = '';
-  if (options.query && options.query.invite) {
-    code = options.query.invite;
+  const query = options.query || {};
+  if (query.invite || query.agent || query.agent_id || query['达人ID']) {
+    code = query.invite || query.agent || query.agent_id || query['达人ID'];
   } else if (options.scene) {
     try {
       code = decodeURIComponent(options.scene);

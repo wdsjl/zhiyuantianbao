@@ -115,10 +115,10 @@ def login_or_create_user(
         ).fetchone())
         connection.commit()
 
-    referral_binding = None
+    referral_result = None
     if invite_code:
-        from referral_service import try_bind_on_login
-        referral_binding = try_bind_on_login(user_id, invite_code, is_new_user)
+        from referral_p1 import attempt_bind_invitee
+        referral_result = attempt_bind_invitee(user_id, invite_code, 'poster' if is_new_user else 'scan')
 
     return {
         'user_id': user_id,
@@ -126,5 +126,7 @@ def login_or_create_user(
         'unionid': unionid,
         'has_profile': bool(profile and profile.get('student_id')),
         'profile': profile,
-        'referral_bound': bool(referral_binding),
+        'referral_bound': bool(referral_result and referral_result.get('success')),
+        'referral_message': (referral_result or {}).get('message') or '',
+        'referral_reason': (referral_result or {}).get('reason') or '',
     }

@@ -10,6 +10,9 @@ App({
   },
   onLaunch(options) {
     captureInviteFromLaunch(options);
+    if (!wx.getStorageSync('deviceId')) {
+      wx.setStorageSync('deviceId', `d_${Date.now()}_${Math.floor(Math.random() * 100000)}`);
+    }
     const userInfo = wx.getStorageSync('userInfo') || null;
     const currentRole = wx.getStorageSync('currentRole') || '';
     const studentProfile = wx.getStorageSync('studentProfile') || null;

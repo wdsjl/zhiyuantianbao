@@ -9,7 +9,9 @@ Page({
     invitees: [],
     commissions: [],
     pendingCommission: 0,
-    posterImage: ''
+    posterImage: '',
+    wallet: {},
+    stats: {}
   },
   onShow() {
     this.loadDashboard();
@@ -34,7 +36,9 @@ Page({
           invitees: dashboard.invitees || [],
           commissions: dashboard.commissions || [],
           pendingCommission: dashboard.pending_commission || 0,
-          posterImage: poster && poster.image_base64 ? `data:image/png;base64,${poster.image_base64}` : ''
+          posterImage: poster && poster.image_base64 ? `data:image/png;base64,${poster.image_base64}` : '',
+          wallet: dashboard.wallet || {},
+          stats: dashboard.stats || {}
         });
       })
       .catch((error) => {
@@ -44,6 +48,9 @@ Page({
   },
   refreshPoster() {
     this.loadDashboard();
+  },
+  goWithdraw() {
+    wx.navigateTo({ url: '/pages/promotion/withdraw' });
   },
   savePoster() {
     const filePath = this._posterFilePath;
