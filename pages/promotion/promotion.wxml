@@ -64,9 +64,9 @@
           <view class="template-name">{{item.template_name}}</view>
         </view>
       </view>
-      <canvas canvas-id="posterCanvas" class="poster-canvas" style="width: 600rpx; height: 960rpx;"></canvas>
       <image wx:if="{{composedPoster}}" class="poster-image" src="{{composedPoster}}" mode="widthFix" show-menu-by-longpress="{{true}}" />
-      <button class="primary-btn" bindtap="composePoster">生成带二维码海报</button>
+      <view wx:elif="{{!qrError}}" class="sub-text">正在生成带二维码海报...</view>
+      <button class="primary-btn" bindtap="composePoster">刷新海报</button>
       <button class="secondary-btn" bindtap="savePoster" disabled="{{!composedPoster}}">保存海报到相册</button>
       <button class="secondary-btn" bindtap="copyInviteCode">复制推广码（备用）</button>
     </view>

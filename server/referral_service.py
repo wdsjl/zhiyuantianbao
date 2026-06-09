@@ -550,17 +550,33 @@ def poster_image_base64(invite_code: str) -> str:
     return base64.b64encode(generate_poster_qrcode(invite_code)).decode('ascii')
 
 
-def build_poster_payload(invite_code: str) -> dict[str, Any]:
+def build_poster_payload(
+    invite_code: str,
+    display_name: str = '',
+    template: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     from referral_p2 import get_bonus_settings
+    from poster_compose_service import compose_promotion_poster
+
     reward = get_bonus_settings()
     payload: dict[str, Any] = {
         'image_base64': '',
+        'poster_base64': '',
         'qr_error': '',
         'scan_reward': reward,
         'qrcode_env_version': get_qrcode_env_version(),
     }
     try:
-        payload['image_base64'] = poster_image_base64(invite_code)
+        qr_bytes = generate_poster_qrcode(invite_code)
+        payload['image_base64'] = base64.b64encode(qr_bytes).decode('ascii')
+        poster_bytes = compose_promotion_poster(
+            display_name=display_name,
+            invite_code=invite_code,
+            qr_bytes=qr_bytes,
+            template=template,
+            reward_text=reward.get('reward_text') or '扫码领取专属权益',
+        )
+        payload['poster_base64'] = base64.b64encode(poster_bytes).decode('ascii')
     except ValueError as exc:
         payload['qr_error'] = str(exc)
     except Exception as exc:

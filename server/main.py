@@ -1397,15 +1397,20 @@ def api_referral_poster(user_id: int = Query(...), template_key: str = Query('bl
         from referral_p2 import list_poster_templates
         from referral_service import build_poster_payload
         agent = register_agent(user_id)
-        poster_data = build_poster_payload(agent['invite_code'])
         templates = list_poster_templates()
         template = next((item for item in templates if item.get('template_key') == template_key), templates[0] if templates else None)
+        poster_data = build_poster_payload(
+            agent['invite_code'],
+            display_name=agent.get('display_name') or '',
+            template=template,
+        )
         return {
             'invite_code': agent['invite_code'],
             'agent_id': agent.get('agent_id'),
             'display_name': agent.get('display_name'),
             'commission_rate': agent.get('commission_rate'),
             'image_base64': poster_data.get('image_base64') or '',
+            'poster_base64': poster_data.get('poster_base64') or '',
             'qr_error': poster_data.get('qr_error') or '',
             'scan_reward': poster_data.get('scan_reward') or {},
             'qrcode_env_version': poster_data.get('qrcode_env_version') or 'trial',

@@ -66,47 +66,64 @@ Page({
   },
   loadPoster() {
     const userId = getCurrentUserId();
-    if (!userId) return;
-    request({ url: '/api/referral/poster', data: { user_id: Number(userId), template_key: this.data.templateKey } })
+    if (!userId) return Promise.resolve();
+    return request({ url: '/api/referral/poster', data: { user_id: Number(userId), template_key: this.data.templateKey } })
       .then((poster) => this.applyPosterData(poster))
       .catch((error) => {
-        this.setData({ qrError: error.message || '二维码加载失败', qrImage: '', qrPath: '' });
+        this.setData({ qrError: error.message || '二维码加载失败', qrImage: '', qrPath: '', composedPoster: '' });
       });
   },
   applyPosterData(poster) {
-    const base64 = poster && poster.image_base64 ? poster.image_base64 : '';
+    const qrBase64 = poster && poster.image_base64 ? poster.image_base64 : '';
+    const posterBase64 = poster && poster.poster_base64 ? poster.poster_base64 : '';
     const scanReward = poster.scan_reward || this.data.scanReward || {};
     const qrError = poster.qr_error || '';
-    if (!base64) {
+    const baseState = {
+      templates: poster.templates || [],
+      templateKey: (poster.template && poster.template.template_key) || this.data.templateKey,
+      scanReward,
+      qrError: qrError || (!qrBase64 ? '未获取到小程序码，请检查服务端 WECHAT_SECRET 配置' : '')
+    };
+    if (!qrBase64 && !posterBase64) {
       this.setData({
-        templates: poster.templates || [],
-        templateKey: (poster.template && poster.template.template_key) || this.data.templateKey,
-        scanReward,
+        ...baseState,
         qrImage: '',
         qrPath: '',
-        qrError: qrError || '未获取到小程序码，请检查服务端 WECHAT_SECRET 配置'
+        composedPoster: ''
       });
-      return;
+      return Promise.resolve();
     }
-    return base64ToTempFilePath(base64, `poster_qr_${poster.invite_code || 'agent'}.png`)
-      .then((qrPath) => {
+    const tasks = [];
+    if (qrBase64) {
+      tasks.push(
+        base64ToTempFilePath(qrBase64, `poster_qr_${poster.invite_code || 'agent'}.png`)
+          .then((qrPath) => ({ qrPath }))
+      );
+    }
+    if (posterBase64) {
+      tasks.push(
+        base64ToTempFilePath(posterBase64, `poster_full_${poster.invite_code || 'agent'}.png`)
+          .then((composedPoster) => ({ composedPoster }))
+      );
+    }
+    return Promise.all(tasks)
+      .then((results) => {
+        const merged = results.reduce((acc, item) => Object.assign(acc, item), {});
         this.setData({
-          templates: poster.templates || [],
-          templateKey: (poster.template && poster.template.template_key) || this.data.templateKey,
-          scanReward,
-          qrPath,
-          qrImage: qrPath,
-          qrError: ''
+          ...baseState,
+          qrPath: merged.qrPath || '',
+          qrImage: merged.qrPath || '',
+          composedPoster: merged.composedPoster || '',
+          qrError: merged.qrPath || merged.composedPoster ? '' : baseState.qrError
         });
       })
       .catch((error) => {
         this.setData({
-          templates: poster.templates || [],
-          templateKey: (poster.template && poster.template.template_key) || this.data.templateKey,
-          scanReward,
+          ...baseState,
           qrImage: '',
           qrPath: '',
-          qrError: error.message || qrError || '二维码解析失败'
+          composedPoster: '',
+          qrError: error.message || qrError || '海报解析失败'
         });
       });
   },
@@ -119,49 +136,20 @@ Page({
     this.setData({ templateKey, composedPoster: '' }, () => this.loadPoster());
   },
   composePoster() {
-    const template = (this.data.templates || []).find((item) => item.template_key === this.data.templateKey)
-      || { bg_color: '#1677ff', text_color: '#ffffff' };
-    const qrPath = this.data.qrPath || this.data.qrImage;
-    if (!qrPath) {
-      wx.showModal({
-        title: '二维码未就绪',
-        content: this.data.qrError || '请稍后重试，或先使用下方小程序码长按分享',
-        showCancel: false
+    wx.showLoading({ title: '刷新海报中' });
+    return this.loadPoster()
+      .finally(() => wx.hideLoading())
+      .then(() => {
+        if (!this.data.composedPoster) {
+          wx.showModal({
+            title: '海报未生成',
+            content: this.data.qrError || '请检查服务端 WECHAT_SECRET、Pillow 依赖，以及 WECHAT_QRCODE_ENV_VERSION=trial',
+            showCancel: false
+          });
+          return;
+        }
+        wx.showToast({ title: '海报已更新', icon: 'success' });
       });
-      return;
-    }
-    const rewardText = (this.data.scanReward && this.data.scanReward.reward_text) || '扫码领取专属权益';
-    const ctx = wx.createCanvasContext('posterCanvas', this);
-    const width = 300;
-    const height = 480;
-    ctx.setFillStyle(template.bg_color || '#1677ff');
-    ctx.fillRect(0, 0, width, height);
-    ctx.setFillStyle(template.text_color || '#ffffff');
-    ctx.setFontSize(22);
-    ctx.fillText('智愿填报', 24, 48);
-    ctx.setFontSize(16);
-    ctx.fillText(this.data.agent.display_name || '专属达人', 24, 82);
-    ctx.setFontSize(14);
-    ctx.fillText('高考志愿智能辅助', 24, 108);
-    ctx.setFontSize(13);
-    ctx.fillText(rewardText, 24, 132);
-    ctx.setFontSize(12);
-    ctx.fillText(`推广码 ${this.data.agent.invite_code || ''}`, 24, height - 72);
-    ctx.fillText('微信扫一扫小程序码', 24, height - 48);
-    ctx.drawImage(qrPath, 72, 156, 156, 156);
-    ctx.draw(false, () => {
-      setTimeout(() => {
-        wx.canvasToTempFilePath({
-          canvasId: 'posterCanvas',
-          width,
-          height,
-          destWidth: width * 2,
-          destHeight: height * 2,
-          success: (res) => this.setData({ composedPoster: res.tempFilePath }),
-          fail: () => wx.showToast({ title: '海报生成失败', icon: 'none' })
-        }, this);
-      }, 300);
-    });
   },
   savePoster() {
     const path = this.data.composedPoster;
