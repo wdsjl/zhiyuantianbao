@@ -6,3 +6,8 @@ module.exports = {
   WECHAT_PAY_API_V3_KEY: '',
   WECHAT_PAY_SERIAL_NO: ''
 };
+
+// 道具 ID 写在 ecosystem.config.js（非密钥）：
+// WECHAT_VIRTUAL_PRODUCT_TRIAL=xdptk   普通卡
+// WECHAT_VIRTUAL_PRODUCT_STANDARD=xdhjk  金卡
+// WECHAT_VIRTUAL_PRODUCT_PREMIUM=xdbjk   白金卡

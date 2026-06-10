@@ -7,6 +7,18 @@
   color: rgba(255, 255, 255, 0.86);
 }
 
+.plan-balance-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  line-height: 1.6;
+}
+
+.bean-balance-inline {
+  color: #ffffff;
+  font-weight: 700;
+}
+
 .plan-card {
   border: 2rpx solid transparent;
 }
@@ -136,4 +148,71 @@
 .member-support-actions button {
   flex: 1;
   min-width: 240rpx;
+}
+
+.compare-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.compare-table {
+  display: inline-block;
+  min-width: 100%;
+}
+
+.compare-row {
+  display: flex;
+  border-bottom: 1rpx solid #edf0f5;
+}
+
+.compare-row:last-child {
+  border-bottom: 0;
+}
+
+.compare-header {
+  background: #f8fafc;
+}
+
+.compare-cell {
+  flex: 0 0 180rpx;
+  padding: 18rpx 12rpx;
+  font-size: 24rpx;
+  color: #4a5568;
+  text-align: center;
+  white-space: normal;
+  word-break: break-all;
+  box-sizing: border-box;
+}
+
+.sticky-cell {
+  flex: 0 0 200rpx;
+  text-align: left;
+  font-weight: 600;
+  color: #17233d;
+  background: #fff;
+}
+
+.plan-head-cell {
+  background: #f8fafc;
+}
+
+.current-col {
+  background: #eef5ff;
+}
+
+.compare-plan-name {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #17233d;
+}
+
+.compare-plan-price {
+  font-size: 22rpx;
+  color: #f79009;
+  margin-top: 6rpx;
+}
+
+.check-cell {
+  color: #12b76a;
+  font-weight: 700;
 }

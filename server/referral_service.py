@@ -409,14 +409,23 @@ def settle_commission(commission_id: int, remark: str = '') -> dict[str, Any]:
         ).fetchone())
 
 
+def get_qrcode_env_version() -> str:
+    version = (os.getenv('WECHAT_QRCODE_ENV_VERSION', '') or 'trial').strip().lower()
+    if version not in ('release', 'trial', 'develop'):
+        version = 'trial'
+    return version
+
+
 def generate_poster_qrcode(invite_code: str) -> bytes:
     token = _get_access_token()
+    code = (invite_code or '').strip().upper()
     payload = json.dumps({
-        'scene': invite_code,
+        'scene': code[:32],
         'page': 'pages/home/home',
         'check_path': False,
-        'env_version': 'release',
+        'env_version': get_qrcode_env_version(),
         'width': 430,
+        'is_hyaline': True,
     }).encode('utf-8')
     request = urllib.request.Request(
         f'{WECHAT_API_HOST}/wxa/getwxacodeunlimit?access_token={token}',
@@ -540,3 +549,37 @@ def list_commissions(keyword: str = '', status: str = '') -> list[dict[str, Any]
 
 def poster_image_base64(invite_code: str) -> str:
     return base64.b64encode(generate_poster_qrcode(invite_code)).decode('ascii')
+
+
+def build_poster_payload(
+    invite_code: str,
+    display_name: str = '',
+    template: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from referral_p2 import get_bonus_settings
+    from poster_compose_service import compose_promotion_poster
+
+    reward = get_bonus_settings()
+    payload: dict[str, Any] = {
+        'image_base64': '',
+        'poster_base64': '',
+        'qr_error': '',
+        'scan_reward': reward,
+        'qrcode_env_version': get_qrcode_env_version(),
+    }
+    try:
+        qr_bytes = generate_poster_qrcode(invite_code)
+        payload['image_base64'] = base64.b64encode(qr_bytes).decode('ascii')
+        poster_bytes = compose_promotion_poster(
+            display_name=display_name,
+            invite_code=invite_code,
+            qr_bytes=qr_bytes,
+            template=template,
+            reward_text=reward.get('reward_text') or '扫码领取专属权益',
+        )
+        payload['poster_base64'] = base64.b64encode(poster_bytes).decode('ascii')
+    except ValueError as exc:
+        payload['qr_error'] = str(exc)
+    except Exception as exc:
+        payload['qr_error'] = f'生成二维码失败：{exc}'
+    return payload

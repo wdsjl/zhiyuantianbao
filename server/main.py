@@ -1,3 +1,5 @@
+import csv
+import io
 from urllib.parse import quote
 
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
@@ -24,13 +26,16 @@ from services import get_gradient_type, get_risk_level, get_risk_reason, inspect
 from rank_strategy_service import (
     assemble_recommendation_plan, detect_segment, estimate_rank_from_score, AI_STRATEGY_PROMPT,
 )
+from province_rules_service import (
+    ensure_province_rules_seeded, find_province_rule, resolve_volunteer_slots, summarize_province_rules,
+)
 from import_service import parse_import_file, import_admission_rows
 from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
-    admin_referrals, admin_referral_withdrawals,
+    admin_referrals, admin_referral_withdrawals, admin_referrals_overview,
 )
 from crawler_service import (
     crawl_and_import, crawl_and_import_years, import_schools_only, ensure_crawl_tables,
@@ -106,8 +111,13 @@ from bean_service import ensure_bean_tables, sync_plan_catalog
 ensure_bean_tables()
 ensure_referral_tables()
 from referral_p1 import ensure_referral_p1_tables
+from referral_p2 import ensure_referral_p2_tables
+from referral_p3 import ensure_referral_p3_tables
 ensure_referral_p1_tables()
+ensure_referral_p2_tables()
+ensure_referral_p3_tables()
 sync_plan_catalog()
+ensure_province_rules_seeded()
 expire_overdue_memberships()
 
 
@@ -503,8 +513,11 @@ def admin_referrals_policy(
     attribution_days: int = Form(30),
     settlement_cycle: str = Form('monthly'),
     min_withdraw_amount: float = Form(10),
+    bonus_beans: int = Form(200),
+    bonus_days: int = Form(3),
 ):
     from referral_p1 import save_referral_policy_settings
+    from referral_p2 import save_bonus_settings
     save_referral_policy_settings({
         'commission_rate': commission_rate,
         'attribution_mode': attribution_mode,
@@ -512,7 +525,78 @@ def admin_referrals_policy(
         'settlement_cycle': settlement_cycle,
         'min_withdraw_amount': min_withdraw_amount,
     })
+    save_bonus_settings(bonus_beans, bonus_days)
     return RedirectResponse('/admin/referrals?message=推广策略已保存', status_code=303)
+
+
+@app.post('/admin/referrals/materials/save')
+def admin_referrals_material_save(
+    material_id: int | None = Form(None),
+    category: str = Form(...),
+    title: str = Form(...),
+    content: str = Form(...),
+    sort_order: int = Form(0),
+):
+    from referral_p2 import save_material
+    save_material(material_id or None, category, title, content, sort_order, 1)
+    return RedirectResponse('/admin/referrals?message=推广素材已保存', status_code=303)
+
+
+@app.post('/admin/referrals/materials/delete')
+def admin_referrals_material_delete(material_id: int = Form(...)):
+    from referral_p2 import delete_material
+    delete_material(material_id)
+    return RedirectResponse('/admin/referrals?message=推广素材已删除', status_code=303)
+
+
+@app.post('/admin/referrals/agents/import')
+async def admin_referrals_agents_import(file: UploadFile = File(...)):
+    from referral_p2 import import_agents_from_rows, parse_agents_xlsx
+    content = await file.read()
+    filename = (file.filename or '').lower()
+    try:
+        if filename.endswith('.xlsx'):
+            rows = parse_agents_xlsx(content)
+        else:
+            text = content.decode('utf-8-sig')
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+        result = import_agents_from_rows(rows)
+        msg = f'导入完成：新增 {result["created"]}，更新 {result["updated"]}'
+        if result['errors']:
+            msg += '；' + '；'.join(result['errors'][:3])
+        return RedirectResponse(f'/admin/referrals?message={quote(msg)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/referrals?message=导入失败：{quote(str(exc))}', status_code=303)
+
+
+@app.get('/admin/referrals/agents/export')
+def admin_referrals_agents_export():
+    from referral_p2 import export_agents_csv
+    csv_text = export_agents_csv()
+    return Response(
+        content=csv_text.encode('utf-8-sig'),
+        media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition': 'attachment; filename="referral_agents.csv"'}
+    )
+
+
+@app.post('/admin/referrals/agent-profile')
+def admin_referrals_agent_profile(
+    agent_id: int = Form(...),
+    tags: str = Form(''),
+    douyin_id: str = Form(''),
+    fan_scale: str = Form(''),
+    display_name: str = Form(''),
+):
+    from referral_p2 import update_agent_profile
+    update_agent_profile(agent_id, {
+        'tags': tags,
+        'douyin_id': douyin_id,
+        'fan_scale': fan_scale,
+        'display_name': display_name or None,
+    })
+    return RedirectResponse('/admin/referrals?message=达人资料已更新', status_code=303)
 
 
 @app.post('/admin/referrals/agent-blacklist')
@@ -544,6 +628,98 @@ def admin_referrals_export():
     )
 
 
+@app.get('/admin/referrals/overview')
+def admin_referrals_overview_page(days: int = Query(30), message: str = ''):
+    return admin_referrals_overview(days, message=message)
+
+
+@app.post('/admin/referrals/levels/save')
+def admin_referrals_levels_save(level_config_json: str = Form(...)):
+    from referral_p3 import save_level_config
+    import json
+    try:
+        levels = json.loads(level_config_json or '[]')
+        save_level_config(levels)
+        return RedirectResponse('/admin/referrals/overview?message=达人等级配置已保存', status_code=303)
+    except (json.JSONDecodeError, ValueError) as exc:
+        return RedirectResponse(f'/admin/referrals/overview?message=保存失败：{quote(str(exc))}', status_code=303)
+
+
+@app.post('/admin/referrals/faqs/save')
+def admin_referrals_faq_save(
+    question: str = Form(...),
+    answer: str = Form(...),
+    sort_order: int = Form(0),
+    faq_id: int = Form(0),
+):
+    from referral_p3 import save_faq
+    save_faq(faq_id or None, question, answer, sort_order)
+    return RedirectResponse('/admin/referrals/overview?message=FAQ 已保存', status_code=303)
+
+
+@app.post('/admin/referrals/faqs/delete')
+def admin_referrals_faq_delete(faq_id: int = Form(...)):
+    from referral_p3 import delete_faq
+    delete_faq(faq_id)
+    return RedirectResponse('/admin/referrals/overview?message=FAQ 已删除', status_code=303)
+
+
+@app.post('/admin/referrals/douyin/queue')
+def admin_referrals_douyin_queue(agent_id: int = Form(0), batch: int = Form(0)):
+    from referral_p3 import queue_douyin_invite, batch_queue_douyin_invites
+    try:
+        if batch:
+            result = batch_queue_douyin_invites()
+            msg = f'已生成 {result.get("queued", 0)} 条达人跟进任务'
+        else:
+            queue_douyin_invite(agent_id)
+            msg = '达人跟进任务已生成'
+        return RedirectResponse(f'/admin/referrals/overview?message={quote(msg)}', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals/overview?message=操作失败：{quote(str(exc))}', status_code=303)
+
+
+@app.post('/admin/referrals/douyin/status')
+def admin_referrals_douyin_status(invite_id: int = Form(...), status: str = Form(...), remark: str = Form('')):
+    from referral_p3 import update_douyin_invite_status
+    try:
+        update_douyin_invite_status(invite_id, status, remark)
+        return RedirectResponse('/admin/referrals/overview?message=跟进任务状态已更新', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals/overview?message=更新失败：{quote(str(exc))}', status_code=303)
+
+
+@app.post('/admin/referrals/douyin/template')
+def admin_referrals_douyin_template(template: str = Form(...)):
+    from referral_p3 import save_douyin_invite_template
+    save_douyin_invite_template(template)
+    return RedirectResponse('/admin/referrals/overview?message=跟进话术模板已保存', status_code=303)
+
+
+@app.post('/admin/referrals/auto-pay/settings')
+def admin_referrals_auto_pay_settings(enabled: int = Form(0)):
+    from referral_p3 import save_auto_pay_settings
+    save_auto_pay_settings(bool(enabled))
+    return RedirectResponse('/admin/referrals/overview?message=自动打款设置已保存', status_code=303)
+
+
+@app.post('/admin/referrals/withdrawals/auto-pay')
+def admin_referrals_withdrawals_auto_pay(withdrawal_id: int = Form(0), batch: int = Form(0)):
+    from referral_p3 import auto_pay_withdrawal, batch_auto_pay_withdrawals
+    try:
+        if batch:
+            result = batch_auto_pay_withdrawals()
+            msg = f'自动打款成功 {result.get("success", 0)} 笔'
+            if result.get('errors'):
+                msg += f'；失败 {len(result["errors"])} 笔'
+        else:
+            auto_pay_withdrawal(withdrawal_id)
+            msg = '微信自动打款已提交'
+        return RedirectResponse(f'/admin/referrals/withdrawals?message={quote(msg)}', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals/withdrawals?message=打款失败：{quote(str(exc))}', status_code=303)
+
+
 @app.get('/admin/referrals/withdrawals')
 def admin_referral_withdrawals_page(keyword: str = '', message: str = ''):
     return admin_referral_withdrawals(keyword, message)
@@ -552,8 +728,18 @@ def admin_referral_withdrawals_page(keyword: str = '', message: str = ''):
 @app.post('/admin/referrals/withdrawals/review')
 def admin_referral_withdrawals_review(withdrawal_id: int = Form(...), action: str = Form(...), remark: str = Form('')):
     from referral_p1 import review_withdrawal
+    from referral_p3 import auto_pay_withdrawal, get_auto_pay_settings
     try:
         review_withdrawal(withdrawal_id, action, remark)
+        if action == 'approved' and get_auto_pay_settings().get('enabled'):
+            try:
+                auto_pay_withdrawal(withdrawal_id)
+                return RedirectResponse('/admin/referrals/withdrawals?message=审核通过并已提交微信自动打款', status_code=303)
+            except ValueError as exc:
+                return RedirectResponse(
+                    f'/admin/referrals/withdrawals?message=审核已通过，自动打款失败：{quote(str(exc))}',
+                    status_code=303,
+                )
         return RedirectResponse('/admin/referrals/withdrawals?message=提现审核已更新', status_code=303)
     except ValueError as exc:
         return RedirectResponse(f'/admin/referrals/withdrawals?message=审核失败：{exc}', status_code=303)
@@ -1177,25 +1363,113 @@ def api_referral_agent_register(request: ReferralAgentRegisterRequest):
 
 
 @app.get('/api/referral/dashboard')
-def api_referral_dashboard(user_id: int = Query(...)):
+def api_referral_dashboard(user_id: int = Query(...), days: int = Query(30)):
     try:
-        return get_agent_dashboard(user_id)
+        from referral_p2 import get_agent_stats
+        from referral_p3 import sync_agent_level, get_agent_level_info
+        dashboard = get_agent_dashboard(user_id)
+        agent_id = dashboard['agent']['agent_id']
+        dashboard['range_stats'] = get_agent_stats(agent_id, days)
+        dashboard['level'] = sync_agent_level(agent_id)
+        dashboard['agent']['level'] = dashboard['level']
+        dashboard['agent']['effective_commission_rate'] = dashboard['level'].get('effective_commission_rate')
+        return dashboard
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get('/api/referral/poster')
-def api_referral_poster(user_id: int = Query(...)):
+@app.get('/api/referral/faqs')
+def api_referral_faqs():
+    from referral_p3 import list_faqs
+    return {'list': list_faqs()}
+
+
+@app.get('/api/referral/levels')
+def api_referral_levels(user_id: int = Query(...)):
+    from referral_p3 import sync_agent_level
+    from referral_service import register_agent
     try:
         agent = register_agent(user_id)
-        image_base64 = poster_image_base64(agent['invite_code'])
+        return {'level': sync_agent_level(int(agent['agent_id']))}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/referral/poster-layout')
+def api_referral_poster_layout():
+    from poster_compose_service import get_poster_layout
+    return get_poster_layout()
+
+
+@app.post('/admin/referrals/poster-bg')
+async def admin_referrals_poster_bg(template_key: str = Form(...), file: UploadFile = File(...)):
+    from poster_compose_service import save_poster_background
+    from referral_p2 import attach_poster_background
+    try:
+        content = await file.read()
+        if not content:
+            raise ValueError('请上传背景图文件')
+        filename = save_poster_background(template_key, content, file.filename or 'bg.png')
+        attach_poster_background(template_key, filename)
+        return RedirectResponse(f'/admin/referrals?message=模板 {template_key} 背景图已上传', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/referrals?message=上传失败：{quote(str(exc))}', status_code=303)
+
+
+@app.get('/api/referral/poster')
+def api_referral_poster(user_id: int = Query(...), template_key: str = Query('blue')):
+    try:
+        from referral_p2 import list_poster_templates
+        from referral_service import build_poster_payload
+        agent = register_agent(user_id)
+        templates = list_poster_templates()
+        template = next((item for item in templates if item.get('template_key') == template_key), templates[0] if templates else None)
+        poster_data = build_poster_payload(
+            agent['invite_code'],
+            display_name=agent.get('display_name') or '',
+            template=template,
+        )
         return {
             'invite_code': agent['invite_code'],
+            'agent_id': agent.get('agent_id'),
             'display_name': agent.get('display_name'),
             'commission_rate': agent.get('commission_rate'),
-            'image_base64': image_base64,
+            'image_base64': poster_data.get('image_base64') or '',
+            'poster_base64': poster_data.get('poster_base64') or '',
+            'qr_error': poster_data.get('qr_error') or '',
+            'scan_reward': poster_data.get('scan_reward') or {},
+            'qrcode_env_version': poster_data.get('qrcode_env_version') or 'trial',
+            'template': template,
+            'templates': templates,
             'share_path': f'pages/home/home?invite={agent["invite_code"]}',
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/referral/scan-reward')
+def api_referral_scan_reward():
+    from referral_p2 import get_public_scan_reward
+    return get_public_scan_reward()
+
+
+@app.get('/api/referral/materials')
+def api_referral_materials():
+    from referral_p2 import list_materials
+    return {'list': list_materials()}
+
+
+@app.get('/api/referral/membership-compare')
+def api_referral_membership_compare():
+    from referral_p2 import get_membership_compare
+    return {'list': get_membership_compare()}
+
+
+@app.post('/api/referral/claim-bonus')
+def api_referral_claim_bonus(user_id: int = Query(...)):
+    from referral_p2 import claim_referral_bonus
+    try:
+        return claim_referral_bonus(user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1221,7 +1495,8 @@ def api_referral_bind(request: ReferralBindRequest):
         request.device_id or '',
         request.ip or '',
     )
-    return {**result, 'free_claim': free_claim}
+    from referral_p2 import get_public_scan_reward
+    return {**result, 'free_claim': free_claim, 'scan_reward': get_public_scan_reward()}
 
 
 @app.get('/api/referral/my-binding')
@@ -1566,6 +1841,32 @@ def list_province_rules(province: str = '', year: int | None = None, batch: str 
     return {'list': rows_to_dicts(rows)}
 
 
+@app.get('/api/province-rules/summary')
+def province_rules_summary():
+    return {'list': summarize_province_rules(), 'year': 2025}
+
+
+@app.get('/api/province-rules/resolve')
+def province_rules_resolve(province: str, batch: str = '', year: int = 2025):
+    if not province.strip():
+        raise HTTPException(status_code=400, detail='请提供省份')
+    resolved = resolve_volunteer_slots(province, batch, year)
+    rule = resolved['rule']
+    return {
+        'province': rule.get('province') or province,
+        'batch': rule.get('batch') or batch,
+        'requested_batch': batch,
+        'year': rule.get('year') or year,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'school_count': rule.get('school_count'),
+        'major_count_per_school': rule.get('major_count_per_school'),
+        'total_slots': resolved['total_slots'],
+        'matched': bool(rule.get('matched')),
+        'source': resolved['source'],
+        'rule_description': rule.get('rule_description') or '',
+    }
+
+
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
     sql = """
@@ -1643,14 +1944,34 @@ def recommend(request: RecommendRequest):
     province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
     segment = detect_segment(user_rank, province_total_rank, request.batch)
 
+    slot_info = resolve_volunteer_slots(
+        request.province,
+        request.batch,
+        override_count=int(request.volunteer_count) if int(request.volunteer_count or 0) > 0 else None,
+    )
+    total_slots = slot_info['total_slots']
+    province_rule = slot_info['rule']
+
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
         user_rank=user_rank,
         plan_style=request.plan_style or 'balanced',
         batch=request.batch,
         segment=segment,
-        total_slots=max(1, int(request.volunteer_count or 9)),
+        total_slots=total_slots,
     )
+    strategy_meta['volunteer_rule'] = {
+        'province': province_rule.get('province') or request.province,
+        'batch': province_rule.get('batch') or request.batch,
+        'requested_batch': request.batch,
+        'volunteer_mode': province_rule.get('volunteer_mode'),
+        'school_count': province_rule.get('school_count'),
+        'major_count_per_school': province_rule.get('major_count_per_school'),
+        'total_slots': total_slots,
+        'matched': bool(province_rule.get('matched')),
+        'source': slot_info['source'],
+        'rule_description': province_rule.get('rule_description') or '',
+    }
 
     items = []
     for index, row in enumerate(selected_rows, start=1):

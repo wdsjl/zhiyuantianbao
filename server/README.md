@@ -250,17 +250,17 @@ WECHAT_VIRTUAL_PAY_APP_KEY=现网AppKey
 WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY=沙箱AppKey
 ```
 
-可选：若虚拟支付后台道具 ID 不是 `trial` / `standard` / `premium`，可设置：
+道具 ID（已配置在 `ecosystem.config.js`）：
 
 ```text
-WECHAT_VIRTUAL_PRODUCT_TRIAL=道具ID
-WECHAT_VIRTUAL_PRODUCT_STANDARD=道具ID
-WECHAT_VIRTUAL_PRODUCT_PREMIUM=道具ID
+WECHAT_VIRTUAL_PRODUCT_TRIAL=xdptk      # 普通卡 ¥19.9
+WECHAT_VIRTUAL_PRODUCT_STANDARD=xdhjk   # 金卡 ¥99
+WECHAT_VIRTUAL_PRODUCT_PREMIUM=xdbjk    # 白金卡 ¥168
 ```
 
 部署步骤：
 
-1. 虚拟支付后台为三个会员套餐创建并发布道具，价格（分）分别为 `1990` / `9900` / `16800`
+1. 虚拟支付后台三个道具已发布：`xdptk` / `xdhjk` / `xdbjk`，价格（分）分别为 `1990` / `9900` / `16800`
 2. 配置发货推送 URL：`https://api.zntb.lhyun.net/api/payments/virtual/deliver-notify`
 3. 重启：`pm2 restart zhiyuan-backend --update-env`
 4. 访问 `GET /api/payments/wechat/status`，返回 `{"enabled": true}` 表示虚拟支付就绪

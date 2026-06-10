@@ -196,6 +196,34 @@
   font-size: 26rpx;
 }
 
+.promo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  background: linear-gradient(135deg, #eef5ff, #ffffff);
+  border: 2rpx solid #91caff;
+}
+
+.promo-banner-title {
+  font-size: 32rpx;
+  font-weight: 800;
+  color: #1677ff;
+  margin-bottom: 8rpx;
+}
+
+.promo-banner-btn {
+  width: 160rpx;
+  flex-shrink: 0;
+  margin: 0;
+  font-size: 26rpx;
+}
+
+.promo-action {
+  border: 2rpx solid #91caff;
+  background: #f8fbff;
+}
+
 .action-title {
   font-size: 30rpx;
   font-weight: 700;

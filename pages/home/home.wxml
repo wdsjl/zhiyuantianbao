@@ -15,6 +15,14 @@
     <button class="primary-btn pay-banner-btn" catchtap="goMembership">立即开通</button>
   </view>
 
+  <view class="card promo-banner" bindtap="goPromotion">
+    <view class="pay-banner-main">
+      <view class="promo-banner-title">达人推广中心</view>
+      <view class="sub-text">专属海报 · 推广物料 · 佣金看板 · 提现中心</view>
+    </view>
+    <button class="primary-btn promo-banner-btn" catchtap="goPromotion">进入推广</button>
+  </view>
+
   <view class="card flow-card">
     <view class="flow-header">
       <view>
@@ -83,6 +91,10 @@
     <view class="action-card member-action" bindtap="goMembership">
       <view class="action-title">会员中心</view>
       <view class="sub-text">解锁 AI 报告与志愿解读</view>
+    </view>
+    <view class="action-card promo-action" bindtap="goPromotion">
+      <view class="action-title">达人推广</view>
+      <view class="sub-text">海报分账 · 数据看板</view>
     </view>
   </view>
 
