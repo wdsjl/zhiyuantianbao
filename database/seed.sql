@@ -52,9 +52,7 @@ SELECT 2024, '浙江', '普通类一段', s.school_id, s.school_code, m.major_id
 FROM schools s, majors m
 WHERE s.school_code = '10617' AND m.major_code = '080902';
 
-INSERT OR IGNORE INTO province_rules (province, year, batch, volunteer_mode, school_count, major_count_per_school, is_parallel_volunteer, adjustment_supported, score_priority_rule, rule_description) VALUES
-('浙江', 2025, '普通类一段', '专业平行志愿', 80, 1, 1, 0, '分数优先，遵循志愿', '浙江普通类实行专业平行志愿，示例规则仅用于开发测试。'),
-('河南', 2025, '本科批', '院校专业组', 45, 6, 1, 1, '分数优先，遵循志愿', '河南本科批示例规则，仅用于开发测试。');
+-- 各省志愿规则由 server/province_rules_service.py 在启动时自动同步（2025版）
 
 INSERT OR IGNORE INTO import_logs (import_type, file_name, total_count, success_count, fail_count, error_message) VALUES
 ('seed', 'seed.sql', 14, 14, 0, NULL);

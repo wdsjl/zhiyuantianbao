@@ -26,6 +26,9 @@ from services import get_gradient_type, get_risk_level, get_risk_reason, inspect
 from rank_strategy_service import (
     assemble_recommendation_plan, detect_segment, estimate_rank_from_score, AI_STRATEGY_PROMPT,
 )
+from province_rules_service import (
+    ensure_province_rules_seeded, find_province_rule, resolve_volunteer_slots, summarize_province_rules,
+)
 from import_service import parse_import_file, import_admission_rows
 from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
@@ -114,6 +117,7 @@ ensure_referral_p1_tables()
 ensure_referral_p2_tables()
 ensure_referral_p3_tables()
 sync_plan_catalog()
+ensure_province_rules_seeded()
 expire_overdue_memberships()
 
 
@@ -1837,6 +1841,32 @@ def list_province_rules(province: str = '', year: int | None = None, batch: str 
     return {'list': rows_to_dicts(rows)}
 
 
+@app.get('/api/province-rules/summary')
+def province_rules_summary():
+    return {'list': summarize_province_rules(), 'year': 2025}
+
+
+@app.get('/api/province-rules/resolve')
+def province_rules_resolve(province: str, batch: str = '', year: int = 2025):
+    if not province.strip():
+        raise HTTPException(status_code=400, detail='请提供省份')
+    resolved = resolve_volunteer_slots(province, batch, year)
+    rule = resolved['rule']
+    return {
+        'province': rule.get('province') or province,
+        'batch': rule.get('batch') or batch,
+        'requested_batch': batch,
+        'year': rule.get('year') or year,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'school_count': rule.get('school_count'),
+        'major_count_per_school': rule.get('major_count_per_school'),
+        'total_slots': resolved['total_slots'],
+        'matched': bool(rule.get('matched')),
+        'source': resolved['source'],
+        'rule_description': rule.get('rule_description') or '',
+    }
+
+
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
     sql = """
@@ -1914,14 +1944,34 @@ def recommend(request: RecommendRequest):
     province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
     segment = detect_segment(user_rank, province_total_rank, request.batch)
 
+    slot_info = resolve_volunteer_slots(
+        request.province,
+        request.batch,
+        override_count=int(request.volunteer_count) if int(request.volunteer_count or 0) > 0 else None,
+    )
+    total_slots = slot_info['total_slots']
+    province_rule = slot_info['rule']
+
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
         user_rank=user_rank,
         plan_style=request.plan_style or 'balanced',
         batch=request.batch,
         segment=segment,
-        total_slots=max(1, int(request.volunteer_count or 9)),
+        total_slots=total_slots,
     )
+    strategy_meta['volunteer_rule'] = {
+        'province': province_rule.get('province') or request.province,
+        'batch': province_rule.get('batch') or request.batch,
+        'requested_batch': request.batch,
+        'volunteer_mode': province_rule.get('volunteer_mode'),
+        'school_count': province_rule.get('school_count'),
+        'major_count_per_school': province_rule.get('major_count_per_school'),
+        'total_slots': total_slots,
+        'matched': bool(province_rule.get('matched')),
+        'source': slot_info['source'],
+        'rule_description': province_rule.get('rule_description') or '',
+    }
 
     items = []
     for index, row in enumerate(selected_rows, start=1):
