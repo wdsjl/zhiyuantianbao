@@ -17,9 +17,9 @@ WECHAT_API_HOST = 'https://api.weixin.qq.com'
 
 # 套餐虚拟道具配置：goodsPrice 为分；充值到账星鼎豆见 bean_service.PLAN_BEAN_GRANT
 PLAN_VIRTUAL_PRODUCTS: dict[str, dict[str, Any]] = {
-    'trial': {'product_id': 'trial', 'goods_price_fen': 1990, 'bean_price': 2000},
-    'standard': {'product_id': 'standard', 'goods_price_fen': 9900, 'bean_price': 12000},
-    'premium': {'product_id': 'premium', 'goods_price_fen': 16800, 'bean_price': 24000},
+    'trial': {'product_id': 'xdptk', 'goods_price_fen': 1990, 'bean_price': 2000},
+    'standard': {'product_id': 'xdhjk', 'goods_price_fen': 9900, 'bean_price': 12000},
+    'premium': {'product_id': 'xdbjk', 'goods_price_fen': 16800, 'bean_price': 24000},
 }
 
 PAID_ORDER_STATUSES = {2, 3, 4}
