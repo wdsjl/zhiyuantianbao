@@ -53,13 +53,20 @@ class DouyinCouponServiceTest(unittest.TestCase):
 class DouyinServiceConfigTest(unittest.TestCase):
     def test_status_without_secret(self):
         import os
-        old = os.environ.pop('DOUYIN_APP_SECRET', None)
+        from unittest.mock import patch
+
+        old_secret = os.environ.pop('DOUYIN_APP_SECRET', None)
+        old_app_id = os.environ.pop('DOUYIN_APP_ID', None)
         try:
-            status = get_douyin_status()
+            with patch('bootstrap_secrets.load_ecosystem_secrets', return_value={}):
+                status = get_douyin_status()
+            self.assertIn('DOUYIN_APP_ID', status['missing'])
             self.assertIn('DOUYIN_APP_SECRET', status['missing'])
         finally:
-            if old:
-                os.environ['DOUYIN_APP_SECRET'] = old
+            if old_secret:
+                os.environ['DOUYIN_APP_SECRET'] = old_secret
+            if old_app_id:
+                os.environ['DOUYIN_APP_ID'] = old_app_id
 
 
 if __name__ == '__main__':

@@ -26,12 +26,16 @@ def get_douyin_config() -> dict[str, str]:
 
 
 def get_douyin_status() -> dict[str, Any]:
+    from bootstrap_secrets import get_secrets_bootstrap_status, load_ecosystem_secrets
+
+    load_ecosystem_secrets()
     config = get_douyin_config()
     missing: list[str] = []
     if not config['app_id']:
         missing.append('DOUYIN_APP_ID')
     if not config['app_secret']:
         missing.append('DOUYIN_APP_SECRET')
+    bootstrap = get_secrets_bootstrap_status()
     status: dict[str, Any] = {
         'enabled': not missing,
         'app_id': config['app_id'],
@@ -39,8 +43,9 @@ def get_douyin_status() -> dict[str, Any]:
         'app_secret_configured': bool(config['app_secret']),
         'spi_token_configured': bool(config['spi_token']),
         'missing': missing,
+        'secrets_bootstrap': bootstrap,
         'hint': (
-            '请在 ecosystem.secrets.js 配置 DOUYIN_APP_SECRET 后执行 pm2 restart zhiyuan-backend --update-env'
+            '请在 C:/zhiyuantianbao/ecosystem.secrets.js 配置 DOUYIN_APP_SECRET，然后 pm2 delete zhiyuan-backend && pm2 start ecosystem.config.js --update-env'
             if missing else '抖音开放平台凭证已配置，可进行发券 SPI 与微信兑券。'
         ),
     }

@@ -1,3 +1,7 @@
+from bootstrap_secrets import load_ecosystem_secrets
+
+load_ecosystem_secrets()
+
 import json
 from urllib.parse import quote
 
