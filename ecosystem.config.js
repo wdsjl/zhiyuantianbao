@@ -1,7 +1,16 @@
+const path = require('path');
+
 let secrets = {};
+const secretsPath = path.join(__dirname, 'ecosystem.secrets.js');
 try {
-  secrets = require('./ecosystem.secrets.js');
+  secrets = require(secretsPath);
+  const loadedKeys = Object.keys(secrets || {});
+  console.log(`[ecosystem] loaded secrets: ${loadedKeys.join(', ') || '(empty)'}`);
+  if (!secrets.DOUYIN_APP_SECRET) {
+    console.error('[ecosystem] WARNING: DOUYIN_APP_SECRET missing in ecosystem.secrets.js');
+  }
 } catch (error) {
+  console.error(`[ecosystem] failed to load ${secretsPath}: ${error.message}`);
   secrets = {};
 }
 
@@ -20,6 +29,9 @@ module.exports = {
       WECHAT_MCH_ID: '1621904940',
       WECHAT_VIRTUAL_PAY_OFFER_ID: '1450554502',
       WECHAT_VIRTUAL_PAY_ENV: '0',
+      WECHAT_VIRTUAL_PRODUCT_TRIAL: 'xdptk',
+      WECHAT_VIRTUAL_PRODUCT_STANDARD: 'xdhjk',
+      WECHAT_VIRTUAL_PRODUCT_PREMIUM: 'xdbjk',
       WECHAT_PAY_NOTIFY_URL: 'https://api.zntb.lhyun.net/api/payments/wechat/notify',
       WECHAT_PAY_PRIVATE_KEY_PATH: 'C:/zhiyuantianbao/server/certs/apiclient_key.pem',
       WECHAT_QRCODE_ENV_VERSION: 'trial',
