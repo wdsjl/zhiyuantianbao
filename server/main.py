@@ -1,3 +1,4 @@
+import json
 from urllib.parse import quote
 
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
@@ -11,7 +12,7 @@ from schemas import (
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
     ReferralAgentRegisterRequest, ReferralBindRequest, ReferralWithdrawRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
-    BeanConsumeReportRequest,
+    BeanConsumeReportRequest, DouyinRedeemRequest,
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
@@ -108,6 +109,8 @@ ensure_referral_tables()
 from referral_p1 import ensure_referral_p1_tables
 ensure_referral_p1_tables()
 sync_plan_catalog()
+from douyin_coupon_service import ensure_douyin_coupon_tables
+ensure_douyin_coupon_tables()
 expire_overdue_memberships()
 
 
@@ -735,6 +738,63 @@ async def api_wechat_pay_notify(request: Request):
         return JSONResponse(result)
     except Exception as exc:
         return JSONResponse({'code': 'FAIL', 'message': str(exc)}, status_code=500)
+
+
+@app.get('/api/douyin/status')
+def api_douyin_status():
+    from douyin_service import get_douyin_status
+    return get_douyin_status()
+
+
+@app.get('/api/douyin/redeem-hint')
+def api_douyin_redeem_hint(code: str = ''):
+    return {
+        'message': '请打开微信小程序「智愿填报」→ 会员中心 → 抖音券兑换，输入券码完成开通。',
+        'coupon_code': (code or '').strip().upper(),
+    }
+
+
+@app.post('/api/douyin/redeem')
+def api_douyin_redeem(payload: DouyinRedeemRequest):
+    from douyin_coupon_service import redeem_coupon
+    try:
+        return redeem_coupon(payload.user_id, payload.coupon_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/douyin/spi/coupon/issue')
+async def api_douyin_spi_coupon_issue(request: Request):
+    """抖音三方发券 SPI：用户抖店/来客下单后，抖音回调此接口获取兑换码。"""
+    from douyin_service import get_douyin_config
+    from douyin_coupon_service import issue_coupons_from_spi
+    body = await request.body()
+    try:
+        payload = json.loads(body.decode('utf-8') or '{}')
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail='请求体不是合法 JSON') from exc
+
+    config = get_douyin_config()
+    client_key = (request.headers.get('x-life-clientkey') or '').strip()
+    if config['spi_token']:
+        token = (request.headers.get('x-douyin-spi-token') or request.headers.get('authorization') or '').strip()
+        if token.startswith('Bearer '):
+            token = token[7:].strip()
+        if token != config['spi_token']:
+            raise HTTPException(status_code=401, detail='SPI 鉴权失败')
+    elif config['app_id'] and client_key and client_key != config['app_id']:
+        raise HTTPException(status_code=401, detail='client_key 不匹配')
+
+    try:
+        return issue_coupons_from_spi(payload if isinstance(payload, dict) else {})
+    except ValueError as exc:
+        return {
+            'data': {
+                'error_code': 1,
+                'description': str(exc),
+                'result': 2,
+            }
+        }
 
 
 @app.post('/api/payments/virtual/deliver-notify')

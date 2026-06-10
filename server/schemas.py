@@ -153,6 +153,11 @@ class OpenRequestCreate(BaseModel):
     request_type: str = 'open'
 
 
+class DouyinRedeemRequest(BaseModel):
+    user_id: int
+    coupon_code: str
+
+
 class PaymentCreateRequest(BaseModel):
     user_id: int
     plan_code: str

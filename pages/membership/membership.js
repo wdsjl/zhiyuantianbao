@@ -30,7 +30,9 @@ Page({
     orders: [],
     membershipNotice: null,
     beanBalance: 0,
-    loadError: ''
+    loadError: '',
+    douyinRedeemCode: '',
+    douyinRedeeming: false
   },
   onShow() {
     syncUserIdentity();
@@ -175,6 +177,51 @@ Page({
       return null;
     }
     return userId;
+  },
+
+  onDouyinCodeInput(event) {
+    this.setData({ douyinRedeemCode: (event.detail.value || '').trim().toUpperCase() });
+  },
+
+  submitDouyinRedeem() {
+    const userId = this.ensureUserReady();
+    if (!userId) return;
+    const couponCode = (this.data.douyinRedeemCode || '').trim().toUpperCase();
+    if (!couponCode) {
+      wx.showToast({ title: '请输入兑换码', icon: 'none' });
+      return;
+    }
+    this.setData({ douyinRedeeming: true });
+    request({
+      url: '/api/douyin/redeem',
+      method: 'POST',
+      data: {
+        user_id: Number(userId),
+        coupon_code: couponCode
+      }
+    })
+      .then((res) => {
+        wx.showModal({
+          title: res.already_redeemed ? '已兑换' : '兑换成功',
+          content: res.message || '会员已开通',
+          showCancel: false,
+          success: () => {
+            this.setData({ douyinRedeemCode: '' });
+            fetchEntitlements();
+            this.loadData();
+          }
+        });
+      })
+      .catch((error) => {
+        wx.showModal({
+          title: '兑换失败',
+          content: formatRequestError(error) || '请检查兑换码后重试',
+          showCancel: false
+        });
+      })
+      .finally(() => {
+        this.setData({ douyinRedeeming: false });
+      });
   },
 
   renewCurrentPlan() {

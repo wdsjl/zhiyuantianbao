@@ -7,6 +7,20 @@
     <view wx:else class="sub-text">免费功能长期可用，充值星鼎豆解锁更多智能填报能力。</view>
   </view>
 
+  <view class="card douyin-redeem-card">
+    <view class="section-title">抖音券兑换</view>
+    <view class="sub-text">在抖音/抖店购买会员后，将订单中的兑换码粘贴到下方，在微信小程序开通会员并到账星鼎豆。</view>
+    <input
+      class="douyin-redeem-input"
+      placeholder="请输入抖音兑换码，如 ZDXXXXXXXXXX"
+      value="{{douyinRedeemCode}}"
+      bindinput="onDouyinCodeInput"
+      maxlength="24"
+    />
+    <button class="primary-btn" loading="{{douyinRedeeming}}" disabled="{{douyinRedeeming}}" bindtap="submitDouyinRedeem">立即兑换</button>
+    <view class="warn-box">支持普通卡 / 金卡 / 白金卡。每张券仅可兑换一次，请使用购买时绑定的微信账号登录。</view>
+  </view>
+
   <view wx:if="{{loadError}}" class="card error-card">
     <view class="section-title">加载异常</view>
     <view class="warn-box">{{loadError}}</view>

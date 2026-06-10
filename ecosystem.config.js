@@ -22,6 +22,11 @@ module.exports = {
       WECHAT_VIRTUAL_PAY_ENV: '0',
       WECHAT_PAY_NOTIFY_URL: 'https://api.zntb.lhyun.net/api/payments/wechat/notify',
       WECHAT_PAY_PRIVATE_KEY_PATH: 'C:/zhiyuantianbao/server/certs/apiclient_key.pem',
+      WECHAT_QRCODE_ENV_VERSION: 'trial',
+      DOUYIN_APP_ID: 'tt4ba63d1bd5c2a9f301',
+      DOUYIN_THIRD_SKU_TRIAL: 'trial',
+      DOUYIN_THIRD_SKU_STANDARD: 'standard',
+      DOUYIN_THIRD_SKU_PREMIUM: 'premium',
       ...secrets
     }
   }]
