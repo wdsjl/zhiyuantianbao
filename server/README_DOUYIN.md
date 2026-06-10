@@ -43,9 +43,50 @@ DOUYIN_SPI_TOKEN=可选，SPI 回调鉴权令牌
 3. 用户打开微信小程序 → 会员中心 → 抖音券兑换 → 输入券码
 4. 自动开通会员并到账星鼎豆
 
+## 部署（Windows 服务器）
+
+一键部署（推荐）：
+
+```powershell
+cd C:\zhiyuantianbao
+.\scripts\deploy-douyin.ps1
+```
+
+或手动执行：
+
+```powershell
+cd C:\zhiyuantianbao
+git fetch origin
+git reset --hard origin/cursor/douyin-integration-0c75
+node scripts\check-secrets.js
+pm2 delete zhiyuan-backend
+pm2 start ecosystem.config.js --only zhiyuan-backend --update-env
+pm2 save
+```
+
+密钥文件（二选一，勿提交 Git）：
+
+| 文件 | 说明 |
+|------|------|
+| `ecosystem.secrets.js` | 与 PM2 共用，推荐 |
+| `server/local.secrets.env` | 兜底，复制 `local.secrets.env.example` 填写 |
+
+后端启动时会自动读取上述文件，不依赖 PM2 是否注入环境变量。
+
 ## 验收
 
 ```powershell
 Invoke-RestMethod "https://api.zntb.lhyun.net/api/douyin/status"
-pm2 restart zhiyuan-backend --update-env
 ```
+
+成功响应应包含：
+
+```text
+enabled               : True
+app_secret_configured : True
+spi_token_configured  : True
+client_token_ok       : True
+secrets_bootstrap     : @{ secrets_file_exists=True; ... }
+```
+
+若响应**没有** `secrets_bootstrap` 字段，说明仍在跑旧代码，请重新执行部署脚本。
