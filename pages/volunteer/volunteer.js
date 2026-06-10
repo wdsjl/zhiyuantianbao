@@ -72,9 +72,9 @@ function toApiItem(item, index) {
 }
 
 const PLAN_STYLE_OPTIONS = [
-  { value: 'balanced', label: '均衡方案', desc: '冲2 稳5 保2' },
-  { value: 'aggressive', label: '激进冲院校', desc: '冲3 稳4 保2' },
-  { value: 'conservative', label: '保守稳上岸', desc: '冲1 稳5 保3' }
+  { value: 'balanced', label: '均衡方案', desc: '按比例冲稳保' },
+  { value: 'aggressive', label: '激进冲院校', desc: '冲刺占比更高' },
+  { value: 'conservative', label: '保守稳上岸', desc: '保底占比更高' }
 ];
 
 Page({
@@ -90,6 +90,7 @@ Page({
     planStyle: 'balanced',
     planStyleOptions: PLAN_STYLE_OPTIONS,
     strategyMeta: null,
+    provinceRule: null,
     pdfReady: false,
     pdfFileName: ''
   },
@@ -97,7 +98,9 @@ Page({
     const savedStyle = wx.getStorageSync('volunteerPlanStyle') || 'balanced';
     this.setData({ planStyle: savedStyle });
     refreshActiveProfile().then((profile) => {
-      this.setData({ profile: profile || loadActiveProfileSync() });
+      const nextProfile = profile || loadActiveProfileSync();
+      this.setData({ profile: nextProfile });
+      this.loadProvinceRule(nextProfile);
       this.consumePendingPlanAppend();
     });
     let personality = wx.getStorageSync('personalityResult') || null;
@@ -161,6 +164,26 @@ Page({
     wx.setStorageSync('currentPlan', plan);
     wx.removeStorageSync('currentAiExplain');
   },
+  loadProvinceRule(profile) {
+    const current = profile || this.data.profile || {};
+    if (!current.province) {
+      this.setData({ provinceRule: null });
+      return;
+    }
+    request({
+      url: '/api/province-rules/resolve',
+      data: {
+        province: current.province,
+        batch: current.targetBatch || ''
+      }
+    })
+      .then((res) => {
+        this.setData({ provinceRule: res || null });
+      })
+      .catch(() => {
+        this.setData({ provinceRule: null });
+      });
+  },
   ensureProfile() {
     const { profile } = this.data;
     if (!profile.province || !profile.subjectCombination || !profile.score || !profile.rank || !profile.targetBatch) {
@@ -207,7 +230,7 @@ Page({
         major_types: (this.data.personality && this.data.personality.majorTypes) || [],
         accept_adjustment: true,
         plan_style: this.data.planStyle || 'balanced',
-        volunteer_count: 9
+        volunteer_count: 0
       }
     })
       .then((res) => {
@@ -220,11 +243,17 @@ Page({
         }));
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
-        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta: res.strategy || null });
+        const strategyMeta = res.strategy || null;
+        const provinceRule = (strategyMeta && strategyMeta.volunteer_rule) || this.data.provinceRule;
+        const targetCount = provinceRule && provinceRule.total_slots;
+        const toastTitle = targetCount
+          ? `已生成 ${plan.length}/${targetCount} 个志愿`
+          : `已生成 ${plan.length} 个志愿`;
+        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule });
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
-        wx.showToast({ title: '已生成志愿方案', icon: 'success' });
+        wx.showToast({ title: toastTitle, icon: 'success' });
       })
       .catch(() => {
         wx.showToast({ title: '推荐接口连接失败', icon: 'none' });

@@ -67,7 +67,7 @@ class RecommendRequest(BaseModel):
     only_public: Optional[bool] = None
     accept_adjustment: bool = True
     plan_style: str = 'balanced'
-    volunteer_count: int = 9
+    volunteer_count: int = 0  # 0 表示按本省规则自动确定志愿数量
 
 
 class RiskInspectRequest(BaseModel):
