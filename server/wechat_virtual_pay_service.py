@@ -44,6 +44,26 @@ def is_virtual_pay_ready() -> bool:
     return not get_virtual_pay_status()['missing']
 
 
+def get_virtual_product_mappings() -> list[dict[str, Any]]:
+    mappings: list[dict[str, Any]] = []
+    for plan_code, defaults in PLAN_VIRTUAL_PRODUCTS.items():
+        try:
+            product = _get_plan_product(plan_code)
+            mappings.append({
+                'plan_code': plan_code,
+                'plan_name': product['plan'].get('plan_name'),
+                'product_id': product['product_id'],
+                'goods_price_fen': product['goods_price_fen'],
+            })
+        except ValueError:
+            mappings.append({
+                'plan_code': plan_code,
+                'product_id': defaults.get('product_id'),
+                'goods_price_fen': defaults.get('goods_price_fen'),
+            })
+    return mappings
+
+
 def get_virtual_pay_status() -> dict[str, Any]:
     config = get_virtual_pay_config()
     missing: list[str] = []
@@ -56,18 +76,22 @@ def get_virtual_pay_status() -> dict[str, Any]:
     if not config['app_key']:
         key_name = 'WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY' if config['env'] == 1 else 'WECHAT_VIRTUAL_PAY_APP_KEY'
         missing.append(key_name)
+    env_label = '沙箱' if config['env'] == 1 else '现网'
     return {
         'enabled': not missing,
         'mode': 'virtual_pay',
         'env': config['env'],
+        'env_label': env_label,
         'offer_id': config['offer_id'],
+        'appid': config['appid'],
         'appid_configured': bool(config['appid']),
         'secret_configured': bool(config['secret']),
         'app_key_configured': bool(config['app_key']),
+        'products': get_virtual_product_mappings(),
         'missing': missing,
         'hint': (
             '虚拟支付无需商户证书 apiclient_key.pem；请在 ecosystem.secrets.js 配置 WECHAT_SECRET 与 WECHAT_VIRTUAL_PAY_APP_KEY 后执行 pm2 restart zhiyuan-backend --update-env'
-            if missing else '虚拟支付已就绪'
+            if missing else f'虚拟支付已就绪（{env_label}）。若报 PRODUCT_ID_NOT_PUBLISH，请确认道具已在{env_label}环境发布且 productId 大小写一致。'
         ),
     }
 
@@ -209,6 +233,10 @@ def create_virtual_payment(user_id: int, plan_code: str, order_type: str = 'open
         'plan_name': plan.get('plan_name'),
         'amount': float(plan.get('price') or 0),
         'bean_price': product['bean_price'],
+        'product_id': product['product_id'],
+        'goods_price_fen': product['goods_price_fen'],
+        'env': config['env'],
+        'env_label': '沙箱' if config['env'] == 1 else '现网',
         'mode': 'short_series_goods',
         'virtual_pay': {
             'signData': sign_data,

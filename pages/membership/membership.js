@@ -273,9 +273,14 @@ Page({
           wx.showToast({ title: '已取消支付', icon: 'none' });
           return;
         }
+        const errMsg = (error && error.errMsg) || (error && error.message) || '';
+        let content = errMsg || '请稍后重试';
+        if (errMsg.includes('PRODUCT_ID_NOT_PUBLISH')) {
+          content = '道具未在现网发布或 ID 不匹配。\n\n请管理员检查：\n1. 虚拟支付后台三个道具 xdptk / xdhjk / xdbjk 是否已在「现网」发布\n2. 服务器是否已拉取最新代码并 pm2 restart\n3. 访问 /api/payments/wechat/status 核对 product_id 与 env\n4. 道具 ID 区分大小写，价格须为 1990/9900/16800 分';
+        }
         wx.showModal({
           title: '支付失败',
-          content: (error && error.message) || (error && error.errMsg) || '请稍后重试',
+          content,
           showCancel: false
         });
       })
