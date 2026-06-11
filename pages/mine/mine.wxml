@@ -25,6 +25,10 @@
       <text>会员中心 / 我的订单</text>
       <text>去支付 ›</text>
     </view>
+    <view class="menu-item" bindtap="goDouyinRedeem">
+      <text>抖音券兑换</text>
+      <text>核销 ›</text>
+    </view>
     <view class="menu-item" bindtap="goPromotion">
       <text>推广中心 / 专属海报</text>
       <text>博主 ›</text>

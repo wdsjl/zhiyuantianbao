@@ -37,6 +37,14 @@ Page({
   onShow() {
     syncUserIdentity();
     this.loadData();
+    this.scrollToDouyinIfNeeded();
+  },
+  scrollToDouyinIfNeeded() {
+    if (wx.getStorageSync('membershipScrollTarget') !== 'douyin') return;
+    wx.removeStorageSync('membershipScrollTarget');
+    setTimeout(() => {
+      wx.pageScrollTo({ selector: '.douyin-redeem-card', duration: 300 });
+    }, 400);
   },
   mapPlans(list) {
     return (list || []).map((rawPlan) => {

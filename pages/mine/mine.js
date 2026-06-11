@@ -35,6 +35,10 @@ Page({
   goMembership() {
     goMembershipPage();
   },
+  goDouyinRedeem() {
+    wx.setStorageSync('membershipScrollTarget', 'douyin');
+    goMembershipPage();
+  },
   goStudentReport() {
     wx.navigateTo({ url: '/pages/student-report/student-report' });
   },

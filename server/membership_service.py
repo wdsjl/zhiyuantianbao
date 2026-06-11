@@ -25,7 +25,7 @@ DEFAULT_PERMISSIONS = [
 
 DEFAULT_PLAN_PERMISSIONS = {
     'free': {'personality_basic': -1, 'school_basic': -1, 'score_recent_2y': -1, 'manual_simulation': -1},
-    'trial': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': 10, 'smart_recommend': 3, 'risk_inspect': 3, 'ai_plan_explain': 3, 'draft_save': 3, 'pdf_export': 1},
+    'trial': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': 10, 'smart_recommend': 3, 'risk_inspect': 3, 'ai_plan_explain': 3, 'draft_save': 3, 'pdf_export': -1},
     'standard': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': -1, 'smart_recommend': -1, 'risk_inspect': -1, 'ai_plan_explain': 5, 'draft_save': -1, 'pdf_export': -1, 'major_deep_guide': -1, 'volunteer_template': -1},
     'premium': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': -1, 'smart_recommend': -1, 'risk_inspect': -1, 'ai_plan_explain': 20, 'draft_save': -1, 'pdf_export': -1, 'major_deep_guide': -1, 'same_rank_reference': -1, 'premium_school_detail': -1, 'region_career_plan': -1, 'volunteer_template': -1, 'question_channel': -1, 'recruit_notice': -1},
 }
@@ -62,7 +62,22 @@ def seed_membership_defaults() -> None:
         for plan_code, permissions in DEFAULT_PLAN_PERMISSIONS.items():
             for permission_code, limit_value in permissions.items():
                 c.execute('INSERT OR IGNORE INTO membership_plan_permissions (plan_code, permission_code, is_enabled, limit_value) VALUES (?, ?, ?, ?)', [plan_code, permission_code, 1, limit_value])
+        sync_default_plan_permission_limits(c)
         c.commit()
+
+
+def sync_default_plan_permission_limits(connection) -> None:
+    """将代码中的默认权限次数同步到数据库（星鼎豆体系下 PDF 导出等已调整的项）。"""
+    for plan_code, permissions in DEFAULT_PLAN_PERMISSIONS.items():
+        for permission_code, limit_value in permissions.items():
+            connection.execute(
+                '''
+                UPDATE membership_plan_permissions
+                SET limit_value = ?, is_enabled = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE plan_code = ? AND permission_code = ?
+                ''',
+                [limit_value, plan_code, permission_code],
+            )
 
 
 def list_plans() -> list[dict[str, Any]]:
