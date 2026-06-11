@@ -18,7 +18,10 @@ def pdf_text(value: Any) -> str:
 
 
 def hex_text(value: Any) -> str:
-    return pdf_text(value).encode('utf-16-be').hex().upper()
+    text = pdf_text(value)
+    if not text:
+        return 'FEFF'  # UTF-16 BE BOM，空行占位
+    return text.encode('utf-16-be', errors='ignore').hex().upper()
 
 
 def normalize_pdf_filename_part(value: str, fallback: str = '学生') -> str:

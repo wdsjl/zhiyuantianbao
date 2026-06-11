@@ -1895,12 +1895,16 @@ def _load_student_or_404(student_id: int) -> dict:
 
 
 def _pdf_response(pdf: bytes, filename: str) -> Response:
+    # HTTP 响应头仅支持 latin-1，中文文件名用百分号编码放到自定义头
+    from urllib.parse import quote
+
+    encoded_filename = quote(filename, safe='')
     return Response(
         content=pdf,
         media_type='application/pdf',
         headers={
             'Content-Disposition': pdf_content_disposition(filename),
-            'X-Pdf-Filename': filename,
+            'X-Pdf-Filename': encoded_filename,
         }
     )
 

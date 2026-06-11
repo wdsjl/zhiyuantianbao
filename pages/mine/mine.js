@@ -1,4 +1,4 @@
-const { fetchEntitlements, goMembershipPage } = require('../../utils/membership');
+const { fetchEntitlements, goMembershipPage, goDouyinRedeemPage } = require('../../utils/membership');
 
 Page({
   data: {
@@ -36,8 +36,7 @@ Page({
     goMembershipPage();
   },
   goDouyinRedeem() {
-    wx.setStorageSync('membershipScrollTarget', 'douyin');
-    goMembershipPage();
+    goDouyinRedeemPage();
   },
   goStudentReport() {
     wx.navigateTo({ url: '/pages/student-report/student-report' });

@@ -7,6 +7,14 @@
     <button class="profile-btn" bindtap="goProfile">完善信息</button>
   </view>
 
+  <view class="card douyin-banner" bindtap="goDouyinRedeem">
+    <view class="pay-banner-main">
+      <view class="pay-banner-title">抖音团购券兑换</view>
+      <view class="sub-text">在抖音/抖店购买会员后，点此输入兑换码开通并到账星鼎豆</view>
+    </view>
+    <button class="primary-btn pay-banner-btn" catchtap="goDouyinRedeem">去兑换</button>
+  </view>
+
   <view class="card pay-banner" bindtap="goMembership">
     <view class="pay-banner-main">
       <view class="pay-banner-title">普通卡 / 金卡 / 白金卡 · 星鼎豆充值</view>
