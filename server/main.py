@@ -25,6 +25,7 @@ from student_report_service import (
 from province_rules_service import (
     ensure_province_rules_seeded, resolve_volunteer_slots, summarize_province_rules,
 )
+from recommend_service import fetch_recommendation_candidates, save_auto_recommendation_draft
 from personality_service import (
     ensure_personality_tables, save_assessment, get_latest_assessment, save_ai_career_report,
     build_personality_ai_context, build_career_report_prompt,
@@ -1663,81 +1664,6 @@ def province_rules_resolve(province: str, batch: str = '', year: int = 2025):
 
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
-    sql = """
-    SELECT ar.*, s.school_name, s.city, s.school_type, s.is_public, s.is_double_first_class,
-           m.major_name, m.major_type, ep.tuition, ep.duration, ep.subject_requirement
-    FROM admission_records ar
-    JOIN schools s ON s.school_id = ar.school_id
-    JOIN majors m ON m.major_id = ar.major_id
-    LEFT JOIN enrollment_plans ep ON ep.school_id = ar.school_id
-      AND ep.major_id = ar.major_id
-      AND ep.province = ar.province
-      AND ep.batch = ar.batch
-    WHERE ar.province = ? AND ar.batch = ?
-    """
-    params = [request.province, request.batch]
-
-    if request.cities:
-        sql += f" AND s.city IN ({','.join(['?'] * len(request.cities))})"
-        params.extend(request.cities)
-    if request.school_types:
-        sql += f" AND s.school_type IN ({','.join(['?'] * len(request.school_types))})"
-        params.extend(request.school_types)
-    if request.major_types:
-        sql += f" AND m.major_type IN ({','.join(['?'] * len(request.major_types))})"
-        params.extend(request.major_types)
-    if request.only_public is not None:
-        sql += ' AND s.is_public = ?'
-        params.append(1 if request.only_public else 0)
-
-    sql += ' ORDER BY ar.year DESC, ar.min_rank ASC'
-
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
-
-    rows = [
-        row for row in rows
-        if matches_subject_requirement(request.subject_combination, row.get('subject_requirement'))
-    ]
-
-    grouped = {}
-    for row in rows:
-        key = (row['school_id'], row['major_id'])
-        grouped.setdefault(key, []).append(row)
-
-    weighted_items = []
-    year_weights = [0.5, 0.3, 0.2]
-    for records in grouped.values():
-        sorted_records = sorted(records, key=lambda item: item['year'], reverse=True)[:3]
-        weight_sum = 0
-        rank_sum = 0
-        score_sum = 0
-        latest = sorted_records[0]
-        for index, record in enumerate(sorted_records):
-            weight = year_weights[index] if index < len(year_weights) else 0
-            if record.get('min_rank') is not None:
-                rank_sum += record['min_rank'] * weight
-                weight_sum += weight
-            if record.get('min_score') is not None:
-                score_sum += record['min_score'] * weight
-        weighted_rank = round(rank_sum / weight_sum) if weight_sum else latest.get('min_rank')
-        weighted_score = round(score_sum / weight_sum) if weight_sum else latest.get('min_score')
-        weighted_items.append({**latest, 'weighted_rank': weighted_rank, 'weighted_score': weighted_score, 'years_used': [item['year'] for item in sorted_records]})
-
-    user_rank = int(request.rank)
-    if user_rank <= 0 and request.score:
-        estimated = estimate_rank_from_score(rows, int(request.score))
-        if estimated:
-            user_rank = estimated
-
-    with get_connection() as connection:
-        total_row = connection.execute(
-            'SELECT MAX(min_rank) AS total_rank FROM admission_records WHERE province = ? AND batch = ?',
-            [request.province, request.batch]
-        ).fetchone()
-    province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
-    segment = detect_segment(user_rank, province_total_rank, request.batch)
-
     slot_info = resolve_volunteer_slots(
         request.province,
         request.batch,
@@ -1746,18 +1672,45 @@ def recommend(request: RecommendRequest):
     total_slots = slot_info['total_slots']
     province_rule = slot_info['rule']
 
+    weighted_items, effective_batch, candidate_meta = fetch_recommendation_candidates(
+        request.province,
+        request.batch,
+        request.subject_combination,
+        total_slots,
+        cities=request.cities,
+        school_types=request.school_types,
+        major_types=request.major_types,
+        only_public=request.only_public,
+        rule_batch=province_rule.get('batch'),
+    )
+
+    user_rank = int(request.rank)
+    if user_rank <= 0 and request.score:
+        estimated = estimate_rank_from_score(weighted_items, int(request.score))
+        if estimated:
+            user_rank = estimated
+
+    with get_connection() as connection:
+        total_row = connection.execute(
+            'SELECT MAX(min_rank) AS total_rank FROM admission_records WHERE province = ? AND batch = ?',
+            [request.province, effective_batch]
+        ).fetchone()
+    province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
+    segment = detect_segment(user_rank, province_total_rank, effective_batch)
+
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
         user_rank=user_rank,
         plan_style=request.plan_style or 'balanced',
-        batch=request.batch,
+        batch=effective_batch,
         segment=segment,
         total_slots=total_slots,
     )
     strategy_meta['volunteer_rule'] = {
         'province': province_rule.get('province') or request.province,
-        'batch': province_rule.get('batch') or request.batch,
+        'batch': province_rule.get('batch') or effective_batch,
         'requested_batch': request.batch,
+        'effective_batch': effective_batch,
         'volunteer_mode': province_rule.get('volunteer_mode'),
         'school_count': province_rule.get('school_count'),
         'major_count_per_school': province_rule.get('major_count_per_school'),
@@ -1765,6 +1718,8 @@ def recommend(request: RecommendRequest):
         'matched': bool(province_rule.get('matched')),
         'source': slot_info['source'],
         'rule_description': province_rule.get('rule_description') or '',
+        'candidate_pool': candidate_meta.get('candidate_pool'),
+        'relaxed_major_filter': candidate_meta.get('relaxed_major_filter'),
     }
 
     items = []
@@ -1799,11 +1754,35 @@ def recommend(request: RecommendRequest):
             'risk_reason': get_risk_reason(gradient_type, is_adjustable)
         })
 
+    risk = inspect_plan_risk(items)
+    draft_id = None
+    if request.student_id and request.auto_save_draft and items:
+        try:
+            draft_id = save_auto_recommendation_draft(
+                int(request.student_id),
+                request.province,
+                effective_batch,
+                int(request.score),
+                user_rank,
+                risk.get('level') or '未排查',
+                items,
+            )
+        except Exception:
+            draft_id = None
+
     return {
         'items': items,
-        'risk': inspect_plan_risk(items),
+        'risk': risk,
         'strategy': strategy_meta,
         'algorithm': strategy_meta.get('algorithm'),
+        'generation': {
+            'target_slots': total_slots,
+            'generated_count': len(items),
+            'candidate_pool': candidate_meta.get('candidate_pool'),
+            'effective_batch': effective_batch,
+            'relaxed_major_filter': bool(candidate_meta.get('relaxed_major_filter')),
+        },
+        'draft_id': draft_id,
     }
 
 
@@ -1880,9 +1859,23 @@ def get_personality_assessment(student_id: int):
 
 @app.post('/api/ai/career-report')
 def ai_career_report(request: CareerReportRequest):
-    if not request.personality:
+    merged = merge_report_inputs_from_db(
+        request.student_id,
+        request.profile or {},
+        request.personality or {},
+        {},
+        None,
+    )
+    personality = merged['personality']
+    profile = merged['profile']
+    if not personality:
         raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
-    prompt = build_career_report_prompt(request.profile or {}, request.personality)
+    prompt = build_career_report_prompt(
+        profile,
+        personality,
+        province_rule_context=merged.get('province_rule_context'),
+        admission_data_context=merged.get('admission_data_context'),
+    )
     try:
         content = append_ai_generated_notice(chat_completion([
             {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将霍兰德职业兴趣测评与全省位次冲稳保策略结合分析。所有建议必须提示以官方信息为准。'},

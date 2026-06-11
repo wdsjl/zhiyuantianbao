@@ -68,6 +68,8 @@ class RecommendRequest(BaseModel):
     accept_adjustment: bool = True
     plan_style: str = 'balanced'
     volunteer_count: int = 0
+    student_id: Optional[int] = None
+    auto_save_draft: bool = True
 
 
 class RiskInspectRequest(BaseModel):

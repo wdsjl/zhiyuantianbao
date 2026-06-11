@@ -230,7 +230,9 @@ Page({
         major_types: (this.data.personality && this.data.personality.majorTypes) || [],
         accept_adjustment: true,
         plan_style: this.data.planStyle || 'balanced',
-        volunteer_count: 0
+        volunteer_count: 0,
+        student_id: profile.studentId ? Number(profile.studentId) : null,
+        auto_save_draft: true
       }
     })
       .then((res) => {
@@ -253,7 +255,19 @@ Page({
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
-        wx.showToast({ title: toastTitle, icon: 'success' });
+        if (res.draft_id) {
+          wx.setStorageSync('currentDraftId', res.draft_id);
+          wx.setStorageSync('currentDraftName', '智能推荐方案');
+        }
+        if (res.generation && res.generation.candidate_pool < res.generation.target_slots) {
+          wx.showModal({
+            title: '志愿数量提示',
+            content: `已生成 ${res.generation.generated_count}/${res.generation.target_slots} 个志愿。数据库中符合条件的院校专业共 ${res.generation.candidate_pool} 条，建议补充录取数据或放宽筛选条件。`,
+            showCancel: false
+          });
+        } else {
+          wx.showToast({ title: toastTitle, icon: 'success' });
+        }
       })
       .catch(() => {
         wx.showToast({ title: '推荐接口连接失败', icon: 'none' });
