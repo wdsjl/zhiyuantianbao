@@ -20,6 +20,10 @@ from schemas import (
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
+    merge_report_inputs_from_db,
+)
+from province_rules_service import (
+    ensure_province_rules_seeded, resolve_volunteer_slots, summarize_province_rules,
 )
 from personality_service import (
     ensure_personality_tables, save_assessment, get_latest_assessment, save_ai_career_report,
@@ -115,6 +119,7 @@ ensure_referral_p1_tables()
 sync_plan_catalog()
 from douyin_coupon_service import ensure_douyin_coupon_tables
 ensure_douyin_coupon_tables()
+ensure_province_rules_seeded()
 expire_overdue_memberships()
 
 
@@ -1630,6 +1635,32 @@ def list_province_rules(province: str = '', year: int | None = None, batch: str 
     return {'list': rows_to_dicts(rows)}
 
 
+@app.get('/api/province-rules/summary')
+def province_rules_summary():
+    return {'list': summarize_province_rules(), 'year': 2025}
+
+
+@app.get('/api/province-rules/resolve')
+def province_rules_resolve(province: str, batch: str = '', year: int = 2025):
+    if not province.strip():
+        raise HTTPException(status_code=400, detail='请提供省份')
+    resolved = resolve_volunteer_slots(province, batch, year)
+    rule = resolved['rule']
+    return {
+        'province': rule.get('province') or province,
+        'batch': rule.get('batch') or batch,
+        'requested_batch': batch,
+        'year': rule.get('year') or year,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'school_count': rule.get('school_count'),
+        'major_count_per_school': rule.get('major_count_per_school'),
+        'total_slots': resolved['total_slots'],
+        'matched': bool(rule.get('matched')),
+        'source': resolved['source'],
+        'rule_description': rule.get('rule_description') or '',
+    }
+
+
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
     sql = """
@@ -1707,14 +1738,34 @@ def recommend(request: RecommendRequest):
     province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
     segment = detect_segment(user_rank, province_total_rank, request.batch)
 
+    slot_info = resolve_volunteer_slots(
+        request.province,
+        request.batch,
+        override_count=int(request.volunteer_count) if int(request.volunteer_count or 0) > 0 else None,
+    )
+    total_slots = slot_info['total_slots']
+    province_rule = slot_info['rule']
+
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
         user_rank=user_rank,
         plan_style=request.plan_style or 'balanced',
         batch=request.batch,
         segment=segment,
-        total_slots=max(1, int(request.volunteer_count or 9)),
+        total_slots=total_slots,
     )
+    strategy_meta['volunteer_rule'] = {
+        'province': province_rule.get('province') or request.province,
+        'batch': province_rule.get('batch') or request.batch,
+        'requested_batch': request.batch,
+        'volunteer_mode': province_rule.get('volunteer_mode'),
+        'school_count': province_rule.get('school_count'),
+        'major_count_per_school': province_rule.get('major_count_per_school'),
+        'total_slots': total_slots,
+        'matched': bool(province_rule.get('matched')),
+        'source': slot_info['source'],
+        'rule_description': province_rule.get('rule_description') or '',
+    }
 
     items = []
     for index, row in enumerate(selected_rows, start=1):
@@ -1850,15 +1901,28 @@ def ai_career_report(request: CareerReportRequest):
 
 @app.post('/api/ai/student-report')
 def ai_student_report(request: StudentReportRequest):
-    if not request.profile:
-        raise HTTPException(status_code=400, detail='请先完善学生档案')
-    if not request.personality:
-        raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
-    prompt = build_student_report_prompt(
-        request.profile,
-        request.personality,
+    merged = merge_report_inputs_from_db(
+        request.student_id,
+        request.profile or {},
+        request.personality or {},
         request.preferences or {},
         request.volunteer_summary,
+    )
+    profile = merged['profile']
+    personality = merged['personality']
+    preferences = merged['preferences']
+    volunteer_summary = merged['volunteer_summary']
+    if not profile:
+        raise HTTPException(status_code=400, detail='请先完善学生档案')
+    if not personality:
+        raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
+    prompt = build_student_report_prompt(
+        profile,
+        personality,
+        preferences,
+        volunteer_summary,
+        province_rule_context=merged.get('province_rule_context'),
+        admission_data_context=merged.get('admission_data_context'),
     )
     try:
         content = append_ai_generated_notice(chat_completion([
@@ -1868,7 +1932,7 @@ def ai_student_report(request: StudentReportRequest):
         report_id = save_student_report(
             request.student_id,
             request.user_id,
-            request.preferences or {},
+            preferences,
             content,
         )
         return {'report': content, 'report_id': report_id}

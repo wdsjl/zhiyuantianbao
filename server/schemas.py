@@ -67,7 +67,7 @@ class RecommendRequest(BaseModel):
     only_public: Optional[bool] = None
     accept_adjustment: bool = True
     plan_style: str = 'balanced'
-    volunteer_count: int = 9
+    volunteer_count: int = 0
 
 
 class RiskInspectRequest(BaseModel):
