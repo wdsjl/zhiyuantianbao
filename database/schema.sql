@@ -173,6 +173,8 @@ CREATE TABLE IF NOT EXISTS volunteer_draft_items (
   is_adjustable INTEGER NOT NULL DEFAULT 1,
   risk_level TEXT,
   risk_reason TEXT,
+  admission_score_2025 INTEGER,
+  admission_rank_2025 INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (draft_id) REFERENCES volunteer_drafts(draft_id) ON DELETE CASCADE,
