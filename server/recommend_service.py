@@ -5,8 +5,38 @@ from __future__ import annotations
 from typing import Any
 
 from db import get_connection, row_to_dict, rows_to_dicts
-from province_rules_service import _normalize_province, _score_rule_match
+from province_rules_service import _batch_category, _normalize_province, _score_rule_match
 from services import matches_subject_requirement
+
+BATCH_ALIAS_GROUPS: dict[str, list[str]] = {
+    '本科批': ['本科批', '本科', '本科普通批', '普通本科批', '本科一批', '本科二批'],
+    '专科批': ['专科批', '专科', '高职专科批', '高职高专批', '高专批'],
+    '本科提前批': ['本科提前批', '本科提前', '提前批本科'],
+    '专科提前批': ['专科提前批', '专科提前', '提前批专科'],
+    '普通类一段': ['普通类一段', '平行录取一段', '普通类平行录取一段'],
+    '普通类二段': ['普通类二段', '平行录取二段'],
+}
+
+
+def expand_batch_aliases(batch: str) -> list[str]:
+    requested = (batch or '').strip()
+    variants: list[str] = []
+    if requested:
+        variants.append(requested)
+    for aliases in BATCH_ALIAS_GROUPS.values():
+        if requested in aliases:
+            for alias in aliases:
+                if alias not in variants:
+                    variants.append(alias)
+    if requested and '本科' in requested and '专科' not in requested:
+        for alias in BATCH_ALIAS_GROUPS['本科批']:
+            if alias not in variants:
+                variants.append(alias)
+    if requested and '专科' in requested:
+        for alias in BATCH_ALIAS_GROUPS['专科批']:
+            if alias not in variants:
+                variants.append(alias)
+    return variants or [requested]
 
 
 def province_variants(province: str) -> list[str]:
@@ -64,10 +94,17 @@ def _build_batch_hint(
         f'{item["batch"]}({int(item.get("school_major_count") or item.get("record_count") or 0)}条)'
         for item in available_batches[:6]
     )
+    suggested = ''
+    if available_batches:
+        undergrad = [item for item in available_batches if _batch_category(str(item.get('batch') or '')) != 'junior']
+        junior = [item for item in available_batches if _batch_category(str(item.get('batch') or '')) == 'junior']
+        if undergrad and _batch_category(requested_batch) == 'junior':
+            top = undergrad[0].get('batch')
+            suggested = f' 建议将目标批次改为「{top}」。'
     return (
         f'档案填写批次「{requested_batch}」在库中无匹配数据。'
         f'当前库内批次：{summary}。'
-        '请检查档案「目标批次」是否与导入数据一致（如 660 分通常应填本科批，而非专科批）。'
+        f'请检查档案「目标批次」是否与导入数据一致（如 660 分通常应填本科批，而非专科批）。{suggested}'
     )
 
 
@@ -83,6 +120,8 @@ def query_admission_rows(
 ) -> list[dict[str, Any]]:
     province_list = province_variants(province)
     province_placeholders = ','.join(['?'] * len(province_list))
+    batch_list = expand_batch_aliases(batch) or ['']
+    batch_placeholders = ','.join(['?'] * len(batch_list))
     sql = f"""
     SELECT ar.*, s.school_name, s.city, s.school_type, s.is_public, s.is_double_first_class,
            m.major_name, m.major_type, ep.tuition, ep.duration, ep.subject_requirement
@@ -93,9 +132,9 @@ def query_admission_rows(
       AND ep.major_id = ar.major_id
       AND ep.province = ar.province
       AND ep.batch = ar.batch
-    WHERE ar.province IN ({province_placeholders}) AND ar.batch = ?
+    WHERE ar.province IN ({province_placeholders}) AND ar.batch IN ({batch_placeholders})
     """
-    params: list[Any] = [*province_list, batch]
+    params: list[Any] = [*province_list, *batch_list]
 
     if cities:
         sql += f" AND s.city IN ({','.join(['?'] * len(cities))})"
@@ -193,16 +232,17 @@ def fetch_recommendation_candidates(
     requested_batch = (batch or '').strip()
     batches: list[str] = []
     for candidate in (requested_batch, rule_batch):
-        value = (candidate or '').strip()
-        if value and value not in batches:
-            batches.append(value)
+        for alias in expand_batch_aliases((candidate or '').strip()):
+            if alias and alias not in batches:
+                batches.append(alias)
 
     available_batches = list_province_admission_batches(province)
     available_batch_names = [item['batch'] for item in available_batches if item.get('batch')]
     fallback_batches = _rank_batch_candidates(requested_batch, available_batch_names)
     for candidate in fallback_batches:
-        if candidate not in batches:
-            batches.append(candidate)
+        for alias in expand_batch_aliases(candidate):
+            if alias and alias not in batches:
+                batches.append(alias)
 
     meta: dict[str, Any] = {
         'tried_batches': batches,

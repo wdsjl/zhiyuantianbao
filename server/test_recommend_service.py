@@ -2,6 +2,7 @@ import unittest
 
 from recommend_service import (
     build_weighted_items,
+    expand_batch_aliases,
     fetch_recommendation_candidates,
     list_province_admission_batches,
     province_variants,
@@ -40,6 +41,11 @@ class RecommendServiceTests(unittest.TestCase):
     def test_list_province_batches_returns_list(self):
         rows = list_province_admission_batches('河南')
         self.assertIsInstance(rows, list)
+
+    def test_expand_batch_aliases_for_undergraduate(self):
+        aliases = expand_batch_aliases('本科批')
+        self.assertIn('本科批', aliases)
+        self.assertIn('本科', aliases)
 
 
 if __name__ == '__main__':

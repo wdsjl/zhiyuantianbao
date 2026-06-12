@@ -1679,6 +1679,21 @@ def list_province_rules(province: str = '', year: int | None = None, batch: str 
     return {'list': rows_to_dicts(rows)}
 
 
+@app.get('/api/admission-data/batches')
+def api_admission_data_batches(province: str):
+    if not province.strip():
+        raise HTTPException(status_code=400, detail='请提供省份')
+    from recommend_service import list_province_admission_batches
+
+    batches = list_province_admission_batches(province)
+    total = sum(int(item.get('school_major_count') or item.get('record_count') or 0) for item in batches)
+    return {
+        'province': province,
+        'batches': batches,
+        'total_school_major': total,
+    }
+
+
 @app.get('/api/province-rules/summary')
 def province_rules_summary():
     return {'list': summarize_province_rules(), 'year': 2025}

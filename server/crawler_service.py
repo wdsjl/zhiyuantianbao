@@ -110,12 +110,24 @@ def default_recent_years(count: int = 3, end_year: int | None = None) -> list[in
 
 
 def normalize_batch_name(name: str) -> str:
+    raw = (name or '').strip()
     mapping = {
         '平行录取一段': '普通类一段',
         '普通类平行录取': '普通类一段',
         '普通类平行录取一段': '普通类一段',
+        '本科': '本科批',
+        '本科普通批': '本科批',
+        '普通本科批': '本科批',
+        '专科': '专科批',
+        '高职专科': '专科批',
+        '高职专科批': '专科批',
+        '高职高专批': '专科批',
     }
-    return mapping.get(name, name or '普通类一段')
+    if raw in mapping:
+        return mapping[raw]
+    if raw:
+        return raw
+    return '普通类一段'
 
 
 def major_code_from_item(item: dict[str, Any]) -> str:
