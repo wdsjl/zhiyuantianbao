@@ -118,7 +118,27 @@ def save_plan_permission(plan_code: str, permission_code: str, is_enabled: bool,
 
 def search_users(keyword: str = '') -> list[dict[str, Any]]:
     ensure_membership_tables()
-    sql = '''SELECT u.user_id, u.phone, u.role, u.name, u.created_at, s.student_id, s.name AS student_name, s.school_name, s.score, s.rank, um.plan_code, mp.plan_name, um.status AS membership_status, um.expires_at FROM users u LEFT JOIN students s ON s.user_id = u.user_id LEFT JOIN user_memberships um ON um.user_membership_id = (SELECT user_membership_id FROM user_memberships WHERE user_id = u.user_id AND status = 'active' ORDER BY datetime(COALESCE(expires_at, '2999-12-31')) DESC, user_membership_id DESC LIMIT 1) LEFT JOIN membership_plans mp ON mp.plan_code = um.plan_code WHERE 1=1'''
+    from user_flags_service import ensure_user_flags
+    from bean_service import ensure_bean_tables
+    ensure_user_flags()
+    ensure_bean_tables()
+    sql = '''
+    SELECT u.user_id, u.phone, u.role, u.name, u.created_at, u.is_super_tester,
+           COALESCE(uba.balance, 0) AS bean_balance,
+           s.student_id, s.name AS student_name, s.school_name, s.score, s.rank,
+           um.plan_code, mp.plan_name, um.status AS membership_status, um.expires_at
+    FROM users u
+    LEFT JOIN user_bean_accounts uba ON uba.user_id = u.user_id
+    LEFT JOIN students s ON s.user_id = u.user_id
+    LEFT JOIN user_memberships um ON um.user_membership_id = (
+      SELECT user_membership_id FROM user_memberships
+      WHERE user_id = u.user_id AND status = 'active'
+      ORDER BY datetime(COALESCE(expires_at, '2999-12-31')) DESC, user_membership_id DESC
+      LIMIT 1
+    )
+    LEFT JOIN membership_plans mp ON mp.plan_code = um.plan_code
+    WHERE 1=1
+    '''
     params: list[Any] = []
     if keyword:
         sql += ' AND (u.phone LIKE ? OR u.name LIKE ? OR s.name LIKE ? OR s.school_name LIKE ?)'
@@ -228,6 +248,16 @@ def get_permission_usage(user_id: int, permission_code: str, plan_code: str, mem
 
 
 def check_permission(user_id: int | None, permission_code: str) -> dict[str, Any]:
+    from user_flags_service import is_super_tester
+    if user_id and is_super_tester(user_id):
+        return {
+            'allowed': True,
+            'remaining': -1,
+            'used': 0,
+            'limit': -1,
+            'super_tester': True,
+            'message': '超级测试账号，功能不限次',
+        }
     entitlements = get_user_entitlements(user_id)
     plan = entitlements.get('plan') or {'plan_code': 'free', 'plan_name': '免费版'}
     membership = entitlements.get('membership')

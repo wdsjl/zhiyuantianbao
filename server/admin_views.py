@@ -1136,11 +1136,14 @@ def admin_membership_users(keyword: str = '', message: str = ''):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     rows = ''
     for user in users:
+        is_super = int(user.get('is_super_tester') or 0)
+        super_tag = '<span class="tag active">超级测试</span>' if is_super else '<span class="muted">普通</span>'
         rows += f'''
           <tr>
             <td>{user.get('user_id', '')}</td><td>{escape(str(user.get('phone') or ''))}</td><td>{escape(str(user.get('student_name') or user.get('name') or ''))}</td>
             <td>{escape(str(user.get('school_name') or ''))}</td><td>{escape(str(user.get('score') or ''))}</td><td>{escape(str(user.get('rank') or ''))}</td>
             <td><span class="tag">{escape(str(user.get('plan_name') or '免费版'))}</span><br/><span class="muted">{escape(str(user.get('expires_at') or '长期/未开通'))}</span></td>
+            <td><strong>{int(user.get('bean_balance') or 0)}</strong> 豆<br/>{super_tag}</td>
             <td>
               <form method="post" action="/admin/membership/users/grant" class="toolbar" style="margin:0">
                 <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
@@ -1148,6 +1151,23 @@ def admin_membership_users(keyword: str = '', message: str = ''):
                 <input name="days" placeholder="天数，留空按套餐" style="min-width:120px;width:120px" />
                 <input name="remark" placeholder="备注" />
                 <button type="submit">开通/调整</button>
+              </form>
+              <form method="post" action="/admin/membership/users/beans/adjust" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input name="amount" placeholder="+增加/-扣减" style="min-width:100px;width:100px" />
+                <input name="remark" value="测试加豆" style="min-width:100px;width:100px" />
+                <button type="submit">调整星鼎豆</button>
+              </form>
+              <form method="post" action="/admin/membership/users/beans/set" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input name="balance" placeholder="设为余额" style="min-width:100px;width:100px" />
+                <input name="remark" value="测试设余额" style="min-width:100px;width:100px" />
+                <button type="submit">设置余额</button>
+              </form>
+              <form method="post" action="/admin/membership/users/super-tester" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input type="hidden" name="enabled" value="{0 if is_super else 1}" />
+                <button type="submit" class="btn-sm">{'取消超级测试' if is_super else '设为超级测试'}</button>
               </form>
               <form method="post" action="/admin/membership/users/revoke" style="display:inline;margin-top:6px" onsubmit="return confirm('确认撤销该用户会员？')">
                 <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
@@ -1157,7 +1177,7 @@ def admin_membership_users(keyword: str = '', message: str = ''):
           </tr>
         '''
     if not rows:
-        rows = '<tr><td colspan="8" class="muted">暂无用户</td></tr>'
+        rows = '<tr><td colspan="9" class="muted">暂无用户</td></tr>'
     expiring_rows = ''
     for member in expiring:
         expiring_rows += f'''
@@ -1195,11 +1215,15 @@ def admin_membership_users(keyword: str = '', message: str = ''):
         <h2>用户会员管理</h2>
         {message_html}
         <p class="muted">个人主体阶段可用于手动开通/调整权益；企业主体接入微信支付后，也可继续作为客服后台。</p>
+        <div class="warn-box">
+          <strong>超级测试账号：</strong>设为超级测试后，该用户生成 AI 报告<strong>不扣星鼎豆</strong>，会员功能<strong>不限次数</strong>，便于反复测试。
+          仍可通过「调整星鼎豆 / 设置余额」随意充值测试豆。
+        </div>
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="手机号 / 姓名 / 学校" />
           <button type="submit">搜索</button>
         </form>
-        <table><thead><tr><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>分数</th><th>位次</th><th>当前会员</th><th>开通/调整</th></tr></thead><tbody>{rows}</tbody></table>
+        <table><thead><tr><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>分数</th><th>位次</th><th>当前会员</th><th>星鼎豆/测试</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table>
       </div>
     '''
     return render_page('用户会员管理', body)

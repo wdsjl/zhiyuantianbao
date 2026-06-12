@@ -121,6 +121,8 @@ sync_plan_catalog()
 from douyin_coupon_service import ensure_douyin_coupon_tables
 ensure_douyin_coupon_tables()
 ensure_province_rules_seeded()
+from user_flags_service import ensure_user_flags
+ensure_user_flags()
 expire_overdue_memberships()
 
 
@@ -460,7 +462,48 @@ def admin_membership_user_grant(
     remark: str = Form('')
 ):
     grant_membership(user_id, plan_code, int(days) if days else None, remark)
+    from bean_service import grant_plan_beans
+    grant_plan_beans(user_id, plan_code, remark=remark or '后台开通会员到账星鼎豆')
     return RedirectResponse('/admin/membership/users?message=会员已开通或调整', status_code=303)
+
+
+@app.post('/admin/membership/users/beans/adjust')
+def admin_membership_user_beans_adjust(
+    user_id: int = Form(...),
+    amount: int = Form(...),
+    remark: str = Form('后台调整星鼎豆'),
+):
+    from bean_service import adjust_beans
+    try:
+        adjust_beans(user_id, amount, remark)
+        return RedirectResponse('/admin/membership/users?message=星鼎豆已调整', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/membership/users?message={exc}', status_code=303)
+
+
+@app.post('/admin/membership/users/beans/set')
+def admin_membership_user_beans_set(
+    user_id: int = Form(...),
+    balance: int = Form(...),
+    remark: str = Form('后台设置星鼎豆余额'),
+):
+    from bean_service import set_bean_balance
+    set_bean_balance(user_id, balance, remark)
+    return RedirectResponse('/admin/membership/users?message=星鼎豆余额已设置', status_code=303)
+
+
+@app.post('/admin/membership/users/super-tester')
+def admin_membership_user_super_tester(
+    user_id: int = Form(...),
+    enabled: int = Form(0),
+):
+    from user_flags_service import set_super_tester
+    try:
+        set_super_tester(user_id, bool(enabled))
+        label = '已设为超级测试账号' if enabled else '已取消超级测试账号'
+        return RedirectResponse(f'/admin/membership/users?message={label}', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/membership/users?message={exc}', status_code=303)
 
 
 @app.post('/admin/membership/users/revoke')
