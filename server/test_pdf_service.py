@@ -5,6 +5,7 @@ from pdf_service import (
     display_width,
     format_volunteer_item_block,
     pad_column,
+    truncate_display_text,
 )
 
 
@@ -13,7 +14,31 @@ class PdfServiceTests(unittest.TestCase):
         self.assertEqual(display_width('中国'), 4)
         self.assertEqual(len(pad_column('冲', 4)), 3)
 
-    def test_volunteer_item_block_contains_key_fields(self):
+    def test_each_volunteer_has_exactly_four_lines(self):
+        lines = format_volunteer_item_block({
+            'sort_order': 45,
+            'gradient_type': '保',
+            'school_code': '10240',
+            'school_name': '哈尔滨商业大学',
+            'major_code': '020301K',
+            'major_name': '金融学（中外合作办学）',
+            'admission_score_2025': None,
+            'admission_rank_2025': None,
+            'city': '哈尔滨市',
+            'tuition': 3500,
+            'duration': '四年',
+            'is_adjustable': 1,
+            'risk_level': '低',
+            'risk_reason': '当前志愿结构相对稳妥，仍需以考试院和高校官方信息为准。',
+        })
+        self.assertEqual(len(lines), 4)
+        self.assertTrue(lines[0].startswith('【45】保'))
+        self.assertTrue(lines[1].startswith('专业：'))
+        self.assertIn('风险：低', lines[2])
+        self.assertIn('调剂：是', lines[2])
+        self.assertTrue(lines[3].startswith('说明：'))
+
+    def test_risk_on_third_line_not_split(self):
         lines = format_volunteer_item_block({
             'sort_order': 1,
             'gradient_type': '冲',
@@ -30,54 +55,12 @@ class PdfServiceTests(unittest.TestCase):
             'risk_level': '中',
             'risk_reason': '院校往年录取位次高于当前位次，建议保留稳妥志愿兜底。',
         })
-        merged = '\n'.join(lines)
-        self.assertIn('【1】冲', merged)
-        self.assertIn('653', merged)
-        self.assertIn('2100', merged)
-        self.assertIn('6600', merged)
-        self.assertIn('四年', merged)
+        self.assertIn('风险：中', lines[2])
+        self.assertNotIn('险：', lines[3])
 
-    def test_risk_label_not_split_across_lines(self):
-        lines = format_volunteer_item_block({
-            'sort_order': 45,
-            'gradient_type': '保',
-            'school_code': '10240',
-            'school_name': '哈尔滨商业大学',
-            'major_code': '020301K',
-            'major_name': '金融学（中外合作办学）',
-            'admission_score_2025': None,
-            'admission_rank_2025': None,
-            'city': '哈尔滨市',
-            'tuition': 3500,
-            'duration': '四年',
-            'is_adjustable': 1,
-            'risk_level': '低',
-        })
-        for line in lines:
-            self.assertFalse(line.endswith('风'))
-            self.assertNotEqual(line.strip(), '险：低')
-            if '风险' in line:
-                self.assertIn('风险：低', line)
-
-    def test_long_major_wraps_without_breaking_other_fields(self):
-        lines = format_volunteer_item_block({
-            'sort_order': 4,
-            'gradient_type': '冲',
-            'school_code': '10054',
-            'school_name': '华北电力大学',
-            'major_code': '120201',
-            'major_name': '工商管理（含会计学、财务管理、市场营销等多个专业方向，保定校区就读）',
-            'admission_score_2025': None,
-            'admission_rank_2025': None,
-            'city': '北京市',
-            'tuition': 5000,
-            'duration': '四年',
-            'is_adjustable': 1,
-            'risk_level': '中',
-        })
-        merged = '\n'.join(lines)
-        self.assertIn('2025录取：暂无分 / 位次暂无', merged)
-        self.assertIn('城市：北京市', merged)
+    def test_truncate_display_text(self):
+        text = truncate_display_text('一二三四五六七八九十', 8)
+        self.assertLessEqual(display_width(text), 8)
 
     def test_build_draft_pdf_returns_landscape_bytes(self):
         pdf = build_draft_pdf(

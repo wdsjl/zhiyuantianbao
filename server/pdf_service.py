@@ -219,7 +219,24 @@ def format_pdf_value(value: Any, fallback: str = '暂无') -> str:
     return pdf_text(value)
 
 
+def truncate_display_text(value: Any, max_width: int, suffix: str = '…') -> str:
+    text = pdf_text(value)
+    if display_width(text) <= max_width:
+        return text
+    suffix_width = display_width(suffix)
+    kept = ''
+    kept_width = 0
+    for char in text:
+        char_width = 2 if ord(char) > 127 else 1
+        if kept_width + char_width + suffix_width > max_width:
+            break
+        kept += char
+        kept_width += char_width
+    return f'{kept}{suffix}'
+
+
 def format_volunteer_item_block(item: dict[str, Any], line_width: int = LANDSCAPE_LINE_WIDTH) -> list[str]:
+    """每条志愿固定 4 行：院校 / 专业 / 录取信息含风险 / 说明。"""
     school_name = format_pdf_value(item.get('school_name'))
     school_code = format_pdf_value(item.get('school_code'), '')
     major_name = format_pdf_value(item.get('major_name'))
@@ -234,24 +251,21 @@ def format_volunteer_item_block(item: dict[str, Any], line_width: int = LANDSCAP
     duration = format_pdf_value(item.get('duration'))
     adjustable = '是' if item.get('is_adjustable') else '否'
     risk_level = format_pdf_value(item.get('risk_level'))
+    risk_reason = format_pdf_value(item.get('risk_reason'), '暂无说明')
 
-    stats_segments = [
-        f'2025录取：{score_2025}分 / 位次{rank_2025}',
-        f'城市：{city}',
-        f'学费：{tuition}',
-        f'学制：{duration}',
-        f'调剂：{adjustable}',
-        f'风险：{risk_level}',
-    ]
-
-    rendered: list[str] = []
-    rendered.extend(wrap_display_text(f'【{item.get("sort_order", "")}】{item.get("gradient_type", "")}  {school}', line_width))
-    rendered.extend(wrap_display_text(f'专业：{major}', line_width))
-    rendered.extend(wrap_display_segments(stats_segments, line_width))
-    if item.get('risk_reason'):
-        rendered.extend(wrap_display_text(f'说明：{item.get("risk_reason")}', line_width))
-    rendered.append('—' * min(line_width, 48))
-    return rendered
+    line1 = truncate_display_text(
+        f'【{item.get("sort_order", "")}】{item.get("gradient_type", "")}  {school}',
+        line_width,
+    )
+    line2 = truncate_display_text(f'专业：{major}', line_width)
+    line3 = truncate_display_text(
+        f'2025录取：{score_2025}分/位次{rank_2025}  '
+        f'城市：{city}  学费：{tuition}  学制：{duration}  '
+        f'调剂：{adjustable}  风险：{risk_level}',
+        line_width,
+    )
+    line4 = truncate_display_text(f'说明：{risk_reason}', line_width)
+    return [line1, line2, line3, line4]
 
 
 def build_pdf(lines: list[str], *, landscape: bool = False) -> bytes:
@@ -349,12 +363,13 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
         f'省份：{draft.get("province", "")}    年份：{draft.get("year", "")}    批次：{draft.get("batch", "")}',
         '',
         '三、志愿明细',
-        '每条志愿独立成块展示，含 2025 年录取分数与位次（暂无表示库中无该年数据）。',
+        '每条志愿固定 4 行：院校 / 专业 / 2025录取与风险 / 说明。',
         '',
     ])
-    for item in items:
+    for index, item in enumerate(items):
         lines.extend(format_volunteer_item_block(item))
-        lines.append('')
+        if index < len(items) - 1:
+            lines.append('')
     if draft.get('ai_explain'):
         lines.extend(['', '四、AI 志愿方案解读'])
         for paragraph in append_ai_generated_notice(str(draft.get('ai_explain') or '')).splitlines():
