@@ -58,8 +58,20 @@
   margin: 18rpx 0;
 }
 
-.ai-explain-card {
-  border: 2rpx solid #d7f5e8;
+.ai-explain-section {
+  border: 2rpx solid #ffd591;
+  background: #fffdf8;
+}
+
+.ai-explain-btn {
+  margin-top: 12rpx;
+  width: 100%;
+}
+
+.ai-explain-result {
+  margin-top: 20rpx;
+  padding-top: 8rpx;
+  border-top: 1rpx dashed #ffd591;
 }
 
 .ai-explain-text {

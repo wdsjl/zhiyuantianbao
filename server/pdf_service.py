@@ -78,8 +78,8 @@ def ensure_report_greeting(body: str, student: dict) -> str:
     return f'{build_report_greeting(student)}\n\n{content}'
 
 
-AI_GENERATED_NOTICE = '人工智能生成'
-AI_GENERATED_MARKERS = (AI_GENERATED_NOTICE, 'AI生成')
+AI_GENERATED_NOTICE = 'AI生成 · 人工智能生成'
+AI_GENERATED_MARKERS = ('人工智能生成', 'AI生成')
 
 
 def append_ai_generated_notice(text: str) -> str:

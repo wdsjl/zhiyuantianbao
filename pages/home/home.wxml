@@ -72,7 +72,7 @@
       <view class="sub-text">{{flow.currentStep.title}}</view>
     </view>
     <view class="action-card" bindtap="goStudentReport">
-      <ai-generated-label />
+      <ai-generated-label compact />
       <view class="action-title">个性化报告</view>
       <view class="sub-text">分数+性格+需求，AI 专属报告</view>
     </view>
