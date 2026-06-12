@@ -52,6 +52,7 @@ from crawler_service import (
     default_recent_years, run_crawl_job, crawl_all_provinces, has_running_crawl,
 )
 from crawler_config import get_preset
+from henan_admission_crawler_service import run_henan_admission_crawl, run_henan_preset_job
 from admin_auth_service import (
     ensure_admin_auth, verify_session_token, verify_admin_credentials,
     create_session_token, session_cookie_options, ADMIN_SESSION_COOKIE, change_admin_password,
@@ -257,6 +258,29 @@ def admin_crawler_run(
         return RedirectResponse(f'/admin/crawler?message={quote(message)}', status_code=303)
     except Exception as exc:
         return RedirectResponse(f'/admin/crawler?message={quote(f"采集失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/crawler/henan')
+def admin_crawler_henan(background_tasks: BackgroundTasks, mode: str = Form('full')):
+    try:
+        if has_running_crawl('河南'):
+            return RedirectResponse('/admin/crawler?message=' + quote('河南已有采集任务在运行'), status_code=303)
+
+        def job() -> None:
+            try:
+                if mode == 'trial':
+                    run_henan_admission_crawl(school_limit=20)
+                else:
+                    run_henan_preset_job()
+            except Exception:
+                pass
+
+        background_tasks.add_task(job)
+        label = '试跑（20校×近三年）' if mode == 'trial' else '近三年全量'
+        message = f'河南录取数据「{label}」采集任务已在后台启动，请在采集日志查看进度'
+        return RedirectResponse(f'/admin/crawler?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/crawler?message={quote(f"启动失败：{exc}")}', status_code=303)
 
 
 @app.post('/admin/crawler/schools')

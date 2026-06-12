@@ -17,6 +17,7 @@ from admin_data_service import (
 )
 from crawler_config import PROVINCE_IDS, REGION_ORDER, CRAWL_PRESETS
 from crawler_service import list_crawl_logs, get_crawl_log, default_recent_years, get_province_data_overview, has_running_crawl
+from henan_admission_crawler_service import get_henan_admission_summary, cli_command_full, cli_command_trial
 
 
 def render_page(title: str, body: str) -> HTMLResponse:
@@ -297,10 +298,29 @@ def admin_home():
 def admin_crawler(message: str = '', crawl_id: int | None = None):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     recent_years = default_recent_years(3)
+    henan_summary = get_henan_admission_summary()
+    henan_year_rows = ''
+    for row in henan_summary.get('year_stats') or []:
+        henan_year_rows += f'''
+          <tr>
+            <td>{row.get("year", "")}</td>
+            <td>{row.get("admission_count", 0)}</td>
+            <td>{row.get("plan_count", 0)}</td>
+            <td>{row.get("school_count", 0)}</td>
+            <td>{row.get("score_count", 0)}</td>
+            <td>{row.get("rank_count", 0)}</td>
+            <td>{row.get("admitted_count", 0)}</td>
+          </tr>
+        '''
+    if not henan_year_rows:
+        henan_year_rows = '<tr><td colspan="7" class="muted">暂无河南录取数据，请点击下方按钮开始采集</td></tr>'
+    running_any = has_running_crawl()
+    henan_running = henan_summary.get('is_running')
+    henan_disabled = 'disabled' if henan_running or running_any else ''
+    henan_totals = henan_summary.get('totals') or {}
     overview = get_province_data_overview()
     configured_count = len(overview)
     ready_count = sum(1 for item in overview if item['admission_count'] > 0)
-    running_any = has_running_crawl()
     province_options = ''.join(
         f'<option value="{escape(name)}">{escape(name)}</option>' for name in PROVINCE_IDS
     )
@@ -399,6 +419,43 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
     running_hint = '<p class="muted">当前有采集任务在后台运行，相关省份按钮已暂时禁用。</p>' if running_any else ''
     body = f'''
       {detail_html}
+      <div class="card">
+        <h2>河南录取数据（近三年全量）</h2>
+        <p class="muted">
+          采集全国高校在<strong>河南省</strong>的录取分数、录取位次、录取人数、招生计划、选科要求、学费、学制等志愿填报相关数据。
+          默认覆盖最近 3 个录取年份（{", ".join(str(year) for year in henan_summary.get("years") or recent_years)}）。
+        </p>
+        <div class="grid">
+          <div><div class="muted">录取记录</div><div class="stat">{henan_totals.get("admission_count", 0)}</div></div>
+          <div><div class="muted">招生计划</div><div class="stat">{henan_totals.get("plan_count", 0)}</div></div>
+          <div><div class="muted">含分数</div><div class="stat">{henan_totals.get("score_count", 0)}</div></div>
+          <div><div class="muted">含位次</div><div class="stat">{henan_totals.get("rank_count", 0)}</div></div>
+        </div>
+        <table style="margin-top:16px">
+          <thead>
+            <tr>
+              <th>年份</th><th>录取记录</th><th>招生计划</th><th>院校数</th><th>含分数</th><th>含位次</th><th>含录取人数</th>
+            </tr>
+          </thead>
+          <tbody>{henan_year_rows}</tbody>
+        </table>
+        <div class="toolbar" style="margin-top:16px">
+          <form method="post" action="/admin/crawler/henan" style="display:inline">
+            <input type="hidden" name="mode" value="full" />
+            <button type="submit" {henan_disabled}>河南近三年全量采集</button>
+          </form>
+          <form method="post" action="/admin/crawler/henan" style="display:inline">
+            <input type="hidden" name="mode" value="trial" />
+            <button type="submit" class="btn-muted" {henan_disabled}>河南试跑（20校×3年）</button>
+          </form>
+          <a class="button btn-muted" href="/admin/admissions?province=河南">查看河南录取数据</a>
+        </div>
+        <p class="muted" style="margin-top:12px">
+          命令行全量：<code>cd server && {escape(cli_command_full())}</code><br>
+          命令行试跑：<code>cd server && {escape(cli_command_trial())}</code>
+        </p>
+        <p class="muted">最近采集：{escape(str(henan_summary.get("last_success_at") or henan_summary.get("last_crawl_at") or "—"))}</p>
+      </div>
       <div class="card">
         <h2>全国省份采集配置</h2>
         {message_html}
