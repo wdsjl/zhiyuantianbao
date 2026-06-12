@@ -432,18 +432,6 @@ Page({
         this.setData({ aiLoading: false });
       });
   },
-  copyAiExplain() {
-    if (!this.data.aiExplain) {
-      wx.showToast({ title: '暂无可复制内容', icon: 'none' });
-      return;
-    }
-    wx.setClipboardData({
-      data: this.data.aiExplain,
-      success: () => {
-        wx.showToast({ title: '已复制解读', icon: 'success' });
-      }
-    });
-  },
   generatePlanPdf() {
     requirePermission('pdf_export', 'PDF 志愿表导出', { consume: true }).then((allowed) => {
       if (!allowed) return;

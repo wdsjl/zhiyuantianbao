@@ -37,10 +37,8 @@
     <button class="secondary-btn ai-explain-btn" loading="{{aiLoading}}" bindtap="explainPlan">{{aiExplain ? '重新生成 AI 解读' : 'AI 志愿解读'}}</button>
     <view wx:if="{{aiExplain}}" class="ai-explain-result">
       <ai-generated-label />
-      <view class="ai-explain-text">{{aiExplain}}</view>
-      <view class="ai-action-row">
-        <button class="secondary-btn" bindtap="copyAiExplain">复制解读</button>
-      </view>
+      <view class="ai-explain-text" selectable="false">{{aiExplain}}</view>
+      <view class="sub-text ai-export-tip">解读内容请通过下方「保存草稿 → ① 生成PDF → ② 发送微信」下载保存，不支持复制。</view>
     </view>
     <view class="warn-box">AI 解读仅供辅助理解，不能替代各省教育考试院、高校招生章程和正式填报系统。</view>
   </view>

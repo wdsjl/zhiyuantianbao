@@ -92,7 +92,14 @@
   white-space: pre-wrap;
   line-height: 1.8;
   color: #344054;
-  margin-bottom: 20rpx;
+  margin-bottom: 12rpx;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ai-export-tip {
+  margin-bottom: 8rpx;
+  color: #667085;
 }
 
 .ai-action-row {
