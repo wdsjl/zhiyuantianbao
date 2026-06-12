@@ -74,6 +74,7 @@
     </view>
     <view class="sub-text">{{item.city}} · {{item.schoolType}} · {{item.duration}} · {{item.tuition}}元/年</view>
     <view class="major-line">专业：{{item.majorName}}（{{item.majorCode}}）</view>
+    <view class="admission-ref">2025年录取参考：{{item.admissionScore2025 || '--'}} 分 / 位次 {{item.admissionRank2025 || '--'}}</view>
     <view wx:if="{{item.admissionProbability}}" class="sub-text">录取概率参考：{{item.admissionProbability}}</view>
     <view wx:if="{{item.personalityMatched}}" class="match-badge">与性格测评推荐专业大类匹配：{{item.majorType}}</view>
     <view class="adjust-row">

@@ -22,6 +22,8 @@ class PdfServiceTests(unittest.TestCase):
             'school_name': '中国海洋大学',
             'major_code': '120204',
             'major_name': '财务管理',
+            'admission_score_2025': 653,
+            'admission_rank_2025': 2100,
             'city': '青岛市',
             'tuition': 6600,
             'duration': '四年',
@@ -30,6 +32,8 @@ class PdfServiceTests(unittest.TestCase):
         })
         self.assertEqual(len(row_lines), 1)
         line = row_lines[0]
+        self.assertIn('653', line)
+        self.assertIn('2100', line)
         self.assertIn('6600', line)
         self.assertIn('四年', line)
         self.assertIn('是', line)
@@ -52,6 +56,8 @@ class PdfServiceTests(unittest.TestCase):
                 'is_adjustable': 1,
                 'risk_level': '中',
                 'risk_reason': '院校往年录取位次高于当前位次，建议保留稳妥志愿兜底。',
+                'admission_score_2025': 653,
+                'admission_rank_2025': 2100,
             }],
         )
         self.assertTrue(pdf.startswith(b'%PDF'))

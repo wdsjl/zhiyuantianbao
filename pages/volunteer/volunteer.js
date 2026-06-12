@@ -47,7 +47,9 @@ function normalizePlan(items) {
     schoolType: item.school_type,
     isAdjustable: item.is_adjustable,
     riskLevel: item.risk_level,
-    riskReason: item.risk_reason
+    riskReason: item.risk_reason,
+    admissionScore2025: item.admission_score_2025,
+    admissionRank2025: item.admission_rank_2025
   }));
 }
 
@@ -67,7 +69,9 @@ function toApiItem(item, index) {
     duration: item.duration,
     is_adjustable: item.isAdjustable,
     risk_level: item.riskLevel,
-    risk_reason: item.riskReason
+    risk_reason: item.riskReason,
+    admission_score_2025: item.admissionScore2025,
+    admission_rank_2025: item.admissionRank2025
   };
 }
 

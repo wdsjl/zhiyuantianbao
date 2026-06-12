@@ -92,6 +92,8 @@ class DraftItem(BaseModel):
     is_adjustable: bool = True
     risk_level: Optional[str] = None
     risk_reason: Optional[str] = None
+    admission_score_2025: Optional[int] = None
+    admission_rank_2025: Optional[int] = None
 
 
 class DraftCreateRequest(BaseModel):

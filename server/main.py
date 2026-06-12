@@ -25,7 +25,12 @@ from student_report_service import (
 from province_rules_service import (
     ensure_province_rules_seeded, resolve_volunteer_slots, summarize_province_rules,
 )
-from recommend_service import fetch_recommendation_candidates, save_auto_recommendation_draft
+from recommend_service import (
+    attach_admission_year_stats,
+    ensure_draft_item_admission_columns,
+    fetch_recommendation_candidates,
+    save_auto_recommendation_draft,
+)
 from personality_service import (
     ensure_personality_tables, save_assessment, get_latest_assessment, save_ai_career_report,
     build_personality_ai_context, build_career_report_prompt,
@@ -106,6 +111,7 @@ def ensure_draft_ai_column() -> None:
 
 
 ensure_draft_ai_column()
+ensure_draft_item_admission_columns()
 ensure_membership_tables()
 ensure_payment_tables()
 ensure_admin_auth()
@@ -2048,6 +2054,8 @@ def recommend(request: RecommendRequest):
             'risk_reason': get_risk_reason(gradient_type, is_adjustable)
         })
 
+    items = attach_admission_year_stats(items, request.province, effective_batch)
+
     risk = inspect_plan_risk(items)
     draft_id = None
     if request.student_id and request.auto_save_draft and items:
@@ -2345,13 +2353,14 @@ def create_draft(request: DraftCreateRequest):
                 INSERT INTO volunteer_draft_items (
                   draft_id, sort_order, gradient_type, school_id, school_name, school_code,
                   major_id, major_name, major_code, city, school_type, tuition, duration,
-                  is_adjustable, risk_level, risk_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  is_adjustable, risk_level, risk_reason, admission_score_2025, admission_rank_2025
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 [
                     draft_id, item.sort_order, item.gradient_type, item.school_id, item.school_name, item.school_code,
                     item.major_id, item.major_name, item.major_code, item.city, item.school_type, item.tuition,
-                    item.duration, 1 if item.is_adjustable else 0, item.risk_level, item.risk_reason
+                    item.duration, 1 if item.is_adjustable else 0, item.risk_level, item.risk_reason,
+                    getattr(item, 'admission_score_2025', None), getattr(item, 'admission_rank_2025', None),
                 ]
             )
         connection.commit()
@@ -2380,13 +2389,14 @@ def update_draft(draft_id: int, request: DraftUpdateRequest):
                 INSERT INTO volunteer_draft_items (
                   draft_id, sort_order, gradient_type, school_id, school_name, school_code,
                   major_id, major_name, major_code, city, school_type, tuition, duration,
-                  is_adjustable, risk_level, risk_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  is_adjustable, risk_level, risk_reason, admission_score_2025, admission_rank_2025
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 [
                     draft_id, item.sort_order, item.gradient_type, item.school_id, item.school_name, item.school_code,
                     item.major_id, item.major_name, item.major_code, item.city, item.school_type, item.tuition,
-                    item.duration, 1 if item.is_adjustable else 0, item.risk_level, item.risk_reason
+                    item.duration, 1 if item.is_adjustable else 0, item.risk_level, item.risk_reason,
+                    getattr(item, 'admission_score_2025', None), getattr(item, 'admission_rank_2025', None),
                 ]
             )
         connection.commit()
@@ -2407,6 +2417,7 @@ def export_draft_pdf(draft_id: int, student_id: int):
             'SELECT * FROM volunteer_draft_items WHERE draft_id = ? ORDER BY sort_order ASC',
             [draft_id]
         ).fetchall())
+    items = attach_admission_year_stats(items, draft.get('province') or '', draft.get('batch') or '')
     pdf = build_draft_pdf(draft, student or {}, items)
     filename = build_student_pdf_filename(student or {}, 'volunteer_draft')
     return _pdf_response(pdf, filename)

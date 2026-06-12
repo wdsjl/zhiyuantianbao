@@ -190,11 +190,13 @@ def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
 VOLUNTEER_TABLE_COLUMNS: tuple[tuple[str, int], ...] = (
     ('序号', 4),
     ('梯度', 4),
-    ('院校代码/名称', 24),
-    ('专业代码/名称', 24),
-    ('城市', 10),
-    ('学费', 8),
-    ('学制', 6),
+    ('院校代码/名称', 20),
+    ('专业代码/名称', 20),
+    ('2025分数', 7),
+    ('2025位次', 8),
+    ('城市', 8),
+    ('学费', 7),
+    ('学制', 5),
     ('调剂', 4),
     ('风险', 4),
 )
@@ -207,19 +209,23 @@ def format_volunteer_table_header() -> str:
 def format_volunteer_table_row(item: dict[str, Any]) -> list[str]:
     school = f'{item.get("school_code", "")}/{item.get("school_name", "")}'.strip('/')
     major = f'{item.get("major_code", "")}/{item.get("major_name", "")}'.strip('/')
-    school_lines = wrap_display_text(school, 24)
-    major_lines = wrap_display_text(major, 24)
+    score_2025 = item.get('admission_score_2025', '')
+    rank_2025 = item.get('admission_rank_2025', '')
+    school_lines = wrap_display_text(school, 20)
+    major_lines = wrap_display_text(major, 20)
     row_count = max(len(school_lines), len(major_lines), 1)
     rendered: list[str] = []
     for index in range(row_count):
         row_cells = [
             (item.get('sort_order', '') if index == 0 else '', 4),
             (item.get('gradient_type', '') if index == 0 else '', 4),
-            (school_lines[index] if index < len(school_lines) else '', 24),
-            (major_lines[index] if index < len(major_lines) else '', 24),
-            (item.get('city', '') if index == 0 else '', 10),
-            (item.get('tuition', '') if index == 0 else '', 8),
-            (item.get('duration', '') if index == 0 else '', 6),
+            (school_lines[index] if index < len(school_lines) else '', 20),
+            (major_lines[index] if index < len(major_lines) else '', 20),
+            (score_2025 if index == 0 else '', 7),
+            (rank_2025 if index == 0 else '', 8),
+            (item.get('city', '') if index == 0 else '', 8),
+            (item.get('tuition', '') if index == 0 else '', 7),
+            (item.get('duration', '') if index == 0 else '', 5),
             ('是' if item.get('is_adjustable') else '否' if index == 0 else '', 4),
             (item.get('risk_level', '') if index == 0 else '', 4),
         ]
@@ -323,7 +329,7 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
         '',
         '三、志愿明细（横向表格）',
         format_volunteer_table_header(),
-        '-' * 88,
+        '-' * 97,
     ])
     for item in items:
         lines.extend(format_volunteer_table_row(item))
