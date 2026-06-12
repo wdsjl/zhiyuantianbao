@@ -249,6 +249,16 @@ Page({
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
         const strategyMeta = res.strategy || null;
+        if (strategyMeta && res.algorithm_version) {
+          strategyMeta.algorithm_version = res.algorithm_version;
+        }
+        if (strategyMeta && strategyMeta.rank_hint) {
+          wx.showModal({
+            title: '位次核对提示',
+            content: strategyMeta.rank_hint,
+            showCancel: false
+          });
+        }
         const provinceRule = (strategyMeta && strategyMeta.volunteer_rule) || this.data.provinceRule;
         const targetCount = provinceRule && (provinceRule.total_slots || provinceRule.school_count);
         const toastTitle = targetCount

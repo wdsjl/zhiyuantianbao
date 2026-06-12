@@ -1968,6 +1968,25 @@ def recommend(request: RecommendRequest):
             user_rank = estimated
             segment = detect_segment(user_rank, province_total_rank, effective_batch)
 
+    user_score = int(request.score) if request.score else None
+    strategy_rank_hint = ''
+    if user_score and user_rank > 0:
+        try:
+            from score_segment_service import lookup_rank_by_score
+            expected_rank = lookup_rank_by_score(
+                request.province,
+                user_score,
+                year=2026,
+                batch=request.batch,
+            )
+            if expected_rank and abs(expected_rank - user_rank) > max(5000, int(user_rank * 0.5)):
+                strategy_rank_hint = (
+                    f'档案位次 {user_rank} 与一分一段表推算位次 {expected_rank} 差距较大，'
+                    '建议核对档案或重新导入一分一段表。'
+                )
+        except ImportError:
+            pass
+
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
         user_rank=user_rank,
@@ -1976,7 +1995,10 @@ def recommend(request: RecommendRequest):
         segment=segment,
         total_slots=total_slots,
         max_majors_per_school=province_rule.get('major_count_per_school'),
+        user_score=user_score,
     )
+    if strategy_rank_hint:
+        strategy_meta['rank_hint'] = strategy_rank_hint
     strategy_meta['volunteer_rule'] = {
         'province': province_rule.get('province') or request.province,
         'batch': province_rule.get('batch') or effective_batch,
@@ -2047,6 +2069,7 @@ def recommend(request: RecommendRequest):
         'risk': risk,
         'strategy': strategy_meta,
         'algorithm': strategy_meta.get('algorithm'),
+        'algorithm_version': strategy_meta.get('algorithm_version'),
         'generation': {
             'target_slots': total_slots,
             'generated_count': len(items),

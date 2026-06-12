@@ -4,6 +4,8 @@ from rank_strategy_service import (
     assemble_recommendation_plan,
     classify_gradient,
     filter_rank_eligible_candidates,
+    is_candidate_match_for_user,
+    is_plausible_admission_pair,
     resolve_school_rank,
 )
 
@@ -83,6 +85,36 @@ class RankStrategyServiceTests(unittest.TestCase):
     def test_resolve_school_rank_prefers_weighted(self):
         item = {'weighted_rank': 1500, 'min_rank': 3000}
         self.assertEqual(resolve_school_rank(item), 1500)
+
+    def test_reject_implausible_score_rank_pair(self):
+        self.assertFalse(is_plausible_admission_pair(2500, 480))
+        self.assertFalse(is_plausible_admission_pair(85000, 680))
+
+    def test_high_score_user_rejects_xijing_dirty_data(self):
+        dirty = _candidate(3, 3, '西京学院', 2500)
+        dirty['min_score'] = 480
+        dirty['weighted_score'] = 480
+        self.assertFalse(is_candidate_match_for_user(dirty, 2000, 693, 'high', '本科批'))
+
+    def test_assemble_excludes_dirty_low_score_schools(self):
+        candidates = [
+            _candidate(i, i, f'名校{i}', 1800 + i * 20)
+            for i in range(1, 12)
+        ]
+        dirty = _candidate(99, 99, '西京学院', 2500)
+        dirty['min_score'] = 480
+        dirty['weighted_score'] = 480
+        candidates.append(dirty)
+        selected, _ = assemble_recommendation_plan(
+            candidates,
+            user_rank=2000,
+            user_score=693,
+            batch='本科批',
+            segment='high',
+            total_slots=9,
+        )
+        names = {row['school_name'] for row in selected}
+        self.assertNotIn('西京学院', names)
 
 
 if __name__ == '__main__':

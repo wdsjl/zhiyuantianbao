@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+ALGORITHM_VERSION = '2026-03-score-rank-dual-v2'
+
 PLAN_STYLES: dict[str, dict[str, int]] = {
     'balanced': {'冲': 2, '稳': 5, '保': 2},
     'aggressive': {'冲': 3, '稳': 4, '保': 2},
@@ -83,6 +85,67 @@ def resolve_school_rank(item: dict[str, Any]) -> int | None:
         return None
 
 
+def resolve_school_score(item: dict[str, Any]) -> int | None:
+    score = item.get('weighted_score')
+    if score is None:
+        score = item.get('min_score')
+    if score is None:
+        return None
+    try:
+        return int(score)
+    except (TypeError, ValueError):
+        return None
+
+
+def is_plausible_admission_pair(rank: int | None, score: int | None) -> bool:
+    """剔除分数与位次明显矛盾的脏数据（如 480 分却标位次 2000）。"""
+    if rank is None or rank <= 0:
+        return False
+    if score is None:
+        return True
+    if score >= 650 and rank > 12000:
+        return False
+    if score >= 620 and rank > 30000:
+        return False
+    if score >= 580 and rank > 60000:
+        return False
+    if score <= 520 and rank < 25000:
+        return False
+    if score <= 450 and rank < 50000:
+        return False
+    return True
+
+
+def is_candidate_match_for_user(
+    item: dict[str, Any],
+    user_rank: int,
+    user_score: int | None = None,
+    segment: str = 'mid',
+    batch: str = '',
+) -> bool:
+    school_rank = resolve_school_rank(item)
+    school_score = resolve_school_score(item)
+    if not is_plausible_admission_pair(school_rank, school_score):
+        return False
+    if not user_rank or user_rank <= 0:
+        return school_rank is not None
+
+    coeffs = get_band_coefficients(segment, batch)
+    max_rank = int(user_rank * coeffs['保'][1] * 1.35)
+    if school_rank is not None and school_rank > max_rank:
+        return False
+
+    if user_score and user_score >= 600 and school_score is not None:
+        if school_score < user_score - 90:
+            return False
+        if user_score >= 650 and school_score < user_score - 60:
+            return False
+    if user_score and user_score >= 650 and school_rank is not None:
+        if school_rank > int(user_rank * 2.2):
+            return False
+    return True
+
+
 def rank_distance(school_rank: int | None, user_rank: int) -> float:
     if school_rank is None or not user_rank or user_rank <= 0:
         return float('inf')
@@ -113,9 +176,14 @@ def filter_rank_eligible_candidates(
     segment: str = 'mid',
     batch: str = '',
     *,
+    user_score: int | None = None,
     min_required: int = 0,
 ) -> list[dict[str, Any]]:
-    with_rank = [item for item in candidates if resolve_school_rank(item) is not None]
+    with_rank = [
+        item for item in candidates
+        if resolve_school_rank(item) is not None
+        and is_candidate_match_for_user(item, user_rank, user_score, segment, batch)
+    ]
     if not user_rank or user_rank <= 0:
         return with_rank
 
@@ -128,7 +196,7 @@ def filter_rank_eligible_candidates(
         return filtered
 
     coeffs = get_band_coefficients(segment, batch)
-    widened_upper = int(user_rank * coeffs['保'][1] * 1.50)
+    widened_upper = int(user_rank * coeffs['保'][1] * 1.25)
     return [
         item for item in with_rank
         if lower <= int(resolve_school_rank(item) or 0) <= widened_upper
@@ -222,7 +290,8 @@ def build_strategy_meta(
             'bao': [int(user_rank * coeffs['保'][0]), int(user_rank * coeffs['保'][1])],
         },
         'pool_rank_window': [pool_lower, pool_upper],
-        'algorithm': '位次冲稳保：按全省位次 X 与分段系数划分，近三年录取位次加权，候选池先按位次窗口过滤',
+        'algorithm': '位次+分数双校验冲稳保：位次系数划分冲稳保，分数与位次矛盾数据剔除',
+        'algorithm_version': ALGORITHM_VERSION,
         'ai_prompt_hint': AI_STRATEGY_PROMPT,
     }
 
@@ -235,6 +304,7 @@ def assemble_recommendation_plan(
     segment: str = 'mid',
     total_slots: int = 9,
     max_majors_per_school: int | None = None,
+    user_score: int | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     quotas = get_plan_quotas(plan_style, batch, total_slots)
     eligible = filter_rank_eligible_candidates(
@@ -242,6 +312,7 @@ def assemble_recommendation_plan(
         user_rank,
         segment,
         batch,
+        user_score=user_score,
         min_required=total_slots,
     )
     backfill_cap = get_backfill_rank_cap(user_rank, segment, batch)
@@ -296,10 +367,13 @@ def assemble_recommendation_plan(
         pick_from_bucket(gradient, quotas.get(gradient, 0))
 
     if len(selected) < total_slots:
-        for gradient in ('稳', '保', '垫', '冲'):
+        backfill_gradients = ('稳', '保', '冲') if not is_zhuanke_batch(batch) else ('稳', '保', '垫', '冲')
+        for gradient in backfill_gradients:
             for row in buckets[gradient]:
                 if len(selected) >= total_slots:
                     break
+                if not is_candidate_match_for_user(row, user_rank, user_score, segment, batch):
+                    continue
                 school_rank = resolve_school_rank(row)
                 if school_rank is not None and school_rank > backfill_cap:
                     continue
@@ -310,6 +384,10 @@ def assemble_recommendation_plan(
                 used_keys.add(key)
                 record_pick(row)
 
+    selected = [
+        row for row in selected
+        if is_candidate_match_for_user(row, user_rank, user_score, segment, batch)
+    ]
     selected.sort(
         key=lambda row: (
             {'冲': 0, '稳': 1, '保': 2, '垫': 3}.get(row.get('gradient_type', '稳'), 9),

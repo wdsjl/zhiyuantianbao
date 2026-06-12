@@ -1,8 +1,12 @@
 <view class="container">
   <view class="tab-row">
     <text class="tab-item {{activeTab === 'schools' ? 'active' : ''}}" data-tab="schools" bindtap="switchTab">院校</text>
-    <text class="tab-item {{activeTab === 'query' ? 'active' : ''}}" data-tab="query" bindtap="switchTab">查位次</text>
+    <text class="tab-item {{activeTab === 'query' ? 'active' : ''}}" data-tab="query" bindtap="switchTab">分数/位次</text>
     <text class="tab-item {{activeTab === 'announcements' ? 'active' : ''}}" data-tab="announcements" bindtap="switchTab">招生公告</text>
+  </view>
+
+  <view wx:if="{{activeTab === 'schools'}}" class="hint-banner" bindtap="switchTab" data-tab="query">
+    <text>想查分数对应位次？点这里 →「分数/位次」</text>
   </view>
 
   <block wx:if="{{activeTab === 'schools'}}">
