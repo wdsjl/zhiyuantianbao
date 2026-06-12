@@ -7,7 +7,7 @@ from typing import Any
 from db import get_connection, row_to_dict, rows_to_dicts
 
 ATTACHMENT_EXTENSIONS = ('.pdf', '.xls', '.xlsx', '.csv', '.doc', '.docx', '.zip')
-KEYWORDS = ('招生', '计划', '章程', '录取', '分数', '专业', '选科', '简章')
+KEYWORDS = ('招生', '计划', '章程', '录取', '分数', '专业', '选科', '简章', '公告', '2026')
 
 
 def ensure_fetch_tables() -> None:

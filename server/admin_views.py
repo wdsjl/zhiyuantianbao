@@ -75,6 +75,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
         <a href="/admin">首页</a>
         <a href="/admin/import">数据导入</a>
         <a href="/admin/crawler">数据采集</a>
+        <a href="/admin/announcements">招生公告</a>
         <a href="/admin/import/logs">导入日志</a>
         <a href="/admin/schools">院校数据</a>
         <a href="/admin/students">学生档案</a>
@@ -307,7 +308,7 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
     year_checks = ''.join(
         f'<label style="display:inline-flex;align-items:center;gap:6px;margin-right:14px">'
         f'<input type="checkbox" name="years" value="{year}"{" checked" if year in recent_years else ""} /> {year}年</label>'
-        for year in sorted(recent_years + [2022, 2021], reverse=True)
+        for year in sorted({*recent_years, 2026, 2025, 2022, 2021}, reverse=True)
     )
     province_sections = ''
     for region in REGION_ORDER:
@@ -341,6 +342,7 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
                     <input type="hidden" name="preset" value="full_recent_3y" />
                     <button type="submit" class="btn-sm" {disabled}>近三年全量</button>
                   </form>
+                  {'<form method="post" action="/admin/crawler/quick" style="display:inline"><input type="hidden" name="province" value="' + escape(item["name"]) + '" /><input type="hidden" name="preset" value="plan_2026" /><button type="submit" class="btn-sm btn-muted" ' + disabled + '>2026计划</button></form>' if item["name"] == "河南" else ""}
                   <a class="button btn-sm btn-muted" href="/admin/admissions?province={escape(item["name"])}">查看数据</a>
                 </td>
               </tr>
@@ -450,6 +452,132 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
       </div>
     '''
     return render_page('数据采集', body)
+
+
+def admin_announcements(keyword: str = '', review_status: str = '', message: str = ''):
+    from announcement_crawler_service import (
+        get_announcement_stats,
+        list_announcement_logs,
+        search_announcements,
+        has_running_announcement_job,
+    )
+
+    stats = get_announcement_stats()
+    logs = list_announcement_logs(20)
+    rows = search_announcements(
+        keyword=keyword,
+        province='河南',
+        year=2026,
+        review_status=review_status,
+        limit=150,
+    )
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    running = has_running_announcement_job()
+    running_hint = '<p class="muted">当前有招生公告采集任务在后台运行。</p>' if running else ''
+
+    row_html = ''
+    for item in rows:
+        henan_tag = '<span class="tag active">河南相关</span>' if int(item.get('mentions_henan') or 0) else ''
+        row_html += f'''
+          <tr>
+            <td>{item.get('announcement_id', '')}</td>
+            <td>{escape(str(item.get('source_org') or ''))}<br>{henan_tag}</td>
+            <td>{escape(str(item.get('school_name') or '—'))}</td>
+            <td>{escape(str(item.get('announcement_type') or ''))}</td>
+            <td>{escape(str(item.get('title') or ''))}</td>
+            <td>{item.get('year', '')}</td>
+            <td>{escape(str(item.get('review_status') or ''))}</td>
+            <td><a href="{escape(str(item.get('url') or ''))}" target="_blank">打开</a></td>
+            <td>
+              <form method="post" action="/admin/announcements/{item.get('announcement_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="approved" />
+                <button type="submit" class="btn-sm">通过</button>
+              </form>
+              <form method="post" action="/admin/announcements/{item.get('announcement_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="rejected" />
+                <button type="submit" class="btn-sm btn-danger">驳回</button>
+              </form>
+            </td>
+          </tr>
+        '''
+    if not row_html:
+        row_html = '<tr><td colspan="9" class="muted">暂无公告，请先启动采集</td></tr>'
+
+    log_rows = ''
+    for log in logs:
+        log_rows += f'''
+          <tr>
+            <td>{log.get('log_id', '')}</td>
+            <td>{escape(str(log.get('job_name') or ''))}</td>
+            <td>{escape(str(log.get('province') or ''))}</td>
+            <td>{log.get('year', '')}</td>
+            <td>{log.get('source_processed', 0)} / {log.get('source_total', 0)}</td>
+            <td>{log.get('discovered_count', 0)}</td>
+            <td>{log.get('new_count', 0)}</td>
+            <td><span class="tag">{escape(str(log.get('status') or ''))}</span></td>
+            <td>{escape(str(log.get('created_at') or ''))}</td>
+          </tr>
+        '''
+    if not log_rows:
+        log_rows = '<tr><td colspan="9" class="muted">暂无采集日志</td></tr>'
+
+    body = f'''
+      <div class="card">
+        <h2>2026 招生公告采集（河南优先）</h2>
+        {message_html}
+        {running_hint}
+        <div class="grid">
+          <div><div class="muted">公告总数</div><div class="stat">{stats.get('total', 0)}</div></div>
+          <div><div class="muted">2026 公告</div><div class="stat">{stats.get('year_2026', 0)}</div></div>
+          <div><div class="muted">河南相关</div><div class="stat">{stats.get('henan_related', 0)}</div></div>
+          <div><div class="muted">待审核</div><div class="stat">{stats.get('pending_review', 0)}</div></div>
+          <div><div class="muted">有官网院校</div><div class="stat">{stats.get('schools_with_website', 0)}</div></div>
+        </div>
+        <p class="muted" style="margin-top:16px">
+          采集范围：① 河南省教育考试院等省级源；② 全国高校官网招生栏目（河南院校优先）。
+          匹配关键词含「招生 / 公告 / 章程 / 简章 / 计划 / 2026」。
+          结构化招生计划请同时在「数据采集」勾选 <strong>2026年</strong> 走掌上高考 API。
+        </p>
+        <form method="post" action="/admin/announcements/run" class="toolbar" style="margin-top:12px">
+          <input type="hidden" name="province" value="河南" />
+          <input type="hidden" name="year" value="2026" />
+          <input name="school_limit" type="number" value="300" min="0" max="5000" style="min-width:120px" />
+          <button type="submit" {"disabled" if running else ""}>启动河南 2026 公告采集</button>
+        </form>
+        <form method="post" action="/admin/announcements/run" class="toolbar" style="margin-top:8px">
+          <input type="hidden" name="province" value="" />
+          <input type="hidden" name="year" value="2026" />
+          <input name="school_limit" type="number" value="500" min="0" max="5000" style="min-width:120px" />
+          <button type="submit" class="btn-muted" {"disabled" if running else ""}>全国高校官网扫描（500校）</button>
+        </form>
+        <p class="muted">命令行：<code>cd server && python announcement_crawler_service.py --province 河南 --year 2026 --school-limit 300</code></p>
+      </div>
+      <div class="card">
+        <h2>河南 2026 公告列表</h2>
+        <form class="toolbar" method="get">
+          <input name="keyword" value="{escape(keyword)}" placeholder="标题 / 学校 / 来源" />
+          <select name="review_status">
+            <option value="">全部状态</option>
+            <option value="pending" {selected('pending', review_status)}>pending</option>
+            <option value="approved" {selected('approved', review_status)}>approved</option>
+            <option value="rejected" {selected('rejected', review_status)}>rejected</option>
+          </select>
+          <button type="submit">筛选</button>
+        </form>
+        <table>
+          <thead><tr><th>ID</th><th>来源</th><th>院校</th><th>类型</th><th>标题</th><th>年份</th><th>审核</th><th>链接</th><th>操作</th></tr></thead>
+          <tbody>{row_html}</tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>采集日志</h2>
+        <table>
+          <thead><tr><th>ID</th><th>任务</th><th>省份</th><th>年份</th><th>进度</th><th>发现</th><th>新增</th><th>状态</th><th>时间</th></tr></thead>
+          <tbody>{log_rows}</tbody>
+        </table>
+      </div>
+    '''
+    return render_page('招生公告采集', body)
 
 
 def admin_import(message: str = ''):

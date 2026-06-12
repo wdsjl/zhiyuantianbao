@@ -40,6 +40,7 @@ from admin_views import (
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
+    admin_announcements,
     admin_referrals, admin_referral_withdrawals,
 )
 from crawler_service import (
@@ -251,6 +252,77 @@ def admin_crawler_run(
         return RedirectResponse(f'/admin/crawler?message={quote(message)}', status_code=303)
     except Exception as exc:
         return RedirectResponse(f'/admin/crawler?message={quote(f"采集失败：{exc}")}', status_code=303)
+
+
+@app.get('/admin/announcements')
+def admin_announcements_page(keyword: str = '', review_status: str = '', message: str = ''):
+    return admin_announcements(keyword, review_status, message)
+
+
+def _background_announcement_job(province: str, year: int, school_limit: int | None) -> None:
+    from announcement_crawler_service import run_announcement_job
+    try:
+        run_announcement_job(
+            year=year,
+            province=province,
+            school_limit=school_limit,
+            include_provincial=True,
+            include_universities=True,
+        )
+    except Exception:
+        pass
+
+
+@app.post('/admin/announcements/run')
+def admin_announcements_run(
+    background_tasks: BackgroundTasks,
+    province: str = Form('河南'),
+    year: int = Form(2026),
+    school_limit: int = Form(300),
+):
+    from announcement_crawler_service import has_running_announcement_job
+    try:
+        if has_running_announcement_job():
+            return RedirectResponse('/admin/announcements?message=已有招生公告采集任务在运行', status_code=303)
+        limit = None if school_limit == 0 else school_limit
+        background_tasks.add_task(_background_announcement_job, province, year, limit)
+        scope = province or '全国'
+        message = f'{scope} {year} 招生公告采集已在后台启动（高校扫描上限：{limit or "不限"}）'
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"启动失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/{announcement_id}/review')
+def admin_announcement_review(announcement_id: int, review_status: str = Form(...)):
+    from announcement_crawler_service import review_announcement
+    try:
+        review_announcement(announcement_id, review_status)
+        return RedirectResponse('/admin/announcements?message=审核状态已更新', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(str(exc))}', status_code=303)
+
+
+@app.get('/api/announcements')
+def api_announcements(
+    keyword: str = '',
+    province: str = '河南',
+    year: int = 2026,
+    henan_only: bool = False,
+    review_status: str = 'approved',
+    limit: int = 50,
+):
+    from announcement_crawler_service import search_announcements
+    return {
+        'list': search_announcements(
+            keyword=keyword,
+            province=province,
+            year=year,
+            henan_only=henan_only,
+            review_status=review_status,
+            limit=limit,
+        )
+    }
 
 
 @app.post('/admin/crawler/schools')
