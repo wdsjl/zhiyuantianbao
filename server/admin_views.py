@@ -75,6 +75,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
         <a href="/admin">首页</a>
         <a href="/admin/import">数据导入</a>
         <a href="/admin/crawler">数据采集</a>
+        <a href="/admin/announcements">招生公告</a>
         <a href="/admin/import/logs">导入日志</a>
         <a href="/admin/schools">院校数据</a>
         <a href="/admin/students">学生档案</a>
@@ -307,7 +308,7 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
     year_checks = ''.join(
         f'<label style="display:inline-flex;align-items:center;gap:6px;margin-right:14px">'
         f'<input type="checkbox" name="years" value="{year}"{" checked" if year in recent_years else ""} /> {year}年</label>'
-        for year in sorted(recent_years + [2022, 2021], reverse=True)
+        for year in sorted({*recent_years, 2026, 2025, 2022, 2021}, reverse=True)
     )
     province_sections = ''
     for region in REGION_ORDER:
@@ -341,6 +342,7 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
                     <input type="hidden" name="preset" value="full_recent_3y" />
                     <button type="submit" class="btn-sm" {disabled}>近三年全量</button>
                   </form>
+                  {'<form method="post" action="/admin/crawler/quick" style="display:inline"><input type="hidden" name="province" value="' + escape(item["name"]) + '" /><input type="hidden" name="preset" value="plan_2026" /><button type="submit" class="btn-sm btn-muted" ' + disabled + '>2026计划</button></form>' if item["name"] == "河南" else ""}
                   <a class="button btn-sm btn-muted" href="/admin/admissions?province={escape(item["name"])}">查看数据</a>
                 </td>
               </tr>
@@ -452,12 +454,199 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
     return render_page('数据采集', body)
 
 
-def admin_import(message: str = ''):
+def admin_announcements(keyword: str = '', review_status: str = '', message: str = ''):
+    from announcement_crawler_service import (
+        get_announcement_stats,
+        list_announcement_logs,
+        search_announcements,
+        has_running_announcement_job,
+    )
+
+    stats = get_announcement_stats()
+    logs = list_announcement_logs(20)
+    rows = search_announcements(
+        keyword=keyword,
+        province='河南',
+        year=2026,
+        review_status=review_status,
+        limit=150,
+    )
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    running = has_running_announcement_job()
+    running_hint = '<p class="muted">当前有招生公告采集任务在后台运行。</p>' if running else ''
+
+    row_html = ''
+    for item in rows:
+        henan_tag = '<span class="tag active">河南相关</span>' if int(item.get('mentions_henan') or 0) else ''
+        parse_info = f'{escape(str(item.get("parse_status") or "pending"))} / {int(item.get("parsed_plan_count") or 0)}条'
+        file_ext = str(item.get('file_ext') or '').lower()
+        can_parse = file_ext in ('pdf', 'xls', 'xlsx', 'csv') or str(item.get('url') or '').lower().endswith(('.pdf', '.xls', '.xlsx'))
+        parse_btn = ''
+        if can_parse:
+            parse_btn = f'''
+              <form method="post" action="/admin/announcements/{item.get('announcement_id')}/parse" style="display:inline;margin-top:4px">
+                <input type="hidden" name="sync" value="1" />
+                <button type="submit" class="btn-sm btn-muted">解析计划</button>
+              </form>
+            '''
+        row_html += f'''
+          <tr>
+            <td>{item.get('announcement_id', '')}</td>
+            <td>{escape(str(item.get('source_org') or ''))}<br>{henan_tag}</td>
+            <td>{escape(str(item.get('school_name') or '—'))}</td>
+            <td>{escape(str(item.get('announcement_type') or ''))}</td>
+            <td>{escape(str(item.get('title') or ''))}<br><span class="muted">{parse_info}</span></td>
+            <td>{item.get('year', '')}</td>
+            <td>{escape(str(item.get('review_status') or ''))}</td>
+            <td><a href="{escape(str(item.get('url') or ''))}" target="_blank">打开</a></td>
+            <td>
+              <form method="post" action="/admin/announcements/{item.get('announcement_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="approved" />
+                <button type="submit" class="btn-sm">通过</button>
+              </form>
+              <form method="post" action="/admin/announcements/{item.get('announcement_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="rejected" />
+                <button type="submit" class="btn-sm btn-danger">驳回</button>
+              </form>
+              {parse_btn}
+            </td>
+          </tr>
+        '''
+    if not row_html:
+        row_html = '<tr><td colspan="9" class="muted">暂无公告，请先启动采集</td></tr>'
+
+    log_rows = ''
+    for log in logs:
+        log_rows += f'''
+          <tr>
+            <td>{log.get('log_id', '')}</td>
+            <td>{escape(str(log.get('job_name') or ''))}</td>
+            <td>{escape(str(log.get('province') or ''))}</td>
+            <td>{log.get('year', '')}</td>
+            <td>{log.get('source_processed', 0)} / {log.get('source_total', 0)}</td>
+            <td>{log.get('discovered_count', 0)}</td>
+            <td>{log.get('new_count', 0)}</td>
+            <td><span class="tag">{escape(str(log.get('status') or ''))}</span></td>
+            <td>{escape(str(log.get('created_at') or ''))}</td>
+          </tr>
+        '''
+    if not log_rows:
+        log_rows = '<tr><td colspan="9" class="muted">暂无采集日志</td></tr>'
+
     body = f'''
       <div class="card">
-        <h2>导入历年录取数据</h2>
+        <h2>2026 招生公告采集（河南优先）</h2>
         {message_html}
+        {running_hint}
+        <div class="grid">
+          <div><div class="muted">公告总数</div><div class="stat">{stats.get('total', 0)}</div></div>
+          <div><div class="muted">2026 公告</div><div class="stat">{stats.get('year_2026', 0)}</div></div>
+          <div><div class="muted">河南相关</div><div class="stat">{stats.get('henan_related', 0)}</div></div>
+          <div><div class="muted">待审核</div><div class="stat">{stats.get('pending_review', 0)}</div></div>
+          <div><div class="muted">有官网院校</div><div class="stat">{stats.get('schools_with_website', 0)}</div></div>
+        </div>
+        <p class="muted" style="margin-top:16px">
+          采集范围：① 河南省教育考试院等省级源；② 全国高校官网招生栏目（河南院校优先）。
+          匹配关键词含「招生 / 公告 / 章程 / 简章 / 计划 / 2026」。
+          结构化招生计划请同时在「数据采集」勾选 <strong>2026年</strong> 走掌上高考 API。
+        </p>
+        <form method="post" action="/admin/announcements/run" class="toolbar" style="margin-top:12px">
+          <input type="hidden" name="province" value="河南" />
+          <input type="hidden" name="year" value="2026" />
+          <input name="school_limit" type="number" value="300" min="0" max="5000" style="min-width:120px" />
+          <button type="submit" {"disabled" if running else ""}>启动河南 2026 公告采集</button>
+        </form>
+        <form method="post" action="/admin/announcements/run" class="toolbar" style="margin-top:8px">
+          <input type="hidden" name="province" value="" />
+          <input type="hidden" name="year" value="2026" />
+          <input name="school_limit" type="number" value="500" min="0" max="5000" style="min-width:120px" />
+          <button type="submit" class="btn-muted" {"disabled" if running else ""}>全国高校官网扫描（500校）</button>
+        </form>
+        <form method="post" action="/admin/announcements/parse-pending" class="toolbar" style="margin-top:8px">
+          <input name="limit" type="number" value="20" min="1" max="100" style="min-width:100px" />
+          <button type="submit" class="btn-muted">批量解析河南已审核 PDF/Excel</button>
+        </form>
+        <p class="muted">命令行：<code>cd server && python announcement_crawler_service.py --province 河南 --year 2026 --school-limit 300</code></p>
+      </div>
+      <div class="card">
+        <h2>河南 2026 公告列表</h2>
+        <form class="toolbar" method="get">
+          <input name="keyword" value="{escape(keyword)}" placeholder="标题 / 学校 / 来源" />
+          <select name="review_status">
+            <option value="">全部状态</option>
+            <option value="pending" {selected('pending', review_status)}>pending</option>
+            <option value="approved" {selected('approved', review_status)}>approved</option>
+            <option value="rejected" {selected('rejected', review_status)}>rejected</option>
+          </select>
+          <button type="submit">筛选</button>
+        </form>
+        <table>
+          <thead><tr><th>ID</th><th>来源</th><th>院校</th><th>类型</th><th>标题</th><th>年份</th><th>审核</th><th>链接</th><th>操作</th></tr></thead>
+          <tbody>{row_html}</tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>采集日志</h2>
+        <table>
+          <thead><tr><th>ID</th><th>任务</th><th>省份</th><th>年份</th><th>进度</th><th>发现</th><th>新增</th><th>状态</th><th>时间</th></tr></thead>
+          <tbody>{log_rows}</tbody>
+        </table>
+      </div>
+    '''
+    return render_page('招生公告采集', body)
+
+
+def admin_import(message: str = ''):
+    from score_segment_service import list_score_rank_tables
+
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    segment_tables = list_score_rank_tables(20)
+    segment_rows = ''
+    for item in segment_tables:
+        segment_rows += f'''
+          <tr>
+            <td>{item.get('table_id', '')}</td>
+            <td>{escape(str(item.get('province') or ''))}</td>
+            <td>{item.get('year', '')}</td>
+            <td>{escape(str(item.get('batch') or '—'))}</td>
+            <td>{escape(str(item.get('subject_type') or '—'))}</td>
+            <td>{item.get('row_count', 0)}</td>
+            <td>{escape(str(item.get('source_file') or ''))}</td>
+            <td>{escape(str(item.get('created_at') or ''))}</td>
+          </tr>
+        '''
+    if not segment_rows:
+        segment_rows = '<tr><td colspan="8" class="muted">暂未导入一分一段表</td></tr>'
+
+    body = f'''
+      <div class="card">
+        <h2>一分一段表导入（支持 PDF）</h2>
+        {message_html}
+        <p class="muted">
+          上传各省考试院发布的一分一段表，系统自动识别表头（分数 / 本段人数 / 累计人数或位次），
+          用于分数与位次互查。支持 <strong>.pdf / .xlsx / .csv</strong>。
+        </p>
+        <form action="/admin/import/score-segments" method="post" enctype="multipart/form-data">
+          <div class="toolbar">
+            <input name="province" value="河南" placeholder="省份" required />
+            <input name="year" type="number" value="2026" placeholder="年份" required style="min-width:100px" />
+            <input name="batch" placeholder="批次，如本科批" style="min-width:120px" />
+            <input name="subject_type" placeholder="科类，如物理/历史，可留空" style="min-width:160px" />
+            <input type="file" name="file" accept=".pdf,.xlsx,.xls,.csv" required />
+            <button type="submit">上传并解析</button>
+          </div>
+        </form>
+        <p class="muted">PDF 需为可复制文本或标准表格；扫描版识别率较低，建议优先使用 Excel。</p>
+      </div>
+      <div class="card">
+        <h2>已导入一分一段表</h2>
+        <table>
+          <thead><tr><th>ID</th><th>省份</th><th>年份</th><th>批次</th><th>科类</th><th>行数</th><th>来源文件</th><th>导入时间</th></tr></thead>
+          <tbody>{segment_rows}</tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>导入历年录取数据</h2>
         <p class="muted">支持 `.xlsx` 和 `.csv`。请使用模板字段：年份、省份、批次、院校代码、院校名称、专业代码、专业名称等。</p>
         <form action="/admin/import" method="post" enctype="multipart/form-data">
           <div class="toolbar">
@@ -1136,11 +1325,14 @@ def admin_membership_users(keyword: str = '', message: str = ''):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     rows = ''
     for user in users:
+        is_super = int(user.get('is_super_tester') or 0)
+        super_tag = '<span class="tag active">超级测试</span>' if is_super else '<span class="muted">普通</span>'
         rows += f'''
           <tr>
             <td>{user.get('user_id', '')}</td><td>{escape(str(user.get('phone') or ''))}</td><td>{escape(str(user.get('student_name') or user.get('name') or ''))}</td>
             <td>{escape(str(user.get('school_name') or ''))}</td><td>{escape(str(user.get('score') or ''))}</td><td>{escape(str(user.get('rank') or ''))}</td>
             <td><span class="tag">{escape(str(user.get('plan_name') or '免费版'))}</span><br/><span class="muted">{escape(str(user.get('expires_at') or '长期/未开通'))}</span></td>
+            <td><strong>{int(user.get('bean_balance') or 0)}</strong> 豆<br/>{super_tag}</td>
             <td>
               <form method="post" action="/admin/membership/users/grant" class="toolbar" style="margin:0">
                 <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
@@ -1148,6 +1340,23 @@ def admin_membership_users(keyword: str = '', message: str = ''):
                 <input name="days" placeholder="天数，留空按套餐" style="min-width:120px;width:120px" />
                 <input name="remark" placeholder="备注" />
                 <button type="submit">开通/调整</button>
+              </form>
+              <form method="post" action="/admin/membership/users/beans/adjust" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input name="amount" placeholder="+增加/-扣减" style="min-width:100px;width:100px" />
+                <input name="remark" value="测试加豆" style="min-width:100px;width:100px" />
+                <button type="submit">调整星鼎豆</button>
+              </form>
+              <form method="post" action="/admin/membership/users/beans/set" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input name="balance" placeholder="设为余额" style="min-width:100px;width:100px" />
+                <input name="remark" value="测试设余额" style="min-width:100px;width:100px" />
+                <button type="submit">设置余额</button>
+              </form>
+              <form method="post" action="/admin/membership/users/super-tester" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input type="hidden" name="enabled" value="{0 if is_super else 1}" />
+                <button type="submit" class="btn-sm">{'取消超级测试' if is_super else '设为超级测试'}</button>
               </form>
               <form method="post" action="/admin/membership/users/revoke" style="display:inline;margin-top:6px" onsubmit="return confirm('确认撤销该用户会员？')">
                 <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
@@ -1157,7 +1366,7 @@ def admin_membership_users(keyword: str = '', message: str = ''):
           </tr>
         '''
     if not rows:
-        rows = '<tr><td colspan="8" class="muted">暂无用户</td></tr>'
+        rows = '<tr><td colspan="9" class="muted">暂无用户</td></tr>'
     expiring_rows = ''
     for member in expiring:
         expiring_rows += f'''
@@ -1195,11 +1404,15 @@ def admin_membership_users(keyword: str = '', message: str = ''):
         <h2>用户会员管理</h2>
         {message_html}
         <p class="muted">个人主体阶段可用于手动开通/调整权益；企业主体接入微信支付后，也可继续作为客服后台。</p>
+        <div class="warn-box">
+          <strong>超级测试账号：</strong>设为超级测试后，该用户生成 AI 报告<strong>不扣星鼎豆</strong>，会员功能<strong>不限次数</strong>，便于反复测试。
+          仍可通过「调整星鼎豆 / 设置余额」随意充值测试豆。
+        </div>
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="手机号 / 姓名 / 学校" />
           <button type="submit">搜索</button>
         </form>
-        <table><thead><tr><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>分数</th><th>位次</th><th>当前会员</th><th>开通/调整</th></tr></thead><tbody>{rows}</tbody></table>
+        <table><thead><tr><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>分数</th><th>位次</th><th>当前会员</th><th>星鼎豆/测试</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table>
       </div>
     '''
     return render_page('用户会员管理', body)

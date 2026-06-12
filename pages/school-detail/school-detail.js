@@ -1,12 +1,14 @@
 const { request } = require('../../utils/request');
 const { loadActiveProfileSync } = require('../../utils/profileHelper');
 const { requirePermission } = require('../../utils/membership');
+const { openAnnouncement } = require('../../utils/announcement');
 
 Page({
   data: {
     schoolId: 0,
     school: null,
     plans: [],
+    announcements: [],
     loading: false
   },
   onLoad(options) {
@@ -34,6 +36,22 @@ Page({
     ])
       .then(([schoolRes, admissionRes]) => {
         const school = schoolRes.school || null;
+        if (school && school.school_name) {
+          request({
+            url: '/api/announcements',
+            data: {
+              school_name: school.school_name,
+              province: profile.province || '河南',
+              year: 2026,
+              review_status: 'approved',
+              limit: 20
+            }
+          })
+            .then((announcementRes) => {
+              this.setData({ announcements: announcementRes.list || [] });
+            })
+            .catch(() => {});
+        }
         const plans = (schoolRes.plans || []).map((plan, index) => ({
           ...plan,
           planKey: `${plan.major_id}-${plan.year}-${index}`
@@ -59,6 +77,9 @@ Page({
       .finally(() => {
         this.setData({ loading: false });
       });
+  },
+  openAnnouncement(event) {
+    openAnnouncement(event.currentTarget.dataset.item);
   },
   addMajorToPlan(event) {
     const plan = event.currentTarget.dataset.plan;

@@ -90,6 +90,7 @@ Page({
     planStyle: 'balanced',
     planStyleOptions: PLAN_STYLE_OPTIONS,
     strategyMeta: null,
+    provinceRule: null,
     pdfReady: false,
     pdfFileName: ''
   },
@@ -97,7 +98,9 @@ Page({
     const savedStyle = wx.getStorageSync('volunteerPlanStyle') || 'balanced';
     this.setData({ planStyle: savedStyle });
     refreshActiveProfile().then((profile) => {
-      this.setData({ profile: profile || loadActiveProfileSync() });
+      const resolvedProfile = profile || loadActiveProfileSync();
+      this.setData({ profile: resolvedProfile });
+      this.loadProvinceRule(resolvedProfile);
       this.consumePendingPlanAppend();
     });
     let personality = wx.getStorageSync('personalityResult') || null;
@@ -161,6 +164,26 @@ Page({
     wx.setStorageSync('currentPlan', plan);
     wx.removeStorageSync('currentAiExplain');
   },
+  loadProvinceRule(profile) {
+    const current = profile || this.data.profile || {};
+    if (!current.province) {
+      this.setData({ provinceRule: null });
+      return;
+    }
+    request({
+      url: '/api/province-rules/resolve',
+      data: {
+        province: current.province,
+        batch: current.targetBatch || ''
+      }
+    })
+      .then((res) => {
+        this.setData({ provinceRule: res || null });
+      })
+      .catch(() => {
+        this.setData({ provinceRule: null });
+      });
+  },
   ensureProfile() {
     const { profile } = this.data;
     if (!profile.province || !profile.subjectCombination || !profile.score || !profile.rank || !profile.targetBatch) {
@@ -179,6 +202,9 @@ Page({
   clearAiExplain() {
     this.setData({ aiExplain: '' });
     wx.removeStorageSync('currentAiExplain');
+  },
+  goProfile() {
+    wx.navigateTo({ url: '/pages/profile/profile' });
   },
   onPlanStyleChange(event) {
     const planStyle = event.currentTarget.dataset.style;
@@ -207,7 +233,9 @@ Page({
         major_types: (this.data.personality && this.data.personality.majorTypes) || [],
         accept_adjustment: true,
         plan_style: this.data.planStyle || 'balanced',
-        volunteer_count: 9
+        volunteer_count: 0,
+        student_id: profile.studentId ? Number(profile.studentId) : null,
+        auto_save_draft: true
       }
     })
       .then((res) => {
@@ -220,11 +248,39 @@ Page({
         }));
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
-        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta: res.strategy || null });
+        const strategyMeta = res.strategy || null;
+        const provinceRule = (strategyMeta && strategyMeta.volunteer_rule) || this.data.provinceRule;
+        const targetCount = provinceRule && (provinceRule.total_slots || provinceRule.school_count);
+        const toastTitle = targetCount
+          ? `已生成 ${plan.length}/${targetCount} 个志愿`
+          : `已生成 ${plan.length} 个志愿`;
+        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule });
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
-        wx.showToast({ title: '已生成志愿方案', icon: 'success' });
+        if (res.draft_id) {
+          wx.setStorageSync('currentDraftId', res.draft_id);
+          wx.setStorageSync('currentDraftName', '智能推荐方案');
+        }
+        if (res.generation && res.generation.candidate_pool < res.generation.target_slots) {
+          const generation = res.generation;
+          const hint = generation.batch_hint
+            || (generation.available_batches && generation.available_batches.length
+              ? `库内现有批次：${generation.available_batches.join('、')}。请核对档案目标批次是否与导入数据一致。`
+              : '建议补充录取数据或检查省份/批次是否与导入数据一致。');
+          wx.showModal({
+            title: '志愿数量提示',
+            content: `已生成 ${generation.generated_count}/${generation.target_slots} 个志愿。数据库中符合条件的院校专业共 ${generation.candidate_pool} 条。\n\n档案批次：${profile.targetBatch || '--'}${generation.effective_batch && generation.effective_batch !== profile.targetBatch ? `（实际查询：${generation.effective_batch}）` : ''}\n\n${hint}`,
+            confirmText: generation.candidate_pool === 0 ? '去改档案' : '知道了',
+            success: (modalRes) => {
+              if (modalRes.confirm && generation.candidate_pool === 0) {
+                wx.navigateTo({ url: '/pages/profile/profile' });
+              }
+            }
+          });
+        } else {
+          wx.showToast({ title: toastTitle, icon: 'success' });
+        }
       })
       .catch(() => {
         wx.showToast({ title: '推荐接口连接失败', icon: 'none' });
@@ -375,18 +431,6 @@ Page({
       .finally(() => {
         this.setData({ aiLoading: false });
       });
-  },
-  copyAiExplain() {
-    if (!this.data.aiExplain) {
-      wx.showToast({ title: '暂无可复制内容', icon: 'none' });
-      return;
-    }
-    wx.setClipboardData({
-      data: this.data.aiExplain,
-      success: () => {
-        wx.showToast({ title: '已复制解读', icon: 'success' });
-      }
-    });
   },
   generatePlanPdf() {
     requirePermission('pdf_export', 'PDF 志愿表导出', { consume: true }).then((allowed) => {

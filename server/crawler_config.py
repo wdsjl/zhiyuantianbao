@@ -86,6 +86,13 @@ CRAWL_PRESETS: dict[str, CrawlPreset] = {
         'recent_years': 1,
         'description': '全部院校 × 最近一年数据',
     },
+    'plan_2026': {
+        'key': 'plan_2026',
+        'label': '2026招生计划',
+        'school_limit': None,
+        'recent_years': 1,
+        'description': '全部院校 × 2026年招生计划与录取数据（掌上高考）',
+    },
 }
 
 
@@ -114,7 +121,10 @@ def resolve_preset_options(preset_key: str, years: list[int] | None = None) -> d
     from crawler_service import default_recent_years
 
     preset = get_preset(preset_key)
-    selected_years = years or default_recent_years(preset['recent_years'])
+    if preset_key == 'plan_2026' and not years:
+        selected_years = [2026]
+    else:
+        selected_years = years or default_recent_years(preset['recent_years'])
     return {
         'preset': preset,
         'school_limit': preset['school_limit'],

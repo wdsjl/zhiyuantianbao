@@ -1,3 +1,8 @@
+from bootstrap_secrets import load_ecosystem_secrets
+
+load_ecosystem_secrets()
+
+import json
 from urllib.parse import quote
 
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
@@ -11,11 +16,16 @@ from schemas import (
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
     ReferralAgentRegisterRequest, ReferralBindRequest, ReferralWithdrawRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
-    BeanConsumeReportRequest,
+    BeanConsumeReportRequest, DouyinRedeemRequest,
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
+    merge_report_inputs_from_db,
 )
+from province_rules_service import (
+    ensure_province_rules_seeded, resolve_volunteer_slots, summarize_province_rules,
+)
+from recommend_service import fetch_recommendation_candidates, save_auto_recommendation_draft
 from personality_service import (
     ensure_personality_tables, save_assessment, get_latest_assessment, save_ai_career_report,
     build_personality_ai_context, build_career_report_prompt,
@@ -30,6 +40,7 @@ from admin_views import (
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
+    admin_announcements,
     admin_referrals, admin_referral_withdrawals,
 )
 from crawler_service import (
@@ -108,6 +119,11 @@ ensure_referral_tables()
 from referral_p1 import ensure_referral_p1_tables
 ensure_referral_p1_tables()
 sync_plan_catalog()
+from douyin_coupon_service import ensure_douyin_coupon_tables
+ensure_douyin_coupon_tables()
+ensure_province_rules_seeded()
+from user_flags_service import ensure_user_flags
+ensure_user_flags()
 expire_overdue_memberships()
 
 
@@ -238,6 +254,159 @@ def admin_crawler_run(
         return RedirectResponse(f'/admin/crawler?message={quote(f"采集失败：{exc}")}', status_code=303)
 
 
+@app.get('/admin/announcements')
+def admin_announcements_page(keyword: str = '', review_status: str = '', message: str = ''):
+    return admin_announcements(keyword, review_status, message)
+
+
+def _background_announcement_job(province: str, year: int, school_limit: int | None) -> None:
+    from announcement_crawler_service import run_announcement_job
+    try:
+        run_announcement_job(
+            year=year,
+            province=province,
+            school_limit=school_limit,
+            include_provincial=True,
+            include_universities=True,
+        )
+    except Exception:
+        pass
+
+
+@app.post('/admin/announcements/run')
+def admin_announcements_run(
+    background_tasks: BackgroundTasks,
+    province: str = Form('河南'),
+    year: int = Form(2026),
+    school_limit: int = Form(300),
+):
+    from announcement_crawler_service import has_running_announcement_job
+    try:
+        if has_running_announcement_job():
+            return RedirectResponse('/admin/announcements?message=已有招生公告采集任务在运行', status_code=303)
+        limit = None if school_limit == 0 else school_limit
+        background_tasks.add_task(_background_announcement_job, province, year, limit)
+        scope = province or '全国'
+        message = f'{scope} {year} 招生公告采集已在后台启动（高校扫描上限：{limit or "不限"}）'
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"启动失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/{announcement_id}/review')
+def admin_announcement_review(announcement_id: int, review_status: str = Form(...)):
+    from announcement_crawler_service import review_announcement
+    try:
+        review_announcement(announcement_id, review_status)
+        return RedirectResponse('/admin/announcements?message=审核状态已更新', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(str(exc))}', status_code=303)
+
+
+@app.get('/api/announcements')
+def api_announcements(
+    keyword: str = '',
+    province: str = '河南',
+    school_name: str = '',
+    year: int = 2026,
+    henan_only: bool = False,
+    review_status: str = 'approved',
+    announcement_type: str = '',
+    limit: int = 50,
+):
+    from announcement_crawler_service import search_announcements
+    return {
+        'list': search_announcements(
+            keyword=keyword,
+            province=province,
+            school_name=school_name,
+            year=year,
+            henan_only=henan_only,
+            review_status=review_status,
+            announcement_type=announcement_type,
+            limit=limit,
+        )
+    }
+
+
+@app.get('/api/announcements/{announcement_id}')
+def api_announcement_detail(announcement_id: int):
+    from announcement_crawler_service import get_announcement
+    item = get_announcement(announcement_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='公告不存在')
+    if item.get('review_status') != 'approved':
+        raise HTTPException(status_code=403, detail='公告未通过审核')
+    return item
+
+
+@app.get('/api/announcements/{announcement_id}/file')
+def api_announcement_file(announcement_id: int):
+    from announcement_crawler_service import get_announcement
+    from announcement_pdf_parser_service import download_announcement_file, guess_file_ext
+
+    item = get_announcement(announcement_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='公告不存在')
+    if item.get('review_status') != 'approved':
+        raise HTTPException(status_code=403, detail='公告未通过审核')
+    file_url = item.get('file_url') or item.get('url')
+    if not file_url:
+        raise HTTPException(status_code=404, detail='公告文件不存在')
+    try:
+        content, filename = download_announcement_file(file_url)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f'文件下载失败：{exc}') from exc
+    ext = guess_file_ext(file_url, filename, content)
+    media_types = {
+        'pdf': 'application/pdf',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xls': 'application/vnd.ms-excel',
+        'csv': 'text/csv',
+    }
+    media_type = media_types.get(ext, 'application/octet-stream')
+    headers = {'Content-Disposition': f'inline; filename="{filename or f"announcement.{ext or "bin"}"}"'}
+    return Response(content=content, media_type=media_type, headers=headers)
+
+
+def _background_parse_announcement(announcement_id: int) -> None:
+    from announcement_pdf_parser_service import parse_announcement_plans
+    try:
+        parse_announcement_plans(announcement_id)
+    except Exception:
+        pass
+
+
+def _background_parse_pending_henan(limit: int) -> None:
+    from announcement_pdf_parser_service import parse_pending_henan_announcements
+    try:
+        parse_pending_henan_announcements(limit)
+    except Exception:
+        pass
+
+
+@app.post('/admin/announcements/{announcement_id}/parse')
+def admin_announcement_parse(announcement_id: int, background_tasks: BackgroundTasks, sync: int = Form(0)):
+    if sync:
+        from announcement_pdf_parser_service import parse_announcement_plans
+        try:
+            result = parse_announcement_plans(announcement_id)
+            return RedirectResponse(
+                f'/admin/announcements?message={quote(result.get("message") or "解析完成")}',
+                status_code=303,
+            )
+        except Exception as exc:
+            return RedirectResponse(f'/admin/announcements?message={quote(str(exc))}', status_code=303)
+    background_tasks.add_task(_background_parse_announcement, announcement_id)
+    return RedirectResponse('/admin/announcements?message=招生计划解析任务已启动', status_code=303)
+
+
+@app.post('/admin/announcements/parse-pending')
+def admin_announcements_parse_pending(background_tasks: BackgroundTasks, limit: int = Form(20)):
+    background_tasks.add_task(_background_parse_pending_henan, limit)
+    return RedirectResponse('/admin/announcements?message=河南待解析公告批量任务已启动', status_code=303)
+
+
 @app.post('/admin/crawler/schools')
 def admin_crawler_schools(background_tasks: BackgroundTasks, school_limit: int = Form(0)):
     try:
@@ -264,6 +433,36 @@ async def admin_import_submit(file: UploadFile = File(...)):
         return admin_import(message)
     except ValueError as exc:
         return admin_import(f'导入失败：{exc}')
+
+
+@app.post('/admin/import/score-segments')
+async def admin_import_score_segments(
+    file: UploadFile = File(...),
+    province: str = Form(...),
+    year: int = Form(...),
+    batch: str = Form(''),
+    subject_type: str = Form(''),
+):
+    from score_segment_service import import_score_segment_file
+
+    content = await file.read()
+    try:
+        result = import_score_segment_file(
+            content,
+            file.filename or 'upload',
+            province=province.strip(),
+            year=int(year),
+            batch=batch.strip(),
+            subject_type=subject_type.strip(),
+            title=f'{province.strip()}{year}一分一段表',
+        )
+        message = (
+            f"一分一段表导入成功：{result.get('province', province)} {result.get('year', year)} "
+            f"共 {result.get('row_count', 0)} 条"
+        )
+        return admin_import(message)
+    except (ValueError, RuntimeError) as exc:
+        return admin_import(f'一分一段表导入失败：{exc}')
 
 
 @app.get('/admin/import/logs')
@@ -447,7 +646,48 @@ def admin_membership_user_grant(
     remark: str = Form('')
 ):
     grant_membership(user_id, plan_code, int(days) if days else None, remark)
+    from bean_service import grant_plan_beans
+    grant_plan_beans(user_id, plan_code, remark=remark or '后台开通会员到账星鼎豆')
     return RedirectResponse('/admin/membership/users?message=会员已开通或调整', status_code=303)
+
+
+@app.post('/admin/membership/users/beans/adjust')
+def admin_membership_user_beans_adjust(
+    user_id: int = Form(...),
+    amount: int = Form(...),
+    remark: str = Form('后台调整星鼎豆'),
+):
+    from bean_service import adjust_beans
+    try:
+        adjust_beans(user_id, amount, remark)
+        return RedirectResponse('/admin/membership/users?message=星鼎豆已调整', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/membership/users?message={exc}', status_code=303)
+
+
+@app.post('/admin/membership/users/beans/set')
+def admin_membership_user_beans_set(
+    user_id: int = Form(...),
+    balance: int = Form(...),
+    remark: str = Form('后台设置星鼎豆余额'),
+):
+    from bean_service import set_bean_balance
+    set_bean_balance(user_id, balance, remark)
+    return RedirectResponse('/admin/membership/users?message=星鼎豆余额已设置', status_code=303)
+
+
+@app.post('/admin/membership/users/super-tester')
+def admin_membership_user_super_tester(
+    user_id: int = Form(...),
+    enabled: int = Form(0),
+):
+    from user_flags_service import set_super_tester
+    try:
+        set_super_tester(user_id, bool(enabled))
+        label = '已设为超级测试账号' if enabled else '已取消超级测试账号'
+        return RedirectResponse(f'/admin/membership/users?message={label}', status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f'/admin/membership/users?message={exc}', status_code=303)
 
 
 @app.post('/admin/membership/users/revoke')
@@ -735,6 +975,63 @@ async def api_wechat_pay_notify(request: Request):
         return JSONResponse(result)
     except Exception as exc:
         return JSONResponse({'code': 'FAIL', 'message': str(exc)}, status_code=500)
+
+
+@app.get('/api/douyin/status')
+def api_douyin_status():
+    from douyin_service import get_douyin_status
+    return get_douyin_status()
+
+
+@app.get('/api/douyin/redeem-hint')
+def api_douyin_redeem_hint(code: str = ''):
+    return {
+        'message': '请打开微信小程序「智愿填报」→ 会员中心 → 抖音券兑换，输入券码完成开通。',
+        'coupon_code': (code or '').strip().upper(),
+    }
+
+
+@app.post('/api/douyin/redeem')
+def api_douyin_redeem(payload: DouyinRedeemRequest):
+    from douyin_coupon_service import redeem_coupon
+    try:
+        return redeem_coupon(payload.user_id, payload.coupon_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/douyin/spi/coupon/issue')
+async def api_douyin_spi_coupon_issue(request: Request):
+    """抖音三方发券 SPI：用户抖店/来客下单后，抖音回调此接口获取兑换码。"""
+    from douyin_service import get_douyin_config
+    from douyin_coupon_service import issue_coupons_from_spi
+    body = await request.body()
+    try:
+        payload = json.loads(body.decode('utf-8') or '{}')
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail='请求体不是合法 JSON') from exc
+
+    config = get_douyin_config()
+    client_key = (request.headers.get('x-life-clientkey') or '').strip()
+    if config['spi_token']:
+        token = (request.headers.get('x-douyin-spi-token') or request.headers.get('authorization') or '').strip()
+        if token.startswith('Bearer '):
+            token = token[7:].strip()
+        if token != config['spi_token']:
+            raise HTTPException(status_code=401, detail='SPI 鉴权失败')
+    elif config['app_id'] and client_key and client_key != config['app_id']:
+        raise HTTPException(status_code=401, detail='client_key 不匹配')
+
+    try:
+        return issue_coupons_from_spi(payload if isinstance(payload, dict) else {})
+    except ValueError as exc:
+        return {
+            'data': {
+                'error_code': 1,
+                'description': str(exc),
+                'result': 2,
+            }
+        }
 
 
 @app.post('/api/payments/virtual/deliver-notify')
@@ -1566,91 +1863,114 @@ def list_province_rules(province: str = '', year: int | None = None, batch: str 
     return {'list': rows_to_dicts(rows)}
 
 
+@app.get('/api/admission-data/batches')
+def api_admission_data_batches(province: str):
+    if not province.strip():
+        raise HTTPException(status_code=400, detail='请提供省份')
+    from recommend_service import list_province_admission_batches
+
+    batches = list_province_admission_batches(province)
+    total = sum(int(item.get('school_major_count') or item.get('record_count') or 0) for item in batches)
+    return {
+        'province': province,
+        'batches': batches,
+        'total_school_major': total,
+    }
+
+
+@app.get('/api/province-rules/summary')
+def province_rules_summary():
+    return {'list': summarize_province_rules(), 'year': 2025}
+
+
+@app.get('/api/province-rules/resolve')
+def province_rules_resolve(province: str, batch: str = '', year: int = 2025):
+    if not province.strip():
+        raise HTTPException(status_code=400, detail='请提供省份')
+    resolved = resolve_volunteer_slots(province, batch, year)
+    rule = resolved['rule']
+    return {
+        'province': rule.get('province') or province,
+        'batch': rule.get('batch') or batch,
+        'requested_batch': batch,
+        'year': rule.get('year') or year,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'school_count': rule.get('school_count'),
+        'major_count_per_school': rule.get('major_count_per_school'),
+        'total_slots': resolved['total_slots'],
+        'matched': bool(rule.get('matched')),
+        'source': resolved['source'],
+        'rule_description': rule.get('rule_description') or '',
+    }
+
+
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
-    sql = """
-    SELECT ar.*, s.school_name, s.city, s.school_type, s.is_public, s.is_double_first_class,
-           m.major_name, m.major_type, ep.tuition, ep.duration, ep.subject_requirement
-    FROM admission_records ar
-    JOIN schools s ON s.school_id = ar.school_id
-    JOIN majors m ON m.major_id = ar.major_id
-    LEFT JOIN enrollment_plans ep ON ep.school_id = ar.school_id
-      AND ep.major_id = ar.major_id
-      AND ep.province = ar.province
-      AND ep.batch = ar.batch
-    WHERE ar.province = ? AND ar.batch = ?
-    """
-    params = [request.province, request.batch]
+    slot_info = resolve_volunteer_slots(
+        request.province,
+        request.batch,
+        override_count=int(request.volunteer_count) if int(request.volunteer_count or 0) > 0 else None,
+    )
+    total_slots = slot_info['total_slots']
+    province_rule = slot_info['rule']
 
-    if request.cities:
-        sql += f" AND s.city IN ({','.join(['?'] * len(request.cities))})"
-        params.extend(request.cities)
-    if request.school_types:
-        sql += f" AND s.school_type IN ({','.join(['?'] * len(request.school_types))})"
-        params.extend(request.school_types)
-    if request.major_types:
-        sql += f" AND m.major_type IN ({','.join(['?'] * len(request.major_types))})"
-        params.extend(request.major_types)
-    if request.only_public is not None:
-        sql += ' AND s.is_public = ?'
-        params.append(1 if request.only_public else 0)
-
-    sql += ' ORDER BY ar.year DESC, ar.min_rank ASC'
-
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
-
-    rows = [
-        row for row in rows
-        if matches_subject_requirement(request.subject_combination, row.get('subject_requirement'))
-    ]
-
-    grouped = {}
-    for row in rows:
-        key = (row['school_id'], row['major_id'])
-        grouped.setdefault(key, []).append(row)
-
-    weighted_items = []
-    year_weights = [0.5, 0.3, 0.2]
-    for records in grouped.values():
-        sorted_records = sorted(records, key=lambda item: item['year'], reverse=True)[:3]
-        weight_sum = 0
-        rank_sum = 0
-        score_sum = 0
-        latest = sorted_records[0]
-        for index, record in enumerate(sorted_records):
-            weight = year_weights[index] if index < len(year_weights) else 0
-            if record.get('min_rank') is not None:
-                rank_sum += record['min_rank'] * weight
-                weight_sum += weight
-            if record.get('min_score') is not None:
-                score_sum += record['min_score'] * weight
-        weighted_rank = round(rank_sum / weight_sum) if weight_sum else latest.get('min_rank')
-        weighted_score = round(score_sum / weight_sum) if weight_sum else latest.get('min_score')
-        weighted_items.append({**latest, 'weighted_rank': weighted_rank, 'weighted_score': weighted_score, 'years_used': [item['year'] for item in sorted_records]})
+    weighted_items, effective_batch, candidate_meta = fetch_recommendation_candidates(
+        request.province,
+        request.batch,
+        request.subject_combination,
+        total_slots,
+        cities=request.cities,
+        school_types=request.school_types,
+        major_types=request.major_types,
+        only_public=request.only_public,
+        rule_batch=province_rule.get('batch'),
+    )
 
     user_rank = int(request.rank)
     if user_rank <= 0 and request.score:
-        estimated = estimate_rank_from_score(rows, int(request.score))
+        from score_segment_service import lookup_rank_by_score
+        estimated = lookup_rank_by_score(
+            request.province,
+            int(request.score),
+            year=2026,
+            batch=request.batch,
+        )
+        if not estimated:
+            estimated = estimate_rank_from_score(weighted_items, int(request.score))
         if estimated:
             user_rank = estimated
 
     with get_connection() as connection:
         total_row = connection.execute(
             'SELECT MAX(min_rank) AS total_rank FROM admission_records WHERE province = ? AND batch = ?',
-            [request.province, request.batch]
+            [request.province, effective_batch]
         ).fetchone()
     province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
-    segment = detect_segment(user_rank, province_total_rank, request.batch)
+    segment = detect_segment(user_rank, province_total_rank, effective_batch)
 
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
         user_rank=user_rank,
         plan_style=request.plan_style or 'balanced',
-        batch=request.batch,
+        batch=effective_batch,
         segment=segment,
-        total_slots=max(1, int(request.volunteer_count or 9)),
+        total_slots=total_slots,
     )
+    strategy_meta['volunteer_rule'] = {
+        'province': province_rule.get('province') or request.province,
+        'batch': province_rule.get('batch') or effective_batch,
+        'requested_batch': request.batch,
+        'effective_batch': effective_batch,
+        'volunteer_mode': province_rule.get('volunteer_mode'),
+        'school_count': province_rule.get('school_count'),
+        'major_count_per_school': province_rule.get('major_count_per_school'),
+        'total_slots': total_slots,
+        'matched': bool(province_rule.get('matched')),
+        'source': slot_info['source'],
+        'rule_description': province_rule.get('rule_description') or '',
+        'candidate_pool': candidate_meta.get('candidate_pool'),
+        'relaxed_major_filter': candidate_meta.get('relaxed_major_filter'),
+    }
 
     items = []
     for index, row in enumerate(selected_rows, start=1):
@@ -1684,11 +2004,40 @@ def recommend(request: RecommendRequest):
             'risk_reason': get_risk_reason(gradient_type, is_adjustable)
         })
 
+    risk = inspect_plan_risk(items)
+    draft_id = None
+    if request.student_id and request.auto_save_draft and items:
+        try:
+            draft_id = save_auto_recommendation_draft(
+                int(request.student_id),
+                request.province,
+                effective_batch,
+                int(request.score),
+                user_rank,
+                risk.get('level') or '未排查',
+                items,
+            )
+        except Exception:
+            draft_id = None
+
     return {
         'items': items,
-        'risk': inspect_plan_risk(items),
+        'risk': risk,
         'strategy': strategy_meta,
         'algorithm': strategy_meta.get('algorithm'),
+        'generation': {
+            'target_slots': total_slots,
+            'generated_count': len(items),
+            'candidate_pool': candidate_meta.get('candidate_pool'),
+            'effective_batch': effective_batch,
+            'requested_batch': candidate_meta.get('requested_batch') or request.batch,
+            'batch_fallback': candidate_meta.get('batch_fallback'),
+            'batch_hint': candidate_meta.get('batch_hint') or '',
+            'available_batches': candidate_meta.get('available_batches') or [],
+            'available_batch_counts': candidate_meta.get('available_batch_counts') or {},
+            'relaxed_major_filter': bool(candidate_meta.get('relaxed_major_filter')),
+        },
+        'draft_id': draft_id,
     }
 
 
@@ -1765,9 +2114,23 @@ def get_personality_assessment(student_id: int):
 
 @app.post('/api/ai/career-report')
 def ai_career_report(request: CareerReportRequest):
-    if not request.personality:
+    merged = merge_report_inputs_from_db(
+        request.student_id,
+        request.profile or {},
+        request.personality or {},
+        {},
+        None,
+    )
+    personality = merged['personality']
+    profile = merged['profile']
+    if not personality:
         raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
-    prompt = build_career_report_prompt(request.profile or {}, request.personality)
+    prompt = build_career_report_prompt(
+        profile,
+        personality,
+        province_rule_context=merged.get('province_rule_context'),
+        admission_data_context=merged.get('admission_data_context'),
+    )
     try:
         content = append_ai_generated_notice(chat_completion([
             {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将霍兰德职业兴趣测评与全省位次冲稳保策略结合分析。所有建议必须提示以官方信息为准。'},
@@ -1786,15 +2149,28 @@ def ai_career_report(request: CareerReportRequest):
 
 @app.post('/api/ai/student-report')
 def ai_student_report(request: StudentReportRequest):
-    if not request.profile:
-        raise HTTPException(status_code=400, detail='请先完善学生档案')
-    if not request.personality:
-        raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
-    prompt = build_student_report_prompt(
-        request.profile,
-        request.personality,
+    merged = merge_report_inputs_from_db(
+        request.student_id,
+        request.profile or {},
+        request.personality or {},
         request.preferences or {},
         request.volunteer_summary,
+    )
+    profile = merged['profile']
+    personality = merged['personality']
+    preferences = merged['preferences']
+    volunteer_summary = merged['volunteer_summary']
+    if not profile:
+        raise HTTPException(status_code=400, detail='请先完善学生档案')
+    if not personality:
+        raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
+    prompt = build_student_report_prompt(
+        profile,
+        personality,
+        preferences,
+        volunteer_summary,
+        province_rule_context=merged.get('province_rule_context'),
+        admission_data_context=merged.get('admission_data_context'),
     )
     try:
         content = append_ai_generated_notice(chat_completion([
@@ -1804,7 +2180,7 @@ def ai_student_report(request: StudentReportRequest):
         report_id = save_student_report(
             request.student_id,
             request.user_id,
-            request.preferences or {},
+            preferences,
             content,
         )
         return {'report': content, 'report_id': report_id}
@@ -1831,12 +2207,16 @@ def _load_student_or_404(student_id: int) -> dict:
 
 
 def _pdf_response(pdf: bytes, filename: str) -> Response:
+    # HTTP 响应头仅支持 latin-1，中文文件名用百分号编码放到自定义头
+    from urllib.parse import quote
+
+    encoded_filename = quote(filename, safe='')
     return Response(
         content=pdf,
         media_type='application/pdf',
         headers={
             'Content-Disposition': pdf_content_disposition(filename),
-            'X-Pdf-Filename': filename,
+            'X-Pdf-Filename': encoded_filename,
         }
     )
 
@@ -2036,4 +2416,42 @@ def list_import_logs(limit: int = 50, offset: int = 0):
             [limit, offset]
         ).fetchall()
     return {'list': rows_to_dicts(rows)}
+
+
+@app.get('/api/score-segments/lookup')
+def lookup_score_segment(
+    province: str = Query(...),
+    score: int | None = Query(None),
+    rank: int | None = Query(None),
+    year: int | None = Query(None),
+    batch: str = Query(''),
+    subject_type: str = Query(''),
+):
+    from score_segment_service import lookup_rank_by_score, lookup_score_by_rank, find_score_rank_table
+
+    if score is None and rank is None:
+        raise HTTPException(status_code=400, detail='请提供 score 或 rank 参数')
+    table = find_score_rank_table(province, year, batch, subject_type)
+    if not table:
+        raise HTTPException(status_code=404, detail='未找到对应一分一段表，请先在后台导入')
+    result = {
+        'province': province,
+        'year': table.get('year'),
+        'batch': table.get('batch') or '',
+        'subject_type': table.get('subject_type') or '',
+        'table_id': table.get('table_id'),
+    }
+    if score is not None:
+        estimated_rank = lookup_rank_by_score(
+            province, int(score), year=year, batch=batch, subject_type=subject_type
+        )
+        result['score'] = int(score)
+        result['rank'] = estimated_rank
+    if rank is not None:
+        estimated_score = lookup_score_by_rank(
+            province, int(rank), year=year, batch=batch, subject_type=subject_type
+        )
+        result['rank'] = int(rank)
+        result['score'] = estimated_score
+    return result
 

@@ -249,6 +249,82 @@ CREATE TABLE IF NOT EXISTS data_fetch_records (
   FOREIGN KEY (source_id) REFERENCES data_sources(source_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS enrollment_announcements (
+  announcement_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_org TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'university',
+  school_id INTEGER,
+  school_code TEXT,
+  school_name TEXT,
+  province TEXT,
+  target_province TEXT,
+  year INTEGER NOT NULL DEFAULT 2026,
+  title TEXT NOT NULL,
+  announcement_type TEXT NOT NULL DEFAULT '招生公告',
+  url TEXT NOT NULL,
+  url_hash TEXT NOT NULL,
+  file_url TEXT,
+  file_ext TEXT,
+  published_at TEXT,
+  matched_keywords TEXT,
+  mentions_henan INTEGER NOT NULL DEFAULT 0,
+  crawl_status TEXT NOT NULL DEFAULT 'discovered',
+  review_status TEXT NOT NULL DEFAULT 'pending',
+  parse_status TEXT NOT NULL DEFAULT 'pending',
+  parse_message TEXT,
+  parsed_plan_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(url_hash)
+);
+
+CREATE TABLE IF NOT EXISTS announcement_crawl_logs (
+  log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_name TEXT NOT NULL,
+  province TEXT,
+  year INTEGER NOT NULL,
+  source_total INTEGER NOT NULL DEFAULT 0,
+  source_processed INTEGER NOT NULL DEFAULT 0,
+  discovered_count INTEGER NOT NULL DEFAULT 0,
+  new_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'running',
+  error_message TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_announcements_province_year ON enrollment_announcements(target_province, year, review_status);
+CREATE INDEX IF NOT EXISTS idx_announcements_henan ON enrollment_announcements(mentions_henan, year);
+
+CREATE TABLE IF NOT EXISTS score_rank_tables (
+  table_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  province TEXT NOT NULL,
+  year INTEGER NOT NULL,
+  batch TEXT NOT NULL DEFAULT '',
+  exam_type TEXT NOT NULL DEFAULT '普通类',
+  subject_type TEXT NOT NULL DEFAULT '',
+  title TEXT,
+  source_file TEXT,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(province, year, batch, subject_type)
+);
+
+CREATE TABLE IF NOT EXISTS score_rank_segments (
+  segment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  table_id INTEGER NOT NULL,
+  score INTEGER NOT NULL,
+  segment_count INTEGER,
+  cumulative_rank INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(table_id, score),
+  FOREIGN KEY (table_id) REFERENCES score_rank_tables(table_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_score_rank_lookup ON score_rank_segments(table_id, score);
+CREATE INDEX IF NOT EXISTS idx_score_rank_tables_query ON score_rank_tables(province, year, batch);
+
 CREATE TABLE IF NOT EXISTS admission_brochures (
   brochure_id INTEGER PRIMARY KEY AUTOINCREMENT,
   school_id INTEGER,

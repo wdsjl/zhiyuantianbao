@@ -96,6 +96,39 @@ GET https://api.zntb.lhyun.net/api/auth/wechat/status
 
 若 `secret_configured` 为 `false`，说明运行中的 pm2 进程未读到 `WECHAT_SECRET`（常见原因：secrets 文件路径不对、未 `--update-env` 重启）。
 
+## 2026 招生公告采集（河南优先）
+
+除掌上高考结构化计划外，系统支持采集 **招生公告 / 章程 / 简章** 链接（HTML/PDF）。
+
+### 后台操作
+
+1. 登录 `https://api.zntb.lhyun.net/admin/announcements`
+2. 点击 **启动河南 2026 公告采集**（或全国高校官网扫描）
+3. 在列表中审核通过后，小程序可通过 `GET /api/announcements?province=河南&year=2026` 读取
+
+### 命令行
+
+```powershell
+cd C:\zhiyuantianbao\server
+python announcement_crawler_service.py --province 河南 --year 2026 --school-limit 300
+```
+
+### 结构化 2026 招生计划（掌上高考 API）
+
+```powershell
+python crawler_service.py --province 河南 --year 2026 --limit 0
+```
+
+或在后台 **数据采集 → 河南 → 2026计划**，自定义采集勾选 **2026年**。
+
+### 公告 PDF 自动解析为招生计划
+
+1. 后台 **招生公告** 页审核通过含 PDF/Excel 的公告
+2. 点击 **解析计划**（或 **批量解析河南已审核 PDF/Excel**）
+3. 解析结果写入 `enrollment_plans`，小程序院校库可查看
+
+小程序：**院校库 → 招生公告** Tab 展示已审核公告；PDF 经 API 代理打开。
+
 ## 本地爬取后上传到服务器
 
 适合在本地电脑长时间跑爬虫，再把数据合并到服务器（保留服务器上的用户、订单、会员等数据）。

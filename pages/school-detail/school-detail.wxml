@@ -11,6 +11,15 @@
     <view wx:if="{{school.website}}" class="sub-text">官网：{{school.website}}</view>
   </view>
 
+  <view wx:if="{{announcements.length}}" class="card">
+    <view class="section-title">相关招生公告</view>
+    <view wx:for="{{announcements}}" wx:key="announcement_id" class="announcement-item" data-item="{{item}}" bindtap="openAnnouncement">
+      <view class="announcement-type">{{item.announcement_type}}</view>
+      <view class="announcement-title">{{item.title}}</view>
+      <view class="sub-text">{{item.source_org}} · {{item.year}}年</view>
+    </view>
+  </view>
+
   <view class="card">
     <view class="section-title">招生专业</view>
     <view wx:if="{{loading}}" class="sub-text">加载中...</view>

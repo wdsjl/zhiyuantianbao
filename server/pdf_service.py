@@ -18,7 +18,10 @@ def pdf_text(value: Any) -> str:
 
 
 def hex_text(value: Any) -> str:
-    return pdf_text(value).encode('utf-16-be').hex().upper()
+    text = pdf_text(value)
+    if not text:
+        return 'FEFF'  # UTF-16 BE BOM，空行占位
+    return text.encode('utf-16-be', errors='ignore').hex().upper()
 
 
 def normalize_pdf_filename_part(value: str, fallback: str = '学生') -> str:
@@ -75,8 +78,8 @@ def ensure_report_greeting(body: str, student: dict) -> str:
     return f'{build_report_greeting(student)}\n\n{content}'
 
 
-AI_GENERATED_NOTICE = '人工智能生成'
-AI_GENERATED_MARKERS = (AI_GENERATED_NOTICE, 'AI生成')
+AI_GENERATED_NOTICE = 'AI生成 · 人工智能生成'
+AI_GENERATED_MARKERS = ('人工智能生成', 'AI生成')
 
 
 def append_ai_generated_notice(text: str) -> str:

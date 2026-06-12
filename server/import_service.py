@@ -253,6 +253,45 @@ def insert_import_log(connection, import_type: str, file_name: str, total_count:
     return cursor.lastrowid
 
 
+def import_plan_rows(filename: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not rows:
+        return {
+            'log_id': None,
+            'total_count': 0,
+            'success_count': 0,
+            'fail_count': 0,
+            'errors': [],
+        }
+    success_count = 0
+    errors: list[str] = []
+
+    with get_connection() as connection:
+        for index, row in enumerate(rows, start=2):
+            try:
+                for field in ['year', 'province', 'batch', 'school_code', 'school_name', 'major_code', 'major_name']:
+                    if not row.get(field):
+                        raise ValueError(f'第 {index} 行缺少字段：{field}')
+                school_id = get_or_create_school(connection, row)
+                major_id = get_or_create_major(connection, row)
+                upsert_plan(connection, row, school_id, major_id)
+                success_count += 1
+            except Exception as exc:
+                errors.append(str(exc))
+
+        fail_count = len(errors)
+        error_message = '\n'.join(errors[:20]) if errors else None
+        log_id = insert_import_log(connection, 'enrollment_plans', filename, len(rows), success_count, fail_count, error_message)
+        connection.commit()
+
+    return {
+        'log_id': log_id,
+        'total_count': len(rows),
+        'success_count': success_count,
+        'fail_count': fail_count,
+        'errors': errors[:20],
+    }
+
+
 def import_admission_rows(filename: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     success_count = 0
     errors = []
