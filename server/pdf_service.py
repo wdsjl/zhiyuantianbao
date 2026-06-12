@@ -187,49 +187,46 @@ def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
     return build_pdf(lines)
 
 
-VOLUNTEER_TABLE_COLUMNS: tuple[tuple[str, int], ...] = (
-    ('序号', 4),
-    ('梯度', 4),
-    ('院校代码/名称', 20),
-    ('专业代码/名称', 20),
-    ('2025分数', 7),
-    ('2025位次', 8),
-    ('城市', 8),
-    ('学费', 7),
-    ('学制', 5),
-    ('调剂', 4),
-    ('风险', 4),
-)
+LANDSCAPE_LINE_WIDTH = 92
 
 
-def format_volunteer_table_header() -> str:
-    return ''.join(pad_column(title, width) for title, width in VOLUNTEER_TABLE_COLUMNS)
+def format_pdf_value(value: Any, fallback: str = '暂无') -> str:
+    if value is None or value == '':
+        return fallback
+    return pdf_text(value)
 
 
-def format_volunteer_table_row(item: dict[str, Any]) -> list[str]:
-    school = f'{item.get("school_code", "")}/{item.get("school_name", "")}'.strip('/')
-    major = f'{item.get("major_code", "")}/{item.get("major_name", "")}'.strip('/')
-    score_2025 = item.get('admission_score_2025', '')
-    rank_2025 = item.get('admission_rank_2025', '')
-    school_lines = wrap_display_text(school, 20)
-    major_lines = wrap_display_text(major, 20)
-    row_count = max(len(school_lines), len(major_lines), 1)
+def format_volunteer_item_block(item: dict[str, Any], line_width: int = LANDSCAPE_LINE_WIDTH) -> list[str]:
+    school_name = format_pdf_value(item.get('school_name'))
+    school_code = format_pdf_value(item.get('school_code'), '')
+    major_name = format_pdf_value(item.get('major_name'))
+    major_code = format_pdf_value(item.get('major_code'), '')
+    school = f'{school_name}（{school_code}）' if school_code else school_name
+    major = f'{major_name}（{major_code}）' if major_code else major_name
+
+    score_2025 = format_pdf_value(item.get('admission_score_2025'))
+    rank_2025 = format_pdf_value(item.get('admission_rank_2025'))
+    city = format_pdf_value(item.get('city'))
+    tuition = format_pdf_value(item.get('tuition'))
+    duration = format_pdf_value(item.get('duration'))
+    adjustable = '是' if item.get('is_adjustable') else '否'
+    risk_level = format_pdf_value(item.get('risk_level'))
+
+    lines = [
+        f'【{item.get("sort_order", "")}】{item.get("gradient_type", "")}  {school}',
+        f'专业：{major}',
+        (
+            f'2025录取：{score_2025}分 / 位次{rank_2025}    '
+            f'城市：{city}    学费：{tuition}    学制：{duration}    '
+            f'调剂：{adjustable}    风险：{risk_level}'
+        ),
+    ]
     rendered: list[str] = []
-    for index in range(row_count):
-        row_cells = [
-            (item.get('sort_order', '') if index == 0 else '', 4),
-            (item.get('gradient_type', '') if index == 0 else '', 4),
-            (school_lines[index] if index < len(school_lines) else '', 20),
-            (major_lines[index] if index < len(major_lines) else '', 20),
-            (score_2025 if index == 0 else '', 7),
-            (rank_2025 if index == 0 else '', 8),
-            (item.get('city', '') if index == 0 else '', 8),
-            (item.get('tuition', '') if index == 0 else '', 7),
-            (item.get('duration', '') if index == 0 else '', 5),
-            ('是' if item.get('is_adjustable') else '否' if index == 0 else '', 4),
-            (item.get('risk_level', '') if index == 0 else '', 4),
-        ]
-        rendered.append(''.join(pad_column(value, width) for value, width in row_cells))
+    for line in lines:
+        rendered.extend(wrap_display_text(line, line_width))
+    if item.get('risk_reason'):
+        rendered.extend(wrap_display_text(f'说明：{item.get("risk_reason")}', line_width))
+    rendered.append('—' * min(line_width, 48))
     return rendered
 
 
@@ -327,14 +324,12 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
         f'方案名称：{draft.get("draft_name", "")}    风险等级：{draft.get("risk_level", "未排查")}',
         f'省份：{draft.get("province", "")}    年份：{draft.get("year", "")}    批次：{draft.get("batch", "")}',
         '',
-        '三、志愿明细（横向表格）',
-        format_volunteer_table_header(),
-        '-' * 97,
+        '三、志愿明细',
+        '每条志愿独立成块展示，含 2025 年录取分数与位次（暂无表示库中无该年数据）。',
+        '',
     ])
     for item in items:
-        lines.extend(format_volunteer_table_row(item))
-        if item.get('risk_reason'):
-            lines.extend(wrap_display_text(f'风险说明：{item.get("risk_reason")}', 96))
+        lines.extend(format_volunteer_item_block(item))
         lines.append('')
     if draft.get('ai_explain'):
         lines.extend(['', '四、AI 志愿方案解读'])
