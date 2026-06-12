@@ -123,6 +123,29 @@ def pad_column(value: Any, width: int) -> str:
     return f'{text}{" " * gap}'
 
 
+def wrap_display_segments(segments: list[str], max_width: int, separator: str = '    ') -> list[str]:
+    lines: list[str] = []
+    current = ''
+    for segment in segments:
+        piece = pdf_text(segment)
+        if not piece:
+            continue
+        candidate = f'{current}{separator}{piece}' if current else piece
+        if display_width(candidate) <= max_width:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+        if display_width(piece) <= max_width:
+            current = piece
+        else:
+            lines.extend(wrap_display_text(piece, max_width))
+            current = ''
+    if current:
+        lines.append(current)
+    return lines or ['']
+
+
 def wrap_display_text(value: Any, max_width: int) -> list[str]:
     text = pdf_text(value)
     if not text:
@@ -212,18 +235,19 @@ def format_volunteer_item_block(item: dict[str, Any], line_width: int = LANDSCAP
     adjustable = '是' if item.get('is_adjustable') else '否'
     risk_level = format_pdf_value(item.get('risk_level'))
 
-    lines = [
-        f'【{item.get("sort_order", "")}】{item.get("gradient_type", "")}  {school}',
-        f'专业：{major}',
-        (
-            f'2025录取：{score_2025}分 / 位次{rank_2025}    '
-            f'城市：{city}    学费：{tuition}    学制：{duration}    '
-            f'调剂：{adjustable}    风险：{risk_level}'
-        ),
+    stats_segments = [
+        f'2025录取：{score_2025}分 / 位次{rank_2025}',
+        f'城市：{city}',
+        f'学费：{tuition}',
+        f'学制：{duration}',
+        f'调剂：{adjustable}',
+        f'风险：{risk_level}',
     ]
+
     rendered: list[str] = []
-    for line in lines:
-        rendered.extend(wrap_display_text(line, line_width))
+    rendered.extend(wrap_display_text(f'【{item.get("sort_order", "")}】{item.get("gradient_type", "")}  {school}', line_width))
+    rendered.extend(wrap_display_text(f'专业：{major}', line_width))
+    rendered.extend(wrap_display_segments(stats_segments, line_width))
     if item.get('risk_reason'):
         rendered.extend(wrap_display_text(f'说明：{item.get("risk_reason")}', line_width))
     rendered.append('—' * min(line_width, 48))

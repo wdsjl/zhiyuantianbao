@@ -37,6 +37,28 @@ class PdfServiceTests(unittest.TestCase):
         self.assertIn('6600', merged)
         self.assertIn('四年', merged)
 
+    def test_risk_label_not_split_across_lines(self):
+        lines = format_volunteer_item_block({
+            'sort_order': 45,
+            'gradient_type': '保',
+            'school_code': '10240',
+            'school_name': '哈尔滨商业大学',
+            'major_code': '020301K',
+            'major_name': '金融学（中外合作办学）',
+            'admission_score_2025': None,
+            'admission_rank_2025': None,
+            'city': '哈尔滨市',
+            'tuition': 3500,
+            'duration': '四年',
+            'is_adjustable': 1,
+            'risk_level': '低',
+        })
+        for line in lines:
+            self.assertFalse(line.endswith('风'))
+            self.assertNotEqual(line.strip(), '险：低')
+            if '风险' in line:
+                self.assertIn('风险：低', line)
+
     def test_long_major_wraps_without_breaking_other_fields(self):
         lines = format_volunteer_item_block({
             'sort_order': 4,
