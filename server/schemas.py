@@ -67,7 +67,9 @@ class RecommendRequest(BaseModel):
     only_public: Optional[bool] = None
     accept_adjustment: bool = True
     plan_style: str = 'balanced'
-    volunteer_count: int = 9
+    volunteer_count: int = 0
+    student_id: Optional[int] = None
+    auto_save_draft: bool = True
 
 
 class RiskInspectRequest(BaseModel):
@@ -151,6 +153,11 @@ class OpenRequestCreate(BaseModel):
     contact_phone: Optional[str] = None
     message: Optional[str] = None
     request_type: str = 'open'
+
+
+class DouyinRedeemRequest(BaseModel):
+    user_id: int
+    coupon_code: str
 
 
 class PaymentCreateRequest(BaseModel):

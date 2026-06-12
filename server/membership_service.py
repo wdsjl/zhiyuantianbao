@@ -25,7 +25,7 @@ DEFAULT_PERMISSIONS = [
 
 DEFAULT_PLAN_PERMISSIONS = {
     'free': {'personality_basic': -1, 'school_basic': -1, 'score_recent_2y': -1, 'manual_simulation': -1},
-    'trial': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': 10, 'smart_recommend': 3, 'risk_inspect': 3, 'ai_plan_explain': 3, 'draft_save': 3, 'pdf_export': 1},
+    'trial': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': 10, 'smart_recommend': 3, 'risk_inspect': 3, 'ai_plan_explain': 3, 'draft_save': 3, 'pdf_export': -1},
     'standard': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': -1, 'smart_recommend': -1, 'risk_inspect': -1, 'ai_plan_explain': 5, 'draft_save': -1, 'pdf_export': -1, 'major_deep_guide': -1, 'volunteer_template': -1},
     'premium': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': -1, 'smart_recommend': -1, 'risk_inspect': -1, 'ai_plan_explain': 20, 'draft_save': -1, 'pdf_export': -1, 'major_deep_guide': -1, 'same_rank_reference': -1, 'premium_school_detail': -1, 'region_career_plan': -1, 'volunteer_template': -1, 'question_channel': -1, 'recruit_notice': -1},
 }
@@ -62,7 +62,22 @@ def seed_membership_defaults() -> None:
         for plan_code, permissions in DEFAULT_PLAN_PERMISSIONS.items():
             for permission_code, limit_value in permissions.items():
                 c.execute('INSERT OR IGNORE INTO membership_plan_permissions (plan_code, permission_code, is_enabled, limit_value) VALUES (?, ?, ?, ?)', [plan_code, permission_code, 1, limit_value])
+        sync_default_plan_permission_limits(c)
         c.commit()
+
+
+def sync_default_plan_permission_limits(connection) -> None:
+    """将代码中的默认权限次数同步到数据库（星鼎豆体系下 PDF 导出等已调整的项）。"""
+    for plan_code, permissions in DEFAULT_PLAN_PERMISSIONS.items():
+        for permission_code, limit_value in permissions.items():
+            connection.execute(
+                '''
+                UPDATE membership_plan_permissions
+                SET limit_value = ?, is_enabled = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE plan_code = ? AND permission_code = ?
+                ''',
+                [limit_value, plan_code, permission_code],
+            )
 
 
 def list_plans() -> list[dict[str, Any]]:
@@ -103,7 +118,27 @@ def save_plan_permission(plan_code: str, permission_code: str, is_enabled: bool,
 
 def search_users(keyword: str = '') -> list[dict[str, Any]]:
     ensure_membership_tables()
-    sql = '''SELECT u.user_id, u.phone, u.role, u.name, u.created_at, s.student_id, s.name AS student_name, s.school_name, s.score, s.rank, um.plan_code, mp.plan_name, um.status AS membership_status, um.expires_at FROM users u LEFT JOIN students s ON s.user_id = u.user_id LEFT JOIN user_memberships um ON um.user_membership_id = (SELECT user_membership_id FROM user_memberships WHERE user_id = u.user_id AND status = 'active' ORDER BY datetime(COALESCE(expires_at, '2999-12-31')) DESC, user_membership_id DESC LIMIT 1) LEFT JOIN membership_plans mp ON mp.plan_code = um.plan_code WHERE 1=1'''
+    from user_flags_service import ensure_user_flags
+    from bean_service import ensure_bean_tables
+    ensure_user_flags()
+    ensure_bean_tables()
+    sql = '''
+    SELECT u.user_id, u.phone, u.role, u.name, u.created_at, u.is_super_tester,
+           COALESCE(uba.balance, 0) AS bean_balance,
+           s.student_id, s.name AS student_name, s.school_name, s.score, s.rank,
+           um.plan_code, mp.plan_name, um.status AS membership_status, um.expires_at
+    FROM users u
+    LEFT JOIN user_bean_accounts uba ON uba.user_id = u.user_id
+    LEFT JOIN students s ON s.user_id = u.user_id
+    LEFT JOIN user_memberships um ON um.user_membership_id = (
+      SELECT user_membership_id FROM user_memberships
+      WHERE user_id = u.user_id AND status = 'active'
+      ORDER BY datetime(COALESCE(expires_at, '2999-12-31')) DESC, user_membership_id DESC
+      LIMIT 1
+    )
+    LEFT JOIN membership_plans mp ON mp.plan_code = um.plan_code
+    WHERE 1=1
+    '''
     params: list[Any] = []
     if keyword:
         sql += ' AND (u.phone LIKE ? OR u.name LIKE ? OR s.name LIKE ? OR s.school_name LIKE ?)'
@@ -213,6 +248,16 @@ def get_permission_usage(user_id: int, permission_code: str, plan_code: str, mem
 
 
 def check_permission(user_id: int | None, permission_code: str) -> dict[str, Any]:
+    from user_flags_service import is_super_tester
+    if user_id and is_super_tester(user_id):
+        return {
+            'allowed': True,
+            'remaining': -1,
+            'used': 0,
+            'limit': -1,
+            'super_tester': True,
+            'message': '超级测试账号，功能不限次',
+        }
     entitlements = get_user_entitlements(user_id)
     plan = entitlements.get('plan') or {'plan_code': 'free', 'plan_name': '免费版'}
     membership = entitlements.get('membership')
