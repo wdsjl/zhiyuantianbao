@@ -1722,6 +1722,8 @@ def province_rules_resolve(province: str, batch: str = '', year: int = 2025):
 
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
+    from recommend_service import province_variants
+
     slot_info = resolve_volunteer_slots(
         request.province,
         request.batch,
@@ -1729,6 +1731,36 @@ def recommend(request: RecommendRequest):
     )
     total_slots = slot_info['total_slots']
     province_rule = slot_info['rule']
+    rule_batch = province_rule.get('batch') or request.batch
+
+    user_rank = int(request.rank)
+    if user_rank <= 0 and request.score:
+        estimated = None
+        try:
+            from score_segment_service import lookup_rank_by_score
+            estimated = lookup_rank_by_score(
+                request.province,
+                int(request.score),
+                year=2026,
+                batch=request.batch,
+            )
+        except ImportError:
+            pass
+        if estimated:
+            user_rank = estimated
+
+    province_list = province_variants(request.province)
+    province_placeholders = ','.join(['?'] * len(province_list))
+    with get_connection() as connection:
+        total_row = connection.execute(
+            f'''
+            SELECT MAX(min_rank) AS total_rank FROM admission_records
+            WHERE province IN ({province_placeholders}) AND batch = ?
+            ''',
+            [*province_list, rule_batch],
+        ).fetchone()
+    province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
+    segment = detect_segment(user_rank, province_total_rank, rule_batch)
 
     weighted_items, effective_batch, candidate_meta = fetch_recommendation_candidates(
         request.province,
@@ -1739,22 +1771,16 @@ def recommend(request: RecommendRequest):
         school_types=request.school_types,
         major_types=request.major_types,
         only_public=request.only_public,
-        rule_batch=province_rule.get('batch'),
+        rule_batch=rule_batch,
+        user_rank=user_rank if user_rank > 0 else None,
+        segment=segment,
     )
 
-    user_rank = int(request.rank)
-    if user_rank <= 0 and request.score:
+    if user_rank <= 0 and request.score and weighted_items:
         estimated = estimate_rank_from_score(weighted_items, int(request.score))
         if estimated:
             user_rank = estimated
-
-    with get_connection() as connection:
-        total_row = connection.execute(
-            'SELECT MAX(min_rank) AS total_rank FROM admission_records WHERE province = ? AND batch = ?',
-            [request.province, effective_batch]
-        ).fetchone()
-    province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
-    segment = detect_segment(user_rank, province_total_rank, effective_batch)
+            segment = detect_segment(user_rank, province_total_rank, effective_batch)
 
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
@@ -1763,6 +1789,7 @@ def recommend(request: RecommendRequest):
         batch=effective_batch,
         segment=segment,
         total_slots=total_slots,
+        max_majors_per_school=province_rule.get('major_count_per_school'),
     )
     strategy_meta['volunteer_rule'] = {
         'province': province_rule.get('province') or request.province,
@@ -1778,12 +1805,13 @@ def recommend(request: RecommendRequest):
         'rule_description': province_rule.get('rule_description') or '',
         'candidate_pool': candidate_meta.get('candidate_pool'),
         'relaxed_major_filter': candidate_meta.get('relaxed_major_filter'),
+        'rank_window': candidate_meta.get('rank_window'),
     }
 
     items = []
     for index, row in enumerate(selected_rows, start=1):
         gradient_type = row.get('gradient_type') or get_gradient_type(
-            user_rank, row.get('weighted_rank'), segment, request.batch
+            user_rank, row.get('weighted_rank'), segment, effective_batch
         )
         is_adjustable = request.accept_adjustment
         risk_level = get_risk_level(gradient_type, is_adjustable)

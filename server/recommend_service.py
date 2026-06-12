@@ -117,6 +117,8 @@ def query_admission_rows(
     school_types: list[str] | None = None,
     major_types: list[str] | None = None,
     only_public: bool | None = None,
+    rank_min: int | None = None,
+    rank_max: int | None = None,
 ) -> list[dict[str, Any]]:
     province_list = province_variants(province)
     province_placeholders = ','.join(['?'] * len(province_list))
@@ -148,6 +150,12 @@ def query_admission_rows(
     if only_public is not None:
         sql += ' AND s.is_public = ?'
         params.append(1 if only_public else 0)
+    if rank_min is not None:
+        sql += ' AND ar.min_rank IS NOT NULL AND ar.min_rank >= ?'
+        params.append(int(rank_min))
+    if rank_max is not None:
+        sql += ' AND ar.min_rank IS NOT NULL AND ar.min_rank <= ?'
+        params.append(int(rank_max))
 
     sql += ' ORDER BY ar.year DESC, ar.min_rank ASC'
 
@@ -181,7 +189,7 @@ def build_weighted_items(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 weight_sum += weight
             if record.get('min_score') is not None:
                 score_sum += record['min_score'] * weight
-        weighted_rank = round(rank_sum / weight_sum) if weight_sum else latest.get('min_rank')
+        weighted_rank = round(rank_sum / weight_sum) if weight_sum else None
         weighted_score = round(score_sum / weight_sum) if weight_sum else latest.get('min_score')
         weighted_items.append({
             **latest,
@@ -201,6 +209,8 @@ def _query_rows_for_batches(
     school_types: list[str] | None = None,
     major_types: list[str] | None = None,
     only_public: bool | None = None,
+    rank_min: int | None = None,
+    rank_max: int | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     for candidate_batch in batch_candidates:
         rows = query_admission_rows(
@@ -211,6 +221,8 @@ def _query_rows_for_batches(
             school_types=school_types,
             major_types=major_types,
             only_public=only_public,
+            rank_min=rank_min,
+            rank_max=rank_max,
         )
         if rows:
             return rows, candidate_batch
@@ -228,6 +240,8 @@ def fetch_recommendation_candidates(
     major_types: list[str] | None = None,
     only_public: bool | None = None,
     rule_batch: str | None = None,
+    user_rank: int | None = None,
+    segment: str = 'mid',
 ) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
     requested_batch = (batch or '').strip()
     batches: list[str] = []
@@ -244,9 +258,16 @@ def fetch_recommendation_candidates(
             if alias and alias not in batches:
                 batches.append(alias)
 
+    rank_min: int | None = None
+    rank_max: int | None = None
+    if user_rank and user_rank > 0:
+        from rank_strategy_service import get_pool_rank_window
+        rank_min, rank_max = get_pool_rank_window(user_rank, segment, requested_batch)
+
     meta: dict[str, Any] = {
         'tried_batches': batches,
         'relaxed_major_filter': False,
+        'rank_window': [rank_min, rank_max] if rank_min is not None else None,
         'available_batches': available_batch_names,
         'available_batch_counts': {
             str(item.get('batch') or ''): int(item.get('school_major_count') or item.get('record_count') or 0)
@@ -267,6 +288,8 @@ def fetch_recommendation_candidates(
         school_types=school_types,
         major_types=major_types,
         only_public=only_public,
+        rank_min=rank_min,
+        rank_max=rank_max,
     )
     if rows and effective_batch and effective_batch != requested_batch:
         meta['batch_fallback'] = effective_batch
@@ -281,6 +304,8 @@ def fetch_recommendation_candidates(
             school_types=school_types,
             major_types=None,
             only_public=only_public,
+            rank_min=rank_min,
+            rank_max=rank_max,
         )
         if relaxed_rows:
             effective_batch = relaxed_batch
