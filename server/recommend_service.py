@@ -117,6 +117,8 @@ def query_admission_rows(
     school_types: list[str] | None = None,
     major_types: list[str] | None = None,
     only_public: bool | None = None,
+    rank_min: int | None = None,
+    rank_max: int | None = None,
 ) -> list[dict[str, Any]]:
     province_list = province_variants(province)
     province_placeholders = ','.join(['?'] * len(province_list))
@@ -148,6 +150,12 @@ def query_admission_rows(
     if only_public is not None:
         sql += ' AND s.is_public = ?'
         params.append(1 if only_public else 0)
+    if rank_min is not None:
+        sql += ' AND ar.min_rank IS NOT NULL AND ar.min_rank >= ?'
+        params.append(int(rank_min))
+    if rank_max is not None:
+        sql += ' AND ar.min_rank IS NOT NULL AND ar.min_rank <= ?'
+        params.append(int(rank_max))
 
     sql += ' ORDER BY ar.year DESC, ar.min_rank ASC'
 
@@ -181,7 +189,7 @@ def build_weighted_items(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 weight_sum += weight
             if record.get('min_score') is not None:
                 score_sum += record['min_score'] * weight
-        weighted_rank = round(rank_sum / weight_sum) if weight_sum else latest.get('min_rank')
+        weighted_rank = round(rank_sum / weight_sum) if weight_sum else None
         weighted_score = round(score_sum / weight_sum) if weight_sum else latest.get('min_score')
         weighted_items.append({
             **latest,
@@ -201,6 +209,8 @@ def _query_rows_for_batches(
     school_types: list[str] | None = None,
     major_types: list[str] | None = None,
     only_public: bool | None = None,
+    rank_min: int | None = None,
+    rank_max: int | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     for candidate_batch in batch_candidates:
         rows = query_admission_rows(
@@ -211,6 +221,8 @@ def _query_rows_for_batches(
             school_types=school_types,
             major_types=major_types,
             only_public=only_public,
+            rank_min=rank_min,
+            rank_max=rank_max,
         )
         if rows:
             return rows, candidate_batch
@@ -228,6 +240,8 @@ def fetch_recommendation_candidates(
     major_types: list[str] | None = None,
     only_public: bool | None = None,
     rule_batch: str | None = None,
+    user_rank: int | None = None,
+    segment: str = 'mid',
 ) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
     requested_batch = (batch or '').strip()
     batches: list[str] = []
@@ -244,9 +258,16 @@ def fetch_recommendation_candidates(
             if alias and alias not in batches:
                 batches.append(alias)
 
+    rank_min: int | None = None
+    rank_max: int | None = None
+    if user_rank and user_rank > 0:
+        from rank_strategy_service import get_pool_rank_window
+        rank_min, rank_max = get_pool_rank_window(user_rank, segment, requested_batch)
+
     meta: dict[str, Any] = {
         'tried_batches': batches,
         'relaxed_major_filter': False,
+        'rank_window': [rank_min, rank_max] if rank_min is not None else None,
         'available_batches': available_batch_names,
         'available_batch_counts': {
             str(item.get('batch') or ''): int(item.get('school_major_count') or item.get('record_count') or 0)
@@ -267,6 +288,8 @@ def fetch_recommendation_candidates(
         school_types=school_types,
         major_types=major_types,
         only_public=only_public,
+        rank_min=rank_min,
+        rank_max=rank_max,
     )
     if rows and effective_batch and effective_batch != requested_batch:
         meta['batch_fallback'] = effective_batch
@@ -281,6 +304,8 @@ def fetch_recommendation_candidates(
             school_types=school_types,
             major_types=None,
             only_public=only_public,
+            rank_min=rank_min,
+            rank_max=rank_max,
         )
         if relaxed_rows:
             effective_batch = relaxed_batch
@@ -303,6 +328,91 @@ def fetch_recommendation_candidates(
 
 
 AUTO_DRAFT_NAME = '智能推荐方案'
+ADMISSION_REFERENCE_YEAR = 2025
+
+
+def ensure_draft_item_admission_columns() -> None:
+    with get_connection() as connection:
+        columns = {row['name'] for row in connection.execute('PRAGMA table_info(volunteer_draft_items)').fetchall()}
+        changed = False
+        if 'admission_score_2025' not in columns:
+            connection.execute('ALTER TABLE volunteer_draft_items ADD COLUMN admission_score_2025 INTEGER')
+            changed = True
+        if 'admission_rank_2025' not in columns:
+            connection.execute('ALTER TABLE volunteer_draft_items ADD COLUMN admission_rank_2025 INTEGER')
+            changed = True
+        if changed:
+            connection.commit()
+
+
+def lookup_admission_stats_by_year(
+    items: list[dict[str, Any]],
+    province: str,
+    batch: str,
+    year: int = ADMISSION_REFERENCE_YEAR,
+) -> dict[tuple[int, int], dict[str, Any]]:
+    pairs: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for item in items:
+        school_id = item.get('school_id')
+        major_id = item.get('major_id')
+        if not school_id or not major_id:
+            continue
+        key = (int(school_id), int(major_id))
+        if key in seen:
+            continue
+        seen.add(key)
+        pairs.append(key)
+    if not pairs:
+        return {}
+
+    variants = province_variants(province)
+    province_placeholders = ','.join(['?'] * len(variants))
+    batch_aliases = expand_batch_aliases(batch) or [batch]
+    batch_placeholders = ','.join(['?'] * len(batch_aliases))
+    pair_placeholders = ','.join(['(?, ?)'] * len(pairs))
+    params: list[Any] = [year, *variants, *batch_aliases]
+    for school_id, major_id in pairs:
+        params.extend([school_id, major_id])
+
+    sql = f'''
+    SELECT school_id, major_id, min_score, min_rank, year, batch
+    FROM admission_records
+    WHERE year = ?
+      AND province IN ({province_placeholders})
+      AND batch IN ({batch_placeholders})
+      AND (school_id, major_id) IN ({pair_placeholders})
+    '''
+    with get_connection() as connection:
+        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
+    stats: dict[tuple[int, int], dict[str, Any]] = {}
+    for row in rows:
+        key = (int(row['school_id']), int(row['major_id']))
+        existing = stats.get(key)
+        if not existing or (row.get('min_rank') is not None and (
+            existing.get('min_rank') is None or int(row['min_rank']) < int(existing['min_rank'])
+        )):
+            stats[key] = row
+    return stats
+
+
+def attach_admission_year_stats(
+    items: list[dict[str, Any]],
+    province: str,
+    batch: str,
+    year: int = ADMISSION_REFERENCE_YEAR,
+) -> list[dict[str, Any]]:
+    stats = lookup_admission_stats_by_year(items, province, batch, year)
+    enriched: list[dict[str, Any]] = []
+    for item in items:
+        row = dict(item)
+        if row.get('admission_score_2025') is None and row.get('admission_rank_2025') is None:
+            key = (int(row.get('school_id') or 0), int(row.get('major_id') or 0))
+            stat = stats.get(key) or {}
+            row['admission_score_2025'] = stat.get('min_score')
+            row['admission_rank_2025'] = stat.get('min_rank')
+        enriched.append(row)
+    return enriched
 
 
 def save_auto_recommendation_draft(
@@ -314,6 +424,7 @@ def save_auto_recommendation_draft(
     risk_level: str,
     items: list[dict[str, Any]],
 ) -> int:
+    ensure_draft_item_admission_columns()
     with get_connection() as connection:
         existing = row_to_dict(
             connection.execute(
@@ -355,8 +466,8 @@ def save_auto_recommendation_draft(
                 INSERT INTO volunteer_draft_items (
                   draft_id, sort_order, gradient_type, school_id, school_name, school_code,
                   major_id, major_name, major_code, city, school_type, tuition, duration,
-                  is_adjustable, risk_level, risk_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  is_adjustable, risk_level, risk_reason, admission_score_2025, admission_rank_2025
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 [
                     draft_id,
@@ -375,6 +486,8 @@ def save_auto_recommendation_draft(
                     1 if item.get('is_adjustable') else 0,
                     item.get('risk_level'),
                     item.get('risk_reason'),
+                    item.get('admission_score_2025'),
+                    item.get('admission_rank_2025'),
                 ],
             )
         connection.commit()

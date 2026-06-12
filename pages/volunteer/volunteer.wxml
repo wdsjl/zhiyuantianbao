@@ -1,7 +1,7 @@
 <view class="container">
   <view class="card">
     <view class="section-title">智能梯度志愿</view>
-    <view class="sub-text">仅按全省位次 X 划分冲稳保：冲 0.90X~0.95X、稳 0.95X~1.05X、保 1.15X~1.25X。</view>
+    <view class="sub-text">按档案分数+位次双校验，在位次系数区间内划分冲稳保（高分段冲 0.85X~0.95X、保至约 1.18X）。生成前请确认档案准确。</view>
     <view wx:if="{{profile.province}}" class="sub-text profile-batch-tip">
       当前档案：{{profile.province}} · {{profile.targetBatch || '未填批次'}} · {{profile.score || '--'}}分 / 位次{{profile.rank || '--'}}
       <text class="profile-edit-link" bindtap="goProfile">修改</text>
@@ -20,9 +20,10 @@
       >{{item.label}}（{{item.desc}}）</text>
     </view>
     <view wx:if="{{strategyMeta}}" class="sub-text strategy-meta">
-      位次区间：冲 {{strategyMeta.bands.chong[0]}}~{{strategyMeta.bands.chong[1]}}，
+      冲稳保位次区间：冲 {{strategyMeta.bands.chong[0]}}~{{strategyMeta.bands.chong[1]}}，
       稳 {{strategyMeta.bands.wen[0]}}~{{strategyMeta.bands.wen[1]}}，
       保 {{strategyMeta.bands.bao[0]}}~{{strategyMeta.bands.bao[1]}}
+      <text wx:if="{{strategyMeta.algorithm_version}}"> · 算法 {{strategyMeta.algorithm_version}}</text>
     </view>
     <view class="button-row">
       <button class="primary-btn" bindtap="generatePlan">智能生成</button>
@@ -73,6 +74,7 @@
     </view>
     <view class="sub-text">{{item.city}} · {{item.schoolType}} · {{item.duration}} · {{item.tuition}}元/年</view>
     <view class="major-line">专业：{{item.majorName}}（{{item.majorCode}}）</view>
+    <view class="admission-ref">2025年录取参考：{{item.admissionScore2025 || '--'}} 分 / 位次 {{item.admissionRank2025 || '--'}}</view>
     <view wx:if="{{item.admissionProbability}}" class="sub-text">录取概率参考：{{item.admissionProbability}}</view>
     <view wx:if="{{item.personalityMatched}}" class="match-badge">与性格测评推荐专业大类匹配：{{item.majorType}}</view>
     <view class="adjust-row">

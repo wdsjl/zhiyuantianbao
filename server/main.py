@@ -25,7 +25,12 @@ from student_report_service import (
 from province_rules_service import (
     ensure_province_rules_seeded, resolve_volunteer_slots, summarize_province_rules,
 )
-from recommend_service import fetch_recommendation_candidates, save_auto_recommendation_draft
+from recommend_service import (
+    attach_admission_year_stats,
+    ensure_draft_item_admission_columns,
+    fetch_recommendation_candidates,
+    save_auto_recommendation_draft,
+)
 from personality_service import (
     ensure_personality_tables, save_assessment, get_latest_assessment, save_ai_career_report,
     build_personality_ai_context, build_career_report_prompt,
@@ -106,6 +111,7 @@ def ensure_draft_ai_column() -> None:
 
 
 ensure_draft_ai_column()
+ensure_draft_item_admission_columns()
 ensure_membership_tables()
 ensure_payment_tables()
 ensure_admin_auth()
@@ -1627,9 +1633,12 @@ def list_admissions(
     year: int | None = None,
     school_id: int | None = None,
     major_id: int | None = None,
+    keyword: str = '',
     limit: int = 100,
     offset: int = 0
 ):
+    from recommend_service import expand_batch_aliases, province_variants
+
     sql = '''
     SELECT ar.*, s.school_name, s.city, s.is_public, s.is_double_first_class, m.major_name, m.major_type
     FROM admission_records ar
@@ -1639,11 +1648,19 @@ def list_admissions(
     '''
     params = []
     if province:
-        sql += ' AND ar.province = ?'
-        params.append(province)
+        variants = province_variants(province)
+        placeholders = ','.join(['?'] * len(variants))
+        sql += f' AND ar.province IN ({placeholders})'
+        params.extend(variants)
     if batch:
-        sql += ' AND ar.batch = ?'
-        params.append(batch)
+        batch_aliases = expand_batch_aliases(batch) or [batch]
+        placeholders = ','.join(['?'] * len(batch_aliases))
+        sql += f' AND ar.batch IN ({placeholders})'
+        params.extend(batch_aliases)
+    if keyword:
+        like = f'%{keyword}%'
+        sql += ' AND (s.school_name LIKE ? OR m.major_name LIKE ? OR s.school_code LIKE ?)'
+        params.extend([like, like, like])
     if year is not None:
         sql += ' AND ar.year = ?'
         params.append(year)
@@ -1658,6 +1675,181 @@ def list_admissions(
     with get_connection() as connection:
         rows = connection.execute(sql, params).fetchall()
     return {'list': rows_to_dicts(rows)}
+
+
+@app.get('/api/schools/rank-snapshot')
+def school_rank_snapshot(
+    province: str = Query(...),
+    batch: str = '本科批',
+    year: int | None = None,
+    keyword: str = '',
+    limit: int = 100,
+):
+    from recommend_service import expand_batch_aliases, province_variants
+
+    variants = province_variants(province)
+    province_placeholders = ','.join(['?'] * len(variants))
+    batch_aliases = expand_batch_aliases(batch) or [batch]
+    batch_placeholders = ','.join(['?'] * len(batch_aliases))
+    sql = f'''
+    SELECT
+      ar.school_id,
+      s.school_name,
+      s.city,
+      s.is_985,
+      s.is_211,
+      s.is_double_first_class,
+      MIN(ar.min_rank) AS best_min_rank,
+      MIN(ar.min_score) AS best_min_score,
+      COUNT(DISTINCT ar.major_id) AS major_count,
+      MAX(ar.year) AS latest_year
+    FROM admission_records ar
+    JOIN schools s ON s.school_id = ar.school_id
+    WHERE ar.province IN ({province_placeholders})
+      AND ar.batch IN ({batch_placeholders})
+      AND ar.min_rank IS NOT NULL
+    '''
+    params = [*variants, *batch_aliases]
+    if year is not None:
+        sql += ' AND ar.year = ?'
+        params.append(year)
+    if keyword:
+        like = f'%{keyword}%'
+        sql += ' AND (s.school_name LIKE ? OR s.school_code LIKE ?)'
+        params.extend([like, like])
+    sql += '''
+    GROUP BY ar.school_id
+    ORDER BY best_min_rank ASC
+    LIMIT ?
+    '''
+    params.append(limit)
+    with get_connection() as connection:
+        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
+    return {'list': rows, 'province': province, 'batch': batch, 'year': year}
+
+
+@app.get('/api/score-segments/tables')
+def list_score_segment_tables(province: str = '', limit: int = 20):
+    from score_segment_service import list_score_rank_tables
+
+    tables = list_score_rank_tables(limit)
+    if province:
+        tables = [item for item in tables if province in str(item.get('province') or '')]
+    return {'list': tables}
+
+
+@app.get('/api/score-segments/lookup')
+def lookup_score_segment(
+    province: str = Query(...),
+    score: int | None = Query(None),
+    rank: int | None = Query(None),
+    year: int | None = Query(None),
+    batch: str = Query(''),
+    subject_type: str = Query(''),
+):
+    from score_segment_service import lookup_rank_by_score, lookup_score_by_rank, find_score_rank_table
+
+    if score is None and rank is None:
+        raise HTTPException(status_code=400, detail='请提供 score 或 rank 参数')
+    table = find_score_rank_table(province, year, batch, subject_type)
+    if not table:
+        raise HTTPException(status_code=404, detail='未找到对应一分一段表，请先在后台导入')
+    result = {
+        'province': province,
+        'year': table.get('year'),
+        'batch': table.get('batch') or '',
+        'subject_type': table.get('subject_type') or '',
+        'table_id': table.get('table_id'),
+    }
+    if score is not None:
+        estimated_rank = lookup_rank_by_score(
+            province, int(score), year=year, batch=batch, subject_type=subject_type
+        )
+        result['score'] = int(score)
+        result['rank'] = estimated_rank
+    if rank is not None:
+        estimated_score = lookup_score_by_rank(
+            province, int(rank), year=year, batch=batch, subject_type=subject_type
+        )
+        result['rank'] = int(rank)
+        result['score'] = estimated_score
+    return result
+
+
+@app.get('/api/announcements')
+def api_announcements(
+    keyword: str = '',
+    province: str = '河南',
+    school_name: str = '',
+    school_id: int | None = None,
+    year: int = 2026,
+    henan_only: bool = False,
+    review_status: str = 'approved',
+    announcement_type: str = '',
+    limit: int = 50,
+):
+    from announcement_crawler_service import search_announcements
+
+    if school_id:
+        with get_connection() as connection:
+            school = row_to_dict(
+                connection.execute('SELECT school_name FROM schools WHERE school_id = ?', [school_id]).fetchone()
+            )
+        if school and school.get('school_name'):
+            school_name = school_name or school['school_name']
+    return {
+        'list': search_announcements(
+            keyword=keyword,
+            province=province,
+            school_name=school_name,
+            year=year,
+            henan_only=henan_only,
+            review_status=review_status,
+            announcement_type=announcement_type,
+            limit=limit,
+        )
+    }
+
+
+@app.get('/api/announcements/{announcement_id}')
+def api_announcement_detail(announcement_id: int):
+    from announcement_crawler_service import get_announcement
+
+    item = get_announcement(announcement_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='公告不存在')
+    if item.get('review_status') != 'approved':
+        raise HTTPException(status_code=403, detail='公告未通过审核')
+    return item
+
+
+@app.get('/api/announcements/{announcement_id}/file')
+def api_announcement_file(announcement_id: int):
+    from announcement_crawler_service import get_announcement
+    from announcement_pdf_parser_service import download_announcement_file, guess_file_ext
+
+    item = get_announcement(announcement_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='公告不存在')
+    if item.get('review_status') != 'approved':
+        raise HTTPException(status_code=403, detail='公告未通过审核')
+    file_url = item.get('file_url') or item.get('url')
+    if not file_url:
+        raise HTTPException(status_code=404, detail='公告文件不存在')
+    try:
+        content, filename = download_announcement_file(file_url)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f'文件下载失败：{exc}') from exc
+    ext = guess_file_ext(file_url, filename, content)
+    media_types = {
+        'pdf': 'application/pdf',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xls': 'application/vnd.ms-excel',
+        'csv': 'text/csv',
+    }
+    media_type = media_types.get(ext, 'application/octet-stream')
+    headers = {'Content-Disposition': f'inline; filename="{filename or f"announcement.{ext or "bin"}"}"'}
+    return Response(content=content, media_type=media_type, headers=headers)
 
 
 @app.get('/api/province-rules')
@@ -1722,6 +1914,8 @@ def province_rules_resolve(province: str, batch: str = '', year: int = 2025):
 
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
+    from recommend_service import province_variants
+
     slot_info = resolve_volunteer_slots(
         request.province,
         request.batch,
@@ -1729,6 +1923,36 @@ def recommend(request: RecommendRequest):
     )
     total_slots = slot_info['total_slots']
     province_rule = slot_info['rule']
+    rule_batch = province_rule.get('batch') or request.batch
+
+    user_rank = int(request.rank)
+    if user_rank <= 0 and request.score:
+        estimated = None
+        try:
+            from score_segment_service import lookup_rank_by_score
+            estimated = lookup_rank_by_score(
+                request.province,
+                int(request.score),
+                year=2026,
+                batch=request.batch,
+            )
+        except ImportError:
+            pass
+        if estimated:
+            user_rank = estimated
+
+    province_list = province_variants(request.province)
+    province_placeholders = ','.join(['?'] * len(province_list))
+    with get_connection() as connection:
+        total_row = connection.execute(
+            f'''
+            SELECT MAX(min_rank) AS total_rank FROM admission_records
+            WHERE province IN ({province_placeholders}) AND batch = ?
+            ''',
+            [*province_list, rule_batch],
+        ).fetchone()
+    province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
+    segment = detect_segment(user_rank, province_total_rank, rule_batch)
 
     weighted_items, effective_batch, candidate_meta = fetch_recommendation_candidates(
         request.province,
@@ -1739,22 +1963,35 @@ def recommend(request: RecommendRequest):
         school_types=request.school_types,
         major_types=request.major_types,
         only_public=request.only_public,
-        rule_batch=province_rule.get('batch'),
+        rule_batch=rule_batch,
+        user_rank=user_rank if user_rank > 0 else None,
+        segment=segment,
     )
 
-    user_rank = int(request.rank)
-    if user_rank <= 0 and request.score:
+    if user_rank <= 0 and request.score and weighted_items:
         estimated = estimate_rank_from_score(weighted_items, int(request.score))
         if estimated:
             user_rank = estimated
+            segment = detect_segment(user_rank, province_total_rank, effective_batch)
 
-    with get_connection() as connection:
-        total_row = connection.execute(
-            'SELECT MAX(min_rank) AS total_rank FROM admission_records WHERE province = ? AND batch = ?',
-            [request.province, effective_batch]
-        ).fetchone()
-    province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
-    segment = detect_segment(user_rank, province_total_rank, effective_batch)
+    user_score = int(request.score) if request.score else None
+    strategy_rank_hint = ''
+    if user_score and user_rank > 0:
+        try:
+            from score_segment_service import lookup_rank_by_score
+            expected_rank = lookup_rank_by_score(
+                request.province,
+                user_score,
+                year=2026,
+                batch=request.batch,
+            )
+            if expected_rank and abs(expected_rank - user_rank) > max(5000, int(user_rank * 0.5)):
+                strategy_rank_hint = (
+                    f'档案位次 {user_rank} 与一分一段表推算位次 {expected_rank} 差距较大，'
+                    '建议核对档案或重新导入一分一段表。'
+                )
+        except ImportError:
+            pass
 
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
@@ -1763,7 +2000,11 @@ def recommend(request: RecommendRequest):
         batch=effective_batch,
         segment=segment,
         total_slots=total_slots,
+        max_majors_per_school=province_rule.get('major_count_per_school'),
+        user_score=user_score,
     )
+    if strategy_rank_hint:
+        strategy_meta['rank_hint'] = strategy_rank_hint
     strategy_meta['volunteer_rule'] = {
         'province': province_rule.get('province') or request.province,
         'batch': province_rule.get('batch') or effective_batch,
@@ -1778,12 +2019,13 @@ def recommend(request: RecommendRequest):
         'rule_description': province_rule.get('rule_description') or '',
         'candidate_pool': candidate_meta.get('candidate_pool'),
         'relaxed_major_filter': candidate_meta.get('relaxed_major_filter'),
+        'rank_window': candidate_meta.get('rank_window'),
     }
 
     items = []
     for index, row in enumerate(selected_rows, start=1):
         gradient_type = row.get('gradient_type') or get_gradient_type(
-            user_rank, row.get('weighted_rank'), segment, request.batch
+            user_rank, row.get('weighted_rank'), segment, effective_batch
         )
         is_adjustable = request.accept_adjustment
         risk_level = get_risk_level(gradient_type, is_adjustable)
@@ -1812,6 +2054,8 @@ def recommend(request: RecommendRequest):
             'risk_reason': get_risk_reason(gradient_type, is_adjustable)
         })
 
+    items = attach_admission_year_stats(items, request.province, effective_batch)
+
     risk = inspect_plan_risk(items)
     draft_id = None
     if request.student_id and request.auto_save_draft and items:
@@ -1833,6 +2077,7 @@ def recommend(request: RecommendRequest):
         'risk': risk,
         'strategy': strategy_meta,
         'algorithm': strategy_meta.get('algorithm'),
+        'algorithm_version': strategy_meta.get('algorithm_version'),
         'generation': {
             'target_slots': total_slots,
             'generated_count': len(items),
@@ -2108,13 +2353,14 @@ def create_draft(request: DraftCreateRequest):
                 INSERT INTO volunteer_draft_items (
                   draft_id, sort_order, gradient_type, school_id, school_name, school_code,
                   major_id, major_name, major_code, city, school_type, tuition, duration,
-                  is_adjustable, risk_level, risk_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  is_adjustable, risk_level, risk_reason, admission_score_2025, admission_rank_2025
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 [
                     draft_id, item.sort_order, item.gradient_type, item.school_id, item.school_name, item.school_code,
                     item.major_id, item.major_name, item.major_code, item.city, item.school_type, item.tuition,
-                    item.duration, 1 if item.is_adjustable else 0, item.risk_level, item.risk_reason
+                    item.duration, 1 if item.is_adjustable else 0, item.risk_level, item.risk_reason,
+                    getattr(item, 'admission_score_2025', None), getattr(item, 'admission_rank_2025', None),
                 ]
             )
         connection.commit()
@@ -2143,13 +2389,14 @@ def update_draft(draft_id: int, request: DraftUpdateRequest):
                 INSERT INTO volunteer_draft_items (
                   draft_id, sort_order, gradient_type, school_id, school_name, school_code,
                   major_id, major_name, major_code, city, school_type, tuition, duration,
-                  is_adjustable, risk_level, risk_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  is_adjustable, risk_level, risk_reason, admission_score_2025, admission_rank_2025
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 [
                     draft_id, item.sort_order, item.gradient_type, item.school_id, item.school_name, item.school_code,
                     item.major_id, item.major_name, item.major_code, item.city, item.school_type, item.tuition,
-                    item.duration, 1 if item.is_adjustable else 0, item.risk_level, item.risk_reason
+                    item.duration, 1 if item.is_adjustable else 0, item.risk_level, item.risk_reason,
+                    getattr(item, 'admission_score_2025', None), getattr(item, 'admission_rank_2025', None),
                 ]
             )
         connection.commit()
@@ -2170,6 +2417,7 @@ def export_draft_pdf(draft_id: int, student_id: int):
             'SELECT * FROM volunteer_draft_items WHERE draft_id = ? ORDER BY sort_order ASC',
             [draft_id]
         ).fetchall())
+    items = attach_admission_year_stats(items, draft.get('province') or '', draft.get('batch') or '')
     pdf = build_draft_pdf(draft, student or {}, items)
     filename = build_student_pdf_filename(student or {}, 'volunteer_draft')
     return _pdf_response(pdf, filename)
