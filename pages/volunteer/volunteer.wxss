@@ -1,3 +1,17 @@
+.profile-batch-tip {
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 12rpx;
+  background: #f5f8ff;
+  color: #344054;
+}
+
+.profile-edit-link {
+  margin-left: 16rpx;
+  color: #1677ff;
+  font-weight: 600;
+}
+
 .strategy-title {
   font-size: 28rpx;
   margin-top: 18rpx;

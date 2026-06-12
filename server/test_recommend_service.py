@@ -1,6 +1,11 @@
 import unittest
 
-from recommend_service import build_weighted_items, fetch_recommendation_candidates
+from recommend_service import (
+    build_weighted_items,
+    fetch_recommendation_candidates,
+    list_province_admission_batches,
+    province_variants,
+)
 
 
 class RecommendServiceTests(unittest.TestCase):
@@ -24,7 +29,17 @@ class RecommendServiceTests(unittest.TestCase):
         )
         self.assertEqual(batch, '本科批')
         self.assertIn('candidate_pool', meta)
+        self.assertIn('available_batches', meta)
         self.assertIsInstance(items, list)
+
+    def test_province_variants_include_short_and_full_name(self):
+        variants = province_variants('河南省')
+        self.assertIn('河南', variants)
+        self.assertIn('河南省', variants)
+
+    def test_list_province_batches_returns_list(self):
+        rows = list_province_admission_batches('河南')
+        self.assertIsInstance(rows, list)
 
 
 if __name__ == '__main__':

@@ -227,7 +227,14 @@ def get_user_entitlements(user_id: int | None = None) -> dict[str, Any]:
         membership = {**membership, 'plan_name': plan['plan_name']}
     if latest_membership and plan.get('plan_name'):
         latest_membership = {**latest_membership, 'plan_name': plan['plan_name']}
-    return {'plan': plan, 'membership': membership, 'latest_membership': latest_membership, 'permissions': permissions}
+    from user_flags_service import is_super_tester
+    return {
+        'plan': plan,
+        'membership': membership,
+        'latest_membership': latest_membership,
+        'permissions': permissions,
+        'super_tester': bool(user_id and is_super_tester(user_id)),
+    }
 
 
 

@@ -2,6 +2,10 @@
   <view class="card">
     <view class="section-title">智能梯度志愿</view>
     <view class="sub-text">仅按全省位次 X 划分冲稳保：冲 0.90X~0.95X、稳 0.95X~1.05X、保 1.15X~1.25X。</view>
+    <view wx:if="{{profile.province}}" class="sub-text profile-batch-tip">
+      当前档案：{{profile.province}} · {{profile.targetBatch || '未填批次'}} · {{profile.score || '--'}}分 / 位次{{profile.rank || '--'}}
+      <text class="profile-edit-link" bindtap="goProfile">修改</text>
+    </view>
     <view wx:if="{{provinceRule}}" class="sub-text province-rule-tip">
       本省规则：{{provinceRule.batch || profile.targetBatch}} · {{provinceRule.volunteer_mode}}，目标足额 {{provinceRule.total_slots || provinceRule.school_count}} 个志愿单位
     </view>

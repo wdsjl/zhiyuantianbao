@@ -203,6 +203,9 @@ Page({
     this.setData({ aiExplain: '' });
     wx.removeStorageSync('currentAiExplain');
   },
+  goProfile() {
+    wx.navigateTo({ url: '/pages/profile/profile' });
+  },
   onPlanStyleChange(event) {
     const planStyle = event.currentTarget.dataset.style;
     this.setData({ planStyle });
@@ -260,10 +263,20 @@ Page({
           wx.setStorageSync('currentDraftName', '智能推荐方案');
         }
         if (res.generation && res.generation.candidate_pool < res.generation.target_slots) {
+          const generation = res.generation;
+          const hint = generation.batch_hint
+            || (generation.available_batches && generation.available_batches.length
+              ? `库内现有批次：${generation.available_batches.join('、')}。请核对档案目标批次是否与导入数据一致。`
+              : '建议补充录取数据或检查省份/批次是否与导入数据一致。');
           wx.showModal({
             title: '志愿数量提示',
-            content: `已生成 ${res.generation.generated_count}/${res.generation.target_slots} 个志愿。数据库中符合条件的院校专业共 ${res.generation.candidate_pool} 条，建议补充录取数据或放宽筛选条件。`,
-            showCancel: false
+            content: `已生成 ${generation.generated_count}/${generation.target_slots} 个志愿。数据库中符合条件的院校专业共 ${generation.candidate_pool} 条。\n\n档案批次：${profile.targetBatch || '--'}${generation.effective_batch && generation.effective_batch !== profile.targetBatch ? `（实际查询：${generation.effective_batch}）` : ''}\n\n${hint}`,
+            confirmText: generation.candidate_pool === 0 ? '去改档案' : '知道了',
+            success: (modalRes) => {
+              if (modalRes.confirm && generation.candidate_pool === 0) {
+                wx.navigateTo({ url: '/pages/profile/profile' });
+              }
+            }
           });
         } else {
           wx.showToast({ title: toastTitle, icon: 'success' });

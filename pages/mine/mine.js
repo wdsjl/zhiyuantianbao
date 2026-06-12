@@ -6,7 +6,8 @@ Page({
     draftCount: 0,
     exportCount: 0,
     planName: '免费版',
-    expiresAt: ''
+    expiresAt: '',
+    superTester: false
   },
   onShow() {
     this.setData({
@@ -18,7 +19,8 @@ Page({
       .then((res) => {
         this.setData({
           planName: res.plan ? res.plan.plan_name : '免费版',
-          expiresAt: res.membership && res.membership.expires_at ? res.membership.expires_at : ''
+          expiresAt: res.membership && res.membership.expires_at ? res.membership.expires_at : '',
+          superTester: !!res.super_tester
         });
       })
       .catch(() => {});
