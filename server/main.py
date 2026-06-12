@@ -307,9 +307,11 @@ def admin_announcement_review(announcement_id: int, review_status: str = Form(..
 def api_announcements(
     keyword: str = '',
     province: str = '河南',
+    school_name: str = '',
     year: int = 2026,
     henan_only: bool = False,
     review_status: str = 'approved',
+    announcement_type: str = '',
     limit: int = 50,
 ):
     from announcement_crawler_service import search_announcements
@@ -317,12 +319,92 @@ def api_announcements(
         'list': search_announcements(
             keyword=keyword,
             province=province,
+            school_name=school_name,
             year=year,
             henan_only=henan_only,
             review_status=review_status,
+            announcement_type=announcement_type,
             limit=limit,
         )
     }
+
+
+@app.get('/api/announcements/{announcement_id}')
+def api_announcement_detail(announcement_id: int):
+    from announcement_crawler_service import get_announcement
+    item = get_announcement(announcement_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='公告不存在')
+    if item.get('review_status') != 'approved':
+        raise HTTPException(status_code=403, detail='公告未通过审核')
+    return item
+
+
+@app.get('/api/announcements/{announcement_id}/file')
+def api_announcement_file(announcement_id: int):
+    from announcement_crawler_service import get_announcement
+    from announcement_pdf_parser_service import download_announcement_file, guess_file_ext
+
+    item = get_announcement(announcement_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='公告不存在')
+    if item.get('review_status') != 'approved':
+        raise HTTPException(status_code=403, detail='公告未通过审核')
+    file_url = item.get('file_url') or item.get('url')
+    if not file_url:
+        raise HTTPException(status_code=404, detail='公告文件不存在')
+    try:
+        content, filename = download_announcement_file(file_url)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f'文件下载失败：{exc}') from exc
+    ext = guess_file_ext(file_url, filename, content)
+    media_types = {
+        'pdf': 'application/pdf',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xls': 'application/vnd.ms-excel',
+        'csv': 'text/csv',
+    }
+    media_type = media_types.get(ext, 'application/octet-stream')
+    headers = {'Content-Disposition': f'inline; filename="{filename or f"announcement.{ext or "bin"}"}"'}
+    return Response(content=content, media_type=media_type, headers=headers)
+
+
+def _background_parse_announcement(announcement_id: int) -> None:
+    from announcement_pdf_parser_service import parse_announcement_plans
+    try:
+        parse_announcement_plans(announcement_id)
+    except Exception:
+        pass
+
+
+def _background_parse_pending_henan(limit: int) -> None:
+    from announcement_pdf_parser_service import parse_pending_henan_announcements
+    try:
+        parse_pending_henan_announcements(limit)
+    except Exception:
+        pass
+
+
+@app.post('/admin/announcements/{announcement_id}/parse')
+def admin_announcement_parse(announcement_id: int, background_tasks: BackgroundTasks, sync: int = Form(0)):
+    if sync:
+        from announcement_pdf_parser_service import parse_announcement_plans
+        try:
+            result = parse_announcement_plans(announcement_id)
+            return RedirectResponse(
+                f'/admin/announcements?message={quote(result.get("message") or "解析完成")}',
+                status_code=303,
+            )
+        except Exception as exc:
+            return RedirectResponse(f'/admin/announcements?message={quote(str(exc))}', status_code=303)
+    background_tasks.add_task(_background_parse_announcement, announcement_id)
+    return RedirectResponse('/admin/announcements?message=招生计划解析任务已启动', status_code=303)
+
+
+@app.post('/admin/announcements/parse-pending')
+def admin_announcements_parse_pending(background_tasks: BackgroundTasks, limit: int = Form(20)):
+    background_tasks.add_task(_background_parse_pending_henan, limit)
+    return RedirectResponse('/admin/announcements?message=河南待解析公告批量任务已启动', status_code=303)
 
 
 @app.post('/admin/crawler/schools')

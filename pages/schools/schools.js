@@ -1,8 +1,11 @@
 const { filterOptions } = require('../../utils/mockData');
 const { request } = require('../../utils/request');
+const { loadActiveProfileSync } = require('../../utils/profileHelper');
+const { TYPE_OPTIONS, openAnnouncement } = require('../../utils/announcement');
 
 Page({
   data: {
+    activeTab: 'schools',
     keyword: '',
     showFilter: false,
     loading: false,
@@ -15,10 +18,27 @@ Page({
       tuitionRanges: [],
       durations: []
     },
-    filteredSchools: []
+    filteredSchools: [],
+    announcementKeyword: '',
+    announcementType: '',
+    announcementTypeOptions: TYPE_OPTIONS,
+    announcements: [],
+    announcementLoading: false
   },
   onLoad() {
     this.fetchSchools();
+  },
+  onShow() {
+    if (this.data.activeTab === 'announcements' && !this.data.announcements.length) {
+      this.fetchAnnouncements();
+    }
+  },
+  switchTab(event) {
+    const activeTab = event.currentTarget.dataset.tab;
+    this.setData({ activeTab });
+    if (activeTab === 'announcements') {
+      this.fetchAnnouncements();
+    }
   },
   formatSchools(list) {
     return list.map((school) => {
@@ -44,6 +64,13 @@ Page({
   },
   onKeywordInput(event) {
     this.setData({ keyword: event.detail.value });
+  },
+  onAnnouncementKeywordInput(event) {
+    this.setData({ announcementKeyword: event.detail.value });
+  },
+  onAnnouncementTypeChange(event) {
+    this.setData({ announcementType: event.currentTarget.dataset.type || '' });
+    this.fetchAnnouncements();
   },
   toggleFilter() {
     this.setData({ showFilter: !this.data.showFilter });
@@ -97,6 +124,31 @@ Page({
         this.setData({ loading: false });
       });
   },
+  fetchAnnouncements() {
+    const profile = loadActiveProfileSync();
+    const province = profile.province || '河南';
+    this.setData({ announcementLoading: true });
+    request({
+      url: '/api/announcements',
+      data: {
+        keyword: this.data.announcementKeyword,
+        province,
+        year: 2026,
+        review_status: 'approved',
+        announcement_type: this.data.announcementType || '',
+        limit: 100
+      }
+    })
+      .then((res) => {
+        this.setData({ announcements: res.list || [] });
+      })
+      .catch(() => {
+        wx.showToast({ title: '公告加载失败', icon: 'none' });
+      })
+      .finally(() => {
+        this.setData({ announcementLoading: false });
+      });
+  },
   applyClientFilters(list) {
     const { selected } = this.data;
     return list.filter((school) => {
@@ -118,5 +170,8 @@ Page({
     const school = event.currentTarget.dataset.school;
     if (!school || !school.school_id) return;
     wx.navigateTo({ url: `/pages/school-detail/school-detail?id=${school.school_id}` });
+  },
+  openAnnouncement(event) {
+    openAnnouncement(event.currentTarget.dataset.item);
   }
 });

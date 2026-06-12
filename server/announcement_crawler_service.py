@@ -50,12 +50,22 @@ def ensure_announcement_tables() -> None:
               mentions_henan INTEGER NOT NULL DEFAULT 0,
               crawl_status TEXT NOT NULL DEFAULT 'discovered',
               review_status TEXT NOT NULL DEFAULT 'pending',
+              parse_status TEXT NOT NULL DEFAULT 'pending',
+              parse_message TEXT,
+              parsed_plan_count INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               UNIQUE(url_hash)
             )
             '''
         )
+        columns = {row[1] for row in connection.execute('PRAGMA table_info(enrollment_announcements)').fetchall()}
+        if 'parse_status' not in columns:
+            connection.execute("ALTER TABLE enrollment_announcements ADD COLUMN parse_status TEXT NOT NULL DEFAULT 'pending'")
+        if 'parse_message' not in columns:
+            connection.execute('ALTER TABLE enrollment_announcements ADD COLUMN parse_message TEXT')
+        if 'parsed_plan_count' not in columns:
+            connection.execute('ALTER TABLE enrollment_announcements ADD COLUMN parsed_plan_count INTEGER NOT NULL DEFAULT 0')
         connection.execute(
             '''
             CREATE TABLE IF NOT EXISTS announcement_crawl_logs (
@@ -575,9 +585,11 @@ def search_announcements(
     *,
     keyword: str = '',
     province: str = '',
+    school_name: str = '',
     year: int | None = None,
     henan_only: bool = False,
     review_status: str = '',
+    announcement_type: str = '',
     limit: int = 200,
 ) -> list[dict[str, Any]]:
     ensure_announcement_tables()
@@ -593,15 +605,33 @@ def search_announcements(
     if year:
         sql += ' AND year = ?'
         params.append(year)
+    if school_name:
+        sql += ' AND (school_name LIKE ? OR title LIKE ? OR source_org LIKE ?)'
+        like = f'%{school_name}%'
+        params.extend([like, like, like])
     if henan_only:
         sql += ' AND mentions_henan = 1'
     if review_status:
         sql += ' AND review_status = ?'
         params.append(review_status)
+    if announcement_type:
+        sql += ' AND announcement_type = ?'
+        params.append(announcement_type)
     sql += ' ORDER BY mentions_henan DESC, announcement_id DESC LIMIT ?'
     params.append(int(limit))
     with get_connection() as connection:
         return rows_to_dicts(connection.execute(sql, params).fetchall())
+
+
+def get_announcement(announcement_id: int) -> dict[str, Any] | None:
+    ensure_announcement_tables()
+    with get_connection() as connection:
+        return row_to_dict(
+            connection.execute(
+                'SELECT * FROM enrollment_announcements WHERE announcement_id = ?',
+                [announcement_id],
+            ).fetchone()
+        )
 
 
 def get_announcement_stats() -> dict[str, Any]:

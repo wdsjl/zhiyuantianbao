@@ -270,6 +270,9 @@ CREATE TABLE IF NOT EXISTS enrollment_announcements (
   mentions_henan INTEGER NOT NULL DEFAULT 0,
   crawl_status TEXT NOT NULL DEFAULT 'discovered',
   review_status TEXT NOT NULL DEFAULT 'pending',
+  parse_status TEXT NOT NULL DEFAULT 'pending',
+  parse_message TEXT,
+  parsed_plan_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(url_hash)

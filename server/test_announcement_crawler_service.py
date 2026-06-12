@@ -47,6 +47,8 @@ class AnnouncementCrawlerTests(unittest.TestCase):
         self.assertEqual(url_hash('https://a.com/x'), url_hash('https://a.com/x#section'))
 
     def test_upsert_announcement_dedupes(self):
+        import time
+        unique_url = f'https://example.com/announcement-{int(time.time() * 1000)}'
         payload = {
             'source_org': '测试大学',
             'source_type': 'university',
@@ -56,7 +58,7 @@ class AnnouncementCrawlerTests(unittest.TestCase):
             'year': 2026,
             'title': '2026年招生公告',
             'announcement_type': '招生公告',
-            'url': 'https://example.com/announcement-2026',
+            'url': unique_url,
             'matched_keywords': ['招生', '2026'],
             'mentions_henan': True,
         }

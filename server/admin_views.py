@@ -478,13 +478,24 @@ def admin_announcements(keyword: str = '', review_status: str = '', message: str
     row_html = ''
     for item in rows:
         henan_tag = '<span class="tag active">河南相关</span>' if int(item.get('mentions_henan') or 0) else ''
+        parse_info = f'{escape(str(item.get("parse_status") or "pending"))} / {int(item.get("parsed_plan_count") or 0)}条'
+        file_ext = str(item.get('file_ext') or '').lower()
+        can_parse = file_ext in ('pdf', 'xls', 'xlsx', 'csv') or str(item.get('url') or '').lower().endswith(('.pdf', '.xls', '.xlsx'))
+        parse_btn = ''
+        if can_parse:
+            parse_btn = f'''
+              <form method="post" action="/admin/announcements/{item.get('announcement_id')}/parse" style="display:inline;margin-top:4px">
+                <input type="hidden" name="sync" value="1" />
+                <button type="submit" class="btn-sm btn-muted">解析计划</button>
+              </form>
+            '''
         row_html += f'''
           <tr>
             <td>{item.get('announcement_id', '')}</td>
             <td>{escape(str(item.get('source_org') or ''))}<br>{henan_tag}</td>
             <td>{escape(str(item.get('school_name') or '—'))}</td>
             <td>{escape(str(item.get('announcement_type') or ''))}</td>
-            <td>{escape(str(item.get('title') or ''))}</td>
+            <td>{escape(str(item.get('title') or ''))}<br><span class="muted">{parse_info}</span></td>
             <td>{item.get('year', '')}</td>
             <td>{escape(str(item.get('review_status') or ''))}</td>
             <td><a href="{escape(str(item.get('url') or ''))}" target="_blank">打开</a></td>
@@ -497,6 +508,7 @@ def admin_announcements(keyword: str = '', review_status: str = '', message: str
                 <input type="hidden" name="review_status" value="rejected" />
                 <button type="submit" class="btn-sm btn-danger">驳回</button>
               </form>
+              {parse_btn}
             </td>
           </tr>
         '''
@@ -549,6 +561,10 @@ def admin_announcements(keyword: str = '', review_status: str = '', message: str
           <input type="hidden" name="year" value="2026" />
           <input name="school_limit" type="number" value="500" min="0" max="5000" style="min-width:120px" />
           <button type="submit" class="btn-muted" {"disabled" if running else ""}>全国高校官网扫描（500校）</button>
+        </form>
+        <form method="post" action="/admin/announcements/parse-pending" class="toolbar" style="margin-top:8px">
+          <input name="limit" type="number" value="20" min="1" max="100" style="min-width:100px" />
+          <button type="submit" class="btn-muted">批量解析河南已审核 PDF/Excel</button>
         </form>
         <p class="muted">命令行：<code>cd server && python announcement_crawler_service.py --province 河南 --year 2026 --school-limit 300</code></p>
       </div>
