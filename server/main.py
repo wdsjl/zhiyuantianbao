@@ -1627,9 +1627,12 @@ def list_admissions(
     year: int | None = None,
     school_id: int | None = None,
     major_id: int | None = None,
+    keyword: str = '',
     limit: int = 100,
     offset: int = 0
 ):
+    from recommend_service import expand_batch_aliases, province_variants
+
     sql = '''
     SELECT ar.*, s.school_name, s.city, s.is_public, s.is_double_first_class, m.major_name, m.major_type
     FROM admission_records ar
@@ -1639,11 +1642,19 @@ def list_admissions(
     '''
     params = []
     if province:
-        sql += ' AND ar.province = ?'
-        params.append(province)
+        variants = province_variants(province)
+        placeholders = ','.join(['?'] * len(variants))
+        sql += f' AND ar.province IN ({placeholders})'
+        params.extend(variants)
     if batch:
-        sql += ' AND ar.batch = ?'
-        params.append(batch)
+        batch_aliases = expand_batch_aliases(batch) or [batch]
+        placeholders = ','.join(['?'] * len(batch_aliases))
+        sql += f' AND ar.batch IN ({placeholders})'
+        params.extend(batch_aliases)
+    if keyword:
+        like = f'%{keyword}%'
+        sql += ' AND (s.school_name LIKE ? OR m.major_name LIKE ? OR s.school_code LIKE ?)'
+        params.extend([like, like, like])
     if year is not None:
         sql += ' AND ar.year = ?'
         params.append(year)
@@ -1658,6 +1669,181 @@ def list_admissions(
     with get_connection() as connection:
         rows = connection.execute(sql, params).fetchall()
     return {'list': rows_to_dicts(rows)}
+
+
+@app.get('/api/schools/rank-snapshot')
+def school_rank_snapshot(
+    province: str = Query(...),
+    batch: str = '本科批',
+    year: int | None = None,
+    keyword: str = '',
+    limit: int = 100,
+):
+    from recommend_service import expand_batch_aliases, province_variants
+
+    variants = province_variants(province)
+    province_placeholders = ','.join(['?'] * len(variants))
+    batch_aliases = expand_batch_aliases(batch) or [batch]
+    batch_placeholders = ','.join(['?'] * len(batch_aliases))
+    sql = f'''
+    SELECT
+      ar.school_id,
+      s.school_name,
+      s.city,
+      s.is_985,
+      s.is_211,
+      s.is_double_first_class,
+      MIN(ar.min_rank) AS best_min_rank,
+      MIN(ar.min_score) AS best_min_score,
+      COUNT(DISTINCT ar.major_id) AS major_count,
+      MAX(ar.year) AS latest_year
+    FROM admission_records ar
+    JOIN schools s ON s.school_id = ar.school_id
+    WHERE ar.province IN ({province_placeholders})
+      AND ar.batch IN ({batch_placeholders})
+      AND ar.min_rank IS NOT NULL
+    '''
+    params = [*variants, *batch_aliases]
+    if year is not None:
+        sql += ' AND ar.year = ?'
+        params.append(year)
+    if keyword:
+        like = f'%{keyword}%'
+        sql += ' AND (s.school_name LIKE ? OR s.school_code LIKE ?)'
+        params.extend([like, like])
+    sql += '''
+    GROUP BY ar.school_id
+    ORDER BY best_min_rank ASC
+    LIMIT ?
+    '''
+    params.append(limit)
+    with get_connection() as connection:
+        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
+    return {'list': rows, 'province': province, 'batch': batch, 'year': year}
+
+
+@app.get('/api/score-segments/tables')
+def list_score_segment_tables(province: str = '', limit: int = 20):
+    from score_segment_service import list_score_rank_tables
+
+    tables = list_score_rank_tables(limit)
+    if province:
+        tables = [item for item in tables if province in str(item.get('province') or '')]
+    return {'list': tables}
+
+
+@app.get('/api/score-segments/lookup')
+def lookup_score_segment(
+    province: str = Query(...),
+    score: int | None = Query(None),
+    rank: int | None = Query(None),
+    year: int | None = Query(None),
+    batch: str = Query(''),
+    subject_type: str = Query(''),
+):
+    from score_segment_service import lookup_rank_by_score, lookup_score_by_rank, find_score_rank_table
+
+    if score is None and rank is None:
+        raise HTTPException(status_code=400, detail='请提供 score 或 rank 参数')
+    table = find_score_rank_table(province, year, batch, subject_type)
+    if not table:
+        raise HTTPException(status_code=404, detail='未找到对应一分一段表，请先在后台导入')
+    result = {
+        'province': province,
+        'year': table.get('year'),
+        'batch': table.get('batch') or '',
+        'subject_type': table.get('subject_type') or '',
+        'table_id': table.get('table_id'),
+    }
+    if score is not None:
+        estimated_rank = lookup_rank_by_score(
+            province, int(score), year=year, batch=batch, subject_type=subject_type
+        )
+        result['score'] = int(score)
+        result['rank'] = estimated_rank
+    if rank is not None:
+        estimated_score = lookup_score_by_rank(
+            province, int(rank), year=year, batch=batch, subject_type=subject_type
+        )
+        result['rank'] = int(rank)
+        result['score'] = estimated_score
+    return result
+
+
+@app.get('/api/announcements')
+def api_announcements(
+    keyword: str = '',
+    province: str = '河南',
+    school_name: str = '',
+    school_id: int | None = None,
+    year: int = 2026,
+    henan_only: bool = False,
+    review_status: str = 'approved',
+    announcement_type: str = '',
+    limit: int = 50,
+):
+    from announcement_crawler_service import search_announcements
+
+    if school_id:
+        with get_connection() as connection:
+            school = row_to_dict(
+                connection.execute('SELECT school_name FROM schools WHERE school_id = ?', [school_id]).fetchone()
+            )
+        if school and school.get('school_name'):
+            school_name = school_name or school['school_name']
+    return {
+        'list': search_announcements(
+            keyword=keyword,
+            province=province,
+            school_name=school_name,
+            year=year,
+            henan_only=henan_only,
+            review_status=review_status,
+            announcement_type=announcement_type,
+            limit=limit,
+        )
+    }
+
+
+@app.get('/api/announcements/{announcement_id}')
+def api_announcement_detail(announcement_id: int):
+    from announcement_crawler_service import get_announcement
+
+    item = get_announcement(announcement_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='公告不存在')
+    if item.get('review_status') != 'approved':
+        raise HTTPException(status_code=403, detail='公告未通过审核')
+    return item
+
+
+@app.get('/api/announcements/{announcement_id}/file')
+def api_announcement_file(announcement_id: int):
+    from announcement_crawler_service import get_announcement
+    from announcement_pdf_parser_service import download_announcement_file, guess_file_ext
+
+    item = get_announcement(announcement_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='公告不存在')
+    if item.get('review_status') != 'approved':
+        raise HTTPException(status_code=403, detail='公告未通过审核')
+    file_url = item.get('file_url') or item.get('url')
+    if not file_url:
+        raise HTTPException(status_code=404, detail='公告文件不存在')
+    try:
+        content, filename = download_announcement_file(file_url)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f'文件下载失败：{exc}') from exc
+    ext = guess_file_ext(file_url, filename, content)
+    media_types = {
+        'pdf': 'application/pdf',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xls': 'application/vnd.ms-excel',
+        'csv': 'text/csv',
+    }
+    media_type = media_types.get(ext, 'application/octet-stream')
+    headers = {'Content-Disposition': f'inline; filename="{filename or f"announcement.{ext or "bin"}"}"'}
+    return Response(content=content, media_type=media_type, headers=headers)
 
 
 @app.get('/api/province-rules')
