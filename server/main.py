@@ -435,6 +435,36 @@ async def admin_import_submit(file: UploadFile = File(...)):
         return admin_import(f'导入失败：{exc}')
 
 
+@app.post('/admin/import/score-segments')
+async def admin_import_score_segments(
+    file: UploadFile = File(...),
+    province: str = Form(...),
+    year: int = Form(...),
+    batch: str = Form(''),
+    subject_type: str = Form(''),
+):
+    from score_segment_service import import_score_segment_file
+
+    content = await file.read()
+    try:
+        result = import_score_segment_file(
+            content,
+            file.filename or 'upload',
+            province=province.strip(),
+            year=int(year),
+            batch=batch.strip(),
+            subject_type=subject_type.strip(),
+            title=f'{province.strip()}{year}一分一段表',
+        )
+        message = (
+            f"一分一段表导入成功：{result.get('province', province)} {result.get('year', year)} "
+            f"共 {result.get('row_count', 0)} 条"
+        )
+        return admin_import(message)
+    except (ValueError, RuntimeError) as exc:
+        return admin_import(f'一分一段表导入失败：{exc}')
+
+
 @app.get('/admin/import/logs')
 def admin_import_logs_page(log_id: int | None = None, message: str = ''):
     return admin_logs(log_id, message)
@@ -1898,7 +1928,15 @@ def recommend(request: RecommendRequest):
 
     user_rank = int(request.rank)
     if user_rank <= 0 and request.score:
-        estimated = estimate_rank_from_score(weighted_items, int(request.score))
+        from score_segment_service import lookup_rank_by_score
+        estimated = lookup_rank_by_score(
+            request.province,
+            int(request.score),
+            year=2026,
+            batch=request.batch,
+        )
+        if not estimated:
+            estimated = estimate_rank_from_score(weighted_items, int(request.score))
         if estimated:
             user_rank = estimated
 
@@ -2378,4 +2416,42 @@ def list_import_logs(limit: int = 50, offset: int = 0):
             [limit, offset]
         ).fetchall()
     return {'list': rows_to_dicts(rows)}
+
+
+@app.get('/api/score-segments/lookup')
+def lookup_score_segment(
+    province: str = Query(...),
+    score: int | None = Query(None),
+    rank: int | None = Query(None),
+    year: int | None = Query(None),
+    batch: str = Query(''),
+    subject_type: str = Query(''),
+):
+    from score_segment_service import lookup_rank_by_score, lookup_score_by_rank, find_score_rank_table
+
+    if score is None and rank is None:
+        raise HTTPException(status_code=400, detail='请提供 score 或 rank 参数')
+    table = find_score_rank_table(province, year, batch, subject_type)
+    if not table:
+        raise HTTPException(status_code=404, detail='未找到对应一分一段表，请先在后台导入')
+    result = {
+        'province': province,
+        'year': table.get('year'),
+        'batch': table.get('batch') or '',
+        'subject_type': table.get('subject_type') or '',
+        'table_id': table.get('table_id'),
+    }
+    if score is not None:
+        estimated_rank = lookup_rank_by_score(
+            province, int(score), year=year, batch=batch, subject_type=subject_type
+        )
+        result['score'] = int(score)
+        result['rank'] = estimated_rank
+    if rank is not None:
+        estimated_score = lookup_score_by_rank(
+            province, int(rank), year=year, batch=batch, subject_type=subject_type
+        )
+        result['rank'] = int(rank)
+        result['score'] = estimated_score
+    return result
 

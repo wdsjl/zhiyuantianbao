@@ -597,11 +597,56 @@ def admin_announcements(keyword: str = '', review_status: str = '', message: str
 
 
 def admin_import(message: str = ''):
+    from score_segment_service import list_score_rank_tables
+
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    segment_tables = list_score_rank_tables(20)
+    segment_rows = ''
+    for item in segment_tables:
+        segment_rows += f'''
+          <tr>
+            <td>{item.get('table_id', '')}</td>
+            <td>{escape(str(item.get('province') or ''))}</td>
+            <td>{item.get('year', '')}</td>
+            <td>{escape(str(item.get('batch') or '—'))}</td>
+            <td>{escape(str(item.get('subject_type') or '—'))}</td>
+            <td>{item.get('row_count', 0)}</td>
+            <td>{escape(str(item.get('source_file') or ''))}</td>
+            <td>{escape(str(item.get('created_at') or ''))}</td>
+          </tr>
+        '''
+    if not segment_rows:
+        segment_rows = '<tr><td colspan="8" class="muted">暂未导入一分一段表</td></tr>'
+
     body = f'''
       <div class="card">
-        <h2>导入历年录取数据</h2>
+        <h2>一分一段表导入（支持 PDF）</h2>
         {message_html}
+        <p class="muted">
+          上传各省考试院发布的一分一段表，系统自动识别表头（分数 / 本段人数 / 累计人数或位次），
+          用于分数与位次互查。支持 <strong>.pdf / .xlsx / .csv</strong>。
+        </p>
+        <form action="/admin/import/score-segments" method="post" enctype="multipart/form-data">
+          <div class="toolbar">
+            <input name="province" value="河南" placeholder="省份" required />
+            <input name="year" type="number" value="2026" placeholder="年份" required style="min-width:100px" />
+            <input name="batch" placeholder="批次，如本科批" style="min-width:120px" />
+            <input name="subject_type" placeholder="科类，如物理/历史，可留空" style="min-width:160px" />
+            <input type="file" name="file" accept=".pdf,.xlsx,.xls,.csv" required />
+            <button type="submit">上传并解析</button>
+          </div>
+        </form>
+        <p class="muted">PDF 需为可复制文本或标准表格；扫描版识别率较低，建议优先使用 Excel。</p>
+      </div>
+      <div class="card">
+        <h2>已导入一分一段表</h2>
+        <table>
+          <thead><tr><th>ID</th><th>省份</th><th>年份</th><th>批次</th><th>科类</th><th>行数</th><th>来源文件</th><th>导入时间</th></tr></thead>
+          <tbody>{segment_rows}</tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>导入历年录取数据</h2>
         <p class="muted">支持 `.xlsx` 和 `.csv`。请使用模板字段：年份、省份、批次、院校代码、院校名称、专业代码、专业名称等。</p>
         <form action="/admin/import" method="post" enctype="multipart/form-data">
           <div class="toolbar">

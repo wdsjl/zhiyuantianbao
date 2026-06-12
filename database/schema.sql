@@ -296,6 +296,35 @@ CREATE TABLE IF NOT EXISTS announcement_crawl_logs (
 CREATE INDEX IF NOT EXISTS idx_announcements_province_year ON enrollment_announcements(target_province, year, review_status);
 CREATE INDEX IF NOT EXISTS idx_announcements_henan ON enrollment_announcements(mentions_henan, year);
 
+CREATE TABLE IF NOT EXISTS score_rank_tables (
+  table_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  province TEXT NOT NULL,
+  year INTEGER NOT NULL,
+  batch TEXT NOT NULL DEFAULT '',
+  exam_type TEXT NOT NULL DEFAULT '普通类',
+  subject_type TEXT NOT NULL DEFAULT '',
+  title TEXT,
+  source_file TEXT,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(province, year, batch, subject_type)
+);
+
+CREATE TABLE IF NOT EXISTS score_rank_segments (
+  segment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  table_id INTEGER NOT NULL,
+  score INTEGER NOT NULL,
+  segment_count INTEGER,
+  cumulative_rank INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(table_id, score),
+  FOREIGN KEY (table_id) REFERENCES score_rank_tables(table_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_score_rank_lookup ON score_rank_segments(table_id, score);
+CREATE INDEX IF NOT EXISTS idx_score_rank_tables_query ON score_rank_tables(province, year, batch);
+
 CREATE TABLE IF NOT EXISTS admission_brochures (
   brochure_id INTEGER PRIMARY KEY AUTOINCREMENT,
   school_id INTEGER,
