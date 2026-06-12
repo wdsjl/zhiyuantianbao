@@ -3,6 +3,7 @@ import unittest
 from pdf_service import (
     build_draft_pdf,
     display_width,
+    format_admission_2025_display,
     format_volunteer_item_block,
     pad_column,
     truncate_display_text,
@@ -34,8 +35,12 @@ class PdfServiceTests(unittest.TestCase):
         self.assertEqual(len(lines), 4)
         self.assertTrue(lines[0].startswith('【45】保'))
         self.assertTrue(lines[1].startswith('专业：'))
-        self.assertIn('风险：低', lines[2])
+        self.assertIn('2025录取：暂无分 / 位次暂无', lines[2])
+        self.assertIn('城市：哈尔滨市', lines[2])
+        self.assertIn('学费：3500', lines[2])
+        self.assertIn('学制：四年', lines[2])
         self.assertIn('调剂：是', lines[2])
+        self.assertIn('风险：低', lines[2])
         self.assertTrue(lines[3].startswith('说明：'))
 
     def test_risk_on_third_line_not_split(self):
@@ -55,8 +60,14 @@ class PdfServiceTests(unittest.TestCase):
             'risk_level': '中',
             'risk_reason': '院校往年录取位次高于当前位次，建议保留稳妥志愿兜底。',
         })
+        self.assertIn('2025录取：653分 / 位次2100', lines[2])
         self.assertIn('风险：中', lines[2])
         self.assertNotIn('险：', lines[3])
+
+    def test_format_admission_2025_display(self):
+        self.assertEqual(format_admission_2025_display(None, None), '暂无分 / 位次暂无')
+        self.assertEqual(format_admission_2025_display(653, 2100), '653分 / 位次2100')
+        self.assertEqual(format_admission_2025_display(653, None), '653分 / 位次暂无')
 
     def test_truncate_display_text(self):
         text = truncate_display_text('一二三四五六七八九十', 8)

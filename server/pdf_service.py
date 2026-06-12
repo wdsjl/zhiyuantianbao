@@ -210,13 +210,25 @@ def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
     return build_pdf(lines)
 
 
-LANDSCAPE_LINE_WIDTH = 92
+LANDSCAPE_LINE_WIDTH = 100
 
 
 def format_pdf_value(value: Any, fallback: str = '暂无') -> str:
     if value is None or value == '':
         return fallback
     return pdf_text(value)
+
+
+def format_admission_2025_display(score: Any, rank: Any) -> str:
+    if score is None or score == '':
+        score_part = '暂无分'
+    else:
+        score_part = f'{pdf_text(score)}分'
+    if rank is None or rank == '':
+        rank_part = '位次暂无'
+    else:
+        rank_part = f'位次{pdf_text(rank)}'
+    return f'{score_part} / {rank_part}'
 
 
 def truncate_display_text(value: Any, max_width: int, suffix: str = '…') -> str:
@@ -244,8 +256,10 @@ def format_volunteer_item_block(item: dict[str, Any], line_width: int = LANDSCAP
     school = f'{school_name}（{school_code}）' if school_code else school_name
     major = f'{major_name}（{major_code}）' if major_code else major_name
 
-    score_2025 = format_pdf_value(item.get('admission_score_2025'))
-    rank_2025 = format_pdf_value(item.get('admission_rank_2025'))
+    admission_2025 = format_admission_2025_display(
+        item.get('admission_score_2025'),
+        item.get('admission_rank_2025'),
+    )
     city = format_pdf_value(item.get('city'))
     tuition = format_pdf_value(item.get('tuition'))
     duration = format_pdf_value(item.get('duration'))
@@ -258,10 +272,11 @@ def format_volunteer_item_block(item: dict[str, Any], line_width: int = LANDSCAP
         line_width,
     )
     line2 = truncate_display_text(f'专业：{major}', line_width)
+    field_sep = '    '
     line3 = truncate_display_text(
-        f'2025录取：{score_2025}分/位次{rank_2025}  '
-        f'城市：{city}  学费：{tuition}  学制：{duration}  '
-        f'调剂：{adjustable}  风险：{risk_level}',
+        f'2025录取：{admission_2025}{field_sep}'
+        f'城市：{city}{field_sep}学费：{tuition}{field_sep}学制：{duration}{field_sep}'
+        f'调剂：{adjustable}{field_sep}风险：{risk_level}',
         line_width,
     )
     line4 = truncate_display_text(f'说明：{risk_reason}', line_width)
