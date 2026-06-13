@@ -4,6 +4,7 @@ from rank_strategy_service import (
     assemble_recommendation_plan,
     classify_gradient,
     filter_rank_eligible_candidates,
+    get_plan_quotas,
     is_candidate_match_for_user,
     is_plausible_admission_pair,
     resolve_school_rank,
@@ -95,6 +96,11 @@ class RankStrategyServiceTests(unittest.TestCase):
         dirty['min_score'] = 480
         dirty['weighted_score'] = 480
         self.assertFalse(is_candidate_match_for_user(dirty, 2000, 693, 'high', '本科批'))
+
+    def test_get_plan_quotas_scales_to_province_slots(self):
+        quotas = get_plan_quotas('balanced', '本科批', 48)
+        self.assertEqual(sum(quotas.values()), 48)
+        self.assertGreater(quotas['稳'], quotas['冲'])
 
     def test_assemble_excludes_dirty_low_score_schools(self):
         candidates = [

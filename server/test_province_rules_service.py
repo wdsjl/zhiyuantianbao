@@ -1,7 +1,9 @@
 import unittest
 
 from province_rules_service import (
+    LEGACY_DEFAULT_VOLUNTEER_COUNT,
     ensure_province_rules_seeded,
+    normalize_volunteer_override,
     resolve_volunteer_slots,
     _normalize_province,
     _score_rule_match,
@@ -43,6 +45,14 @@ class ProvinceRulesServiceTest(unittest.TestCase):
         result = resolve_volunteer_slots('河南', '本科批', override_count=12)
         self.assertEqual(result['total_slots'], 12)
         self.assertEqual(result['source'], 'override')
+
+    def test_legacy_default_nine_uses_province_rule(self):
+        self.assertEqual(LEGACY_DEFAULT_VOLUNTEER_COUNT, 9)
+        self.assertIsNone(normalize_volunteer_override(0))
+        self.assertIsNone(normalize_volunteer_override(9))
+        result = resolve_volunteer_slots('河南', '本科批', override_count=9)
+        self.assertEqual(result['total_slots'], 48)
+        self.assertEqual(result['source'], 'province_rule')
 
 
 if __name__ == '__main__':

@@ -23,7 +23,7 @@ from student_report_service import (
     merge_report_inputs_from_db,
 )
 from province_rules_service import (
-    ensure_province_rules_seeded, resolve_volunteer_slots, summarize_province_rules,
+    ensure_province_rules_seeded, normalize_volunteer_override, resolve_volunteer_slots, summarize_province_rules,
 )
 from recommend_service import (
     attach_admission_year_stats,
@@ -1999,7 +1999,7 @@ def recommend(request: RecommendRequest):
     slot_info = resolve_volunteer_slots(
         request.province,
         request.batch,
-        override_count=int(request.volunteer_count) if int(request.volunteer_count or 0) > 0 else None,
+        override_count=normalize_volunteer_override(request.volunteer_count),
     )
     total_slots = slot_info['total_slots']
     province_rule = slot_info['rule']

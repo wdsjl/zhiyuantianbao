@@ -234,21 +234,24 @@ def classify_gradient(
 
 
 def get_plan_quotas(plan_style: str, batch: str = '', total_slots: int | None = None) -> dict[str, int]:
+    from province_rules_service import DEFAULT_VOLUNTEER_COUNT
+
     if is_zhuanke_batch(batch):
         base = PLAN_STYLES_ZHUANKE.copy()
     else:
         base = PLAN_STYLES.get(plan_style, PLAN_STYLES['balanced']).copy()
 
-    if not total_slots or total_slots <= 0:
-        return base
+    slots = int(total_slots or 0)
+    if slots <= 0:
+        slots = DEFAULT_VOLUNTEER_COUNT
 
     base_total = sum(base.values())
-    if base_total == total_slots:
+    if base_total == slots:
         return base
 
-    scale = total_slots / base_total
+    scale = slots / base_total
     scaled = {key: max(0, int(round(count * scale))) for key, count in base.items()}
-    diff = total_slots - sum(scaled.values())
+    diff = slots - sum(scaled.values())
     if diff > 0:
         scaled['稳'] = scaled.get('稳', 0) + diff
     elif diff < 0:
@@ -302,18 +305,24 @@ def assemble_recommendation_plan(
     plan_style: str = 'balanced',
     batch: str = '',
     segment: str = 'mid',
-    total_slots: int = 9,
+    total_slots: int | None = None,
     max_majors_per_school: int | None = None,
     user_score: int | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    quotas = get_plan_quotas(plan_style, batch, total_slots)
+    from province_rules_service import DEFAULT_VOLUNTEER_COUNT
+
+    slots = int(total_slots or 0)
+    if slots <= 0:
+        slots = DEFAULT_VOLUNTEER_COUNT
+
+    quotas = get_plan_quotas(plan_style, batch, slots)
     eligible = filter_rank_eligible_candidates(
         candidates,
         user_rank,
         segment,
         batch,
         user_score=user_score,
-        min_required=total_slots,
+        min_required=slots,
     )
     backfill_cap = get_backfill_rank_cap(user_rank, segment, batch)
     buckets: dict[str, list[dict[str, Any]]] = {'冲': [], '稳': [], '保': [], '垫': []}
@@ -366,11 +375,11 @@ def assemble_recommendation_plan(
     for gradient in ('冲', '稳', '保'):
         pick_from_bucket(gradient, quotas.get(gradient, 0))
 
-    if len(selected) < total_slots:
+    if len(selected) < slots:
         backfill_gradients = ('稳', '保', '冲') if not is_zhuanke_batch(batch) else ('稳', '保', '垫', '冲')
         for gradient in backfill_gradients:
             for row in buckets[gradient]:
-                if len(selected) >= total_slots:
+                if len(selected) >= slots:
                     break
                 if not is_candidate_match_for_user(row, user_rank, user_score, segment, batch):
                     continue
@@ -395,11 +404,11 @@ def assemble_recommendation_plan(
         )
     )
 
-    meta = build_strategy_meta(user_rank, segment, batch, plan_style, total_slots)
+    meta = build_strategy_meta(user_rank, segment, batch, plan_style, slots)
     meta['selected_counts'] = {
         gradient: sum(1 for row in selected if row.get('gradient_type') == gradient)
         for gradient in ('冲', '稳', '保', '垫')
     }
     meta['candidate_pool_before_filter'] = len(candidates)
     meta['candidate_pool_after_filter'] = len(eligible)
-    return selected[:total_slots], meta
+    return selected[:slots], meta

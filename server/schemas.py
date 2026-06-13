@@ -67,7 +67,7 @@ class RecommendRequest(BaseModel):
     only_public: Optional[bool] = None
     accept_adjustment: bool = True
     plan_style: str = 'balanced'
-    volunteer_count: int = 0
+    volunteer_count: int = 0  # 0 或历史默认 9 均按省份规则生成
     student_id: Optional[int] = None
     auto_save_draft: bool = True
 

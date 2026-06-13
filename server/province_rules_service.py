@@ -83,6 +83,17 @@ PROVINCE_RULES_2025: list[dict[str, Any]] = [
 ]
 
 DEFAULT_VOLUNTEER_COUNT = 45
+LEGACY_DEFAULT_VOLUNTEER_COUNT = 9
+
+
+def normalize_volunteer_override(count: int | None) -> int | None:
+    """0 或历史客户端默认 9 均表示按省份规则生成，不使用固定条数。"""
+    value = int(count or 0)
+    if value <= 0 or value == LEGACY_DEFAULT_VOLUNTEER_COUNT:
+        return None
+    return value
+
+
 DEFAULT_RULE = {
     'province': '',
     'year': RULE_YEAR,
@@ -266,6 +277,7 @@ def resolve_volunteer_slots(
     year: int = RULE_YEAR,
     override_count: int | None = None,
 ) -> dict[str, Any]:
+    override_count = normalize_volunteer_override(override_count)
     if override_count is not None and int(override_count) > 0:
         rule = find_province_rule(province, batch, year)
         return {
