@@ -305,7 +305,15 @@ async def admin_import_submit(file: UploadFile = File(...)):
     try:
         rows = parse_import_file(file.filename or 'upload', content)
         result = import_admission_rows(file.filename or 'upload', rows)
-        message = f"导入完成：共 {result['total_count']} 条，成功 {result['success_count']} 条，失败 {result['fail_count']} 条"
+        plan_hint = ''
+        if int(result.get('plan_only_count') or 0) > 0 and int(result.get('plan_only_count') or 0) == int(result.get('success_count') or 0):
+            plan_hint = f'（均为招生计划，共 {result["plan_only_count"]} 条；智能推荐还需导入含最低分/最低位次的录取数据）'
+        elif int(result.get('plan_only_count') or 0) > 0:
+            plan_hint = f'（其中 {result["plan_only_count"]} 条仅招生计划）'
+        message = (
+            f"导入完成：共 {result['total_count']} 条，成功 {result['success_count']} 条，"
+            f"失败 {result['fail_count']} 条{plan_hint}"
+        )
         return admin_import(message)
     except ValueError as exc:
         return admin_import(f'导入失败：{exc}')

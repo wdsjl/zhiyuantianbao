@@ -513,9 +513,11 @@ def admin_import(message: str = ''):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     body = f'''
       <div class="card">
-        <h2>导入历年录取数据</h2>
+        <h2>导入招生计划 / 录取数据</h2>
         {message_html}
-        <p class="muted">支持 `.xlsx` 和 `.csv`。请使用模板字段：年份、省份、批次、院校代码、院校名称、专业代码、专业名称等。</p>
+        <p class="muted">支持 `.xlsx` 和 `.csv`。可直接上传河南省官方招生计划表（含标题行也可），系统会自动识别表头。</p>
+        <p class="muted">河南格式关键列：年份、省份、批次、科类、院校代码、院校名称、院校专业组代码、专业代码、专业全称/专业名称、选科要求、计划人数、学制、学费、门类、专业类。</p>
+        <p class="muted">若文件仅有招生计划、没有最低分/最低位次，会写入招生计划表；含分数位次列时同时写入录取数据表。</p>
         <form action="/admin/import" method="post" enctype="multipart/form-data">
           <div class="toolbar">
             <input type="file" name="file" accept=".xlsx,.csv" required />
