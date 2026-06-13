@@ -1,8 +1,14 @@
 const { filterOptions } = require('../../utils/mockData');
 const { request } = require('../../utils/request');
+const { loadActiveProfileSync } = require('../../utils/profileHelper');
+const { TYPE_OPTIONS, openAnnouncement } = require('../../utils/announcement');
+
+const YEAR_OPTIONS = [2026, 2025, 2024];
+const BATCH_OPTIONS = ['本科批', '专科批', ''];
 
 Page({
   data: {
+    activeTab: 'schools',
     keyword: '',
     showFilter: false,
     loading: false,
@@ -15,18 +21,66 @@ Page({
       tuitionRanges: [],
       durations: []
     },
-    filteredSchools: []
+    filteredSchools: [],
+    profileProvince: '河南',
+    profileBatch: '本科批',
+    announcementKeyword: '',
+    announcementType: '',
+    announcementTypeOptions: TYPE_OPTIONS,
+    announcements: [],
+    announcementLoading: false,
+    queryMode: 'score',
+    queryProvince: '河南',
+    queryYear: 2026,
+    queryBatch: '本科批',
+    queryScore: '',
+    queryRank: '',
+    queryResult: null,
+    queryLoading: false,
+    admissionKeyword: '',
+    admissionRecords: [],
+    admissionLoading: false,
+    yearOptions: YEAR_OPTIONS,
+    batchOptions: BATCH_OPTIONS
   },
   onLoad() {
+    this.syncProfileDefaults();
     this.fetchSchools();
   },
-  formatSchools(list) {
+  onShow() {
+    this.syncProfileDefaults();
+    if (this.data.activeTab === 'announcements' && !this.data.announcements.length) {
+      this.fetchAnnouncements();
+    }
+  },
+  syncProfileDefaults() {
+    const profile = loadActiveProfileSync();
+    const province = profile.province || '河南';
+    const batch = profile.targetBatch || profile.batch || '本科批';
+    this.setData({
+      profileProvince: province,
+      profileBatch: batch,
+      queryProvince: province,
+      queryBatch: batch
+    });
+  },
+  switchTab(event) {
+    const activeTab = event.currentTarget.dataset.tab;
+    this.setData({ activeTab });
+    if (activeTab === 'announcements') {
+      this.fetchAnnouncements();
+    }
+  },
+  formatSchools(list, rankMap) {
     return list.map((school) => {
       const tags = [];
       if (school.is_985) tags.push('985');
       if (school.is_211) tags.push('211');
       if (school.is_double_first_class) tags.push('双一流');
       if (!tags.length) tags.push(school.education_level || '普通本科');
+      const snapshot = rankMap[school.school_id] || {};
+      const minRank = snapshot.best_min_rank || school.best_min_rank;
+      const minScore = snapshot.best_min_score || school.best_min_score;
       return {
         ...school,
         id: school.school_id,
@@ -34,9 +88,12 @@ Page({
         code: school.school_code,
         type: school.is_public ? '公办' : '民办',
         tags,
-        majorsText: '点击查看招生专业与历年分数',
+        majorsText: snapshot.major_count
+          ? `近年 ${snapshot.major_count || 0} 个专业有录取数据`
+          : '点击查看招生专业与历年分数',
         subject: school.education_level || '本科',
-        minRank: '--',
+        minRank: minRank ? String(minRank) : '--',
+        minScore: minScore ? String(minScore) : '--',
         tuition: '--',
         duration: school.city || ''
       };
@@ -44,6 +101,37 @@ Page({
   },
   onKeywordInput(event) {
     this.setData({ keyword: event.detail.value });
+  },
+  onSearchConfirm() {
+    this.fetchSchools();
+  },
+  onAnnouncementKeywordInput(event) {
+    this.setData({ announcementKeyword: event.detail.value });
+  },
+  onAnnouncementTypeChange(event) {
+    this.setData({ announcementType: event.currentTarget.dataset.type || '' });
+    this.fetchAnnouncements();
+  },
+  onQueryModeChange(event) {
+    this.setData({ queryMode: event.currentTarget.dataset.mode || 'score', queryResult: null });
+  },
+  onQueryProvinceInput(event) {
+    this.setData({ queryProvince: event.detail.value });
+  },
+  onQueryYearChange(event) {
+    this.setData({ queryYear: Number(event.currentTarget.dataset.year) || 2026 });
+  },
+  onQueryBatchChange(event) {
+    this.setData({ queryBatch: event.currentTarget.dataset.batch || '' });
+  },
+  onQueryScoreInput(event) {
+    this.setData({ queryScore: event.detail.value });
+  },
+  onQueryRankInput(event) {
+    this.setData({ queryRank: event.detail.value });
+  },
+  onAdmissionKeywordInput(event) {
+    this.setData({ admissionKeyword: event.detail.value });
   },
   toggleFilter() {
     this.setData({ showFilter: !this.data.showFilter });
@@ -69,6 +157,23 @@ Page({
   getDoubleFirstParam() {
     return this.data.selected.tags.includes('双一流') ? 1 : undefined;
   },
+  fetchRankSnapshot(schoolIds) {
+    if (!schoolIds.length) return Promise.resolve({});
+    return request({
+      url: '/api/schools/rank-snapshot',
+      data: {
+        province: this.data.profileProvince,
+        batch: this.data.profileBatch,
+        limit: 200
+      }
+    }).then((res) => {
+      const rankMap = {};
+      (res.list || []).forEach((item) => {
+        rankMap[item.school_id] = item;
+      });
+      return rankMap;
+    }).catch(() => ({}));
+  },
   fetchSchools() {
     const city = this.data.selected.cities.length === 1 ? this.data.selected.cities[0] : '';
     const data = {
@@ -85,10 +190,16 @@ Page({
     this.setData({ loading: true });
     request({ url: '/api/schools', data })
       .then((res) => {
-        let list = this.formatSchools(res.list || []);
+        let list = res.list || [];
         list = this.applyClientFilters(list);
-        this.setData({ filteredSchools: list, showFilter: false });
-        if (!list.length) wx.showToast({ title: '建议放宽筛选条件', icon: 'none' });
+        const schoolIds = list.map((item) => item.school_id).filter(Boolean);
+        return this.fetchRankSnapshot(schoolIds).then((rankMap) => {
+          this.setData({
+            filteredSchools: this.formatSchools(list, rankMap),
+            showFilter: false
+          });
+          if (!list.length) wx.showToast({ title: '建议放宽筛选条件', icon: 'none' });
+        });
       })
       .catch(() => {
         wx.showToast({ title: '接口连接失败，请确认后端已启动', icon: 'none' });
@@ -97,12 +208,106 @@ Page({
         this.setData({ loading: false });
       });
   },
+  fetchAnnouncements() {
+    this.setData({ announcementLoading: true });
+    request({
+      url: '/api/announcements',
+      data: {
+        keyword: this.data.announcementKeyword,
+        province: this.data.profileProvince,
+        year: 2026,
+        review_status: 'approved',
+        announcement_type: this.data.announcementType || '',
+        limit: 100
+      }
+    })
+      .then((res) => {
+        this.setData({ announcements: res.list || [] });
+      })
+      .catch(() => {
+        wx.showToast({ title: '公告加载失败', icon: 'none' });
+      })
+      .finally(() => {
+        this.setData({ announcementLoading: false });
+      });
+  },
+  lookupScoreSegment() {
+    const { queryMode, queryProvince, queryYear, queryBatch, queryScore, queryRank } = this.data;
+    if (!queryProvince) {
+      wx.showToast({ title: '请填写省份', icon: 'none' });
+      return;
+    }
+    const data = {
+      province: queryProvince,
+      year: queryYear,
+      batch: queryBatch
+    };
+    if (queryMode === 'score') {
+      if (!queryScore) {
+        wx.showToast({ title: '请输入分数', icon: 'none' });
+        return;
+      }
+      data.score = Number(queryScore);
+    } else {
+      if (!queryRank) {
+        wx.showToast({ title: '请输入位次', icon: 'none' });
+        return;
+      }
+      data.rank = Number(queryRank);
+    }
+    this.setData({ queryLoading: true, queryResult: null });
+    request({ url: '/api/score-segments/lookup', data })
+      .then((res) => {
+        this.setData({ queryResult: res });
+      })
+      .catch((err) => {
+        const msg = (err && err.detail) || '未找到一分一段表，请先在后台导入';
+        wx.showToast({ title: msg, icon: 'none' });
+      })
+      .finally(() => {
+        this.setData({ queryLoading: false });
+      });
+  },
+  searchAdmissions() {
+    const keyword = (this.data.admissionKeyword || this.data.keyword || '').trim();
+    if (!keyword) {
+      wx.showToast({ title: '请输入院校或专业名称', icon: 'none' });
+      return;
+    }
+    this.setData({ admissionLoading: true });
+    request({
+      url: '/api/admissions',
+      data: {
+        province: this.data.profileProvince,
+        batch: this.data.profileBatch,
+        keyword,
+        limit: 80
+      }
+    })
+      .then((res) => {
+        this.setData({ admissionRecords: res.list || [] });
+        if (!(res.list || []).length) {
+          wx.showToast({ title: '未找到录取数据', icon: 'none' });
+        }
+      })
+      .catch(() => {
+        wx.showToast({ title: '录取数据查询失败', icon: 'none' });
+      })
+      .finally(() => {
+        this.setData({ admissionLoading: false });
+      });
+  },
   applyClientFilters(list) {
     const { selected } = this.data;
     return list.filter((school) => {
       const cityHit = !selected.cities.length || selected.cities.includes(school.city);
-      const typeHit = !selected.schoolTypes.length || selected.schoolTypes.includes(school.type);
-      const tagHit = !selected.tags.length || school.tags.some((tag) => selected.tags.includes(tag));
+      const typeText = school.is_public ? '公办' : '民办';
+      const typeHit = !selected.schoolTypes.length || selected.schoolTypes.includes(typeText);
+      const tags = [];
+      if (school.is_985) tags.push('985');
+      if (school.is_211) tags.push('211');
+      if (school.is_double_first_class) tags.push('双一流');
+      const tagHit = !selected.tags.length || tags.some((tag) => selected.tags.includes(tag));
       return cityHit && typeHit && tagHit;
     });
   },
@@ -114,9 +319,17 @@ Page({
     if (!school || !school.school_id) return;
     wx.navigateTo({ url: `/pages/school-detail/school-detail?id=${school.school_id}` });
   },
+  openAdmissionSchool(event) {
+    const schoolId = event.currentTarget.dataset.schoolId;
+    if (!schoolId) return;
+    wx.navigateTo({ url: `/pages/school-detail/school-detail?id=${schoolId}` });
+  },
   addToVolunteer(event) {
     const school = event.currentTarget.dataset.school;
     if (!school || !school.school_id) return;
     wx.navigateTo({ url: `/pages/school-detail/school-detail?id=${school.school_id}` });
+  },
+  openAnnouncement(event) {
+    openAnnouncement(event.currentTarget.dataset.item);
   }
 });
