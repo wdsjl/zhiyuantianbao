@@ -2,10 +2,25 @@
 const BASE_URL = 'https://api.zntb.lhyun.net';
 
 function parseApiDetail(detail) {
-  if (!detail) return '';
+  if (detail === null || detail === undefined || detail === '') return '';
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) {
-    return detail.map((item) => item.msg || JSON.stringify(item)).join('；');
+    return detail.map((item) => {
+      if (!item) return '';
+      if (typeof item === 'string') return item;
+      return item.msg || item.message || JSON.stringify(item);
+    }).filter(Boolean).join('；');
+  }
+  if (typeof detail === 'object') {
+    if (detail.message) return parseApiDetail(detail.message);
+    if (detail.msg) return String(detail.msg);
+    if (detail.detail) return parseApiDetail(detail.detail);
+    if (detail.error) return parseApiDetail(detail.error);
+    try {
+      return JSON.stringify(detail);
+    } catch (error) {
+      return '请求失败';
+    }
   }
   return String(detail);
 }
