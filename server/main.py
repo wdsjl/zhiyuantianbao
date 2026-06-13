@@ -6,7 +6,7 @@ import json
 from urllib.parse import quote
 
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
-from fastapi.responses import Response, RedirectResponse, JSONResponse
+from fastapi.responses import Response, RedirectResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -827,6 +827,62 @@ async def api_wechat_pay_notify(request: Request):
 def api_douyin_status():
     from douyin_service import get_douyin_status
     return get_douyin_status()
+
+
+@app.get('/api/douyin/landing/links')
+def api_douyin_landing_links(
+    page: str = Query('home'),
+    page_path: str = Query(''),
+    query: str = Query(''),
+    invite: str = Query(''),
+    from_source: str = Query('douyin', alias='from'),
+    env_version: str = Query('release'),
+):
+    """生成抖音落地页与唤起微信小程序的跳转链接。"""
+    from douyin_landing_service import generate_douyin_landing_links
+    try:
+        return generate_douyin_landing_links(
+            page=page,
+            page_path=page_path,
+            query=query,
+            invite=invite,
+            from_source=from_source,
+            env_version=env_version,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/douyin/landing')
+def douyin_landing_page(
+    page: str = Query('home'),
+    page_path: str = Query(''),
+    query: str = Query(''),
+    invite: str = Query(''),
+    from_source: str = Query('douyin', alias='from'),
+    env_version: str = Query('release'),
+):
+    """抖音 H5 落地页：点击后唤起微信小程序。"""
+    from douyin_landing_service import generate_douyin_landing_links, render_landing_page_html
+    try:
+        payload = generate_douyin_landing_links(
+            page=page,
+            page_path=page_path,
+            query=query,
+            invite=invite,
+            from_source=from_source,
+            env_version=env_version,
+        )
+        html = render_landing_page_html(
+            title=payload['title'],
+            subtitle=payload['subtitle'],
+            url_scheme=payload['url_scheme'],
+            url_link=payload['url_link'],
+            invite=payload.get('invite') or '',
+        )
+        return HTMLResponse(html)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get('/api/douyin/redeem-hint')

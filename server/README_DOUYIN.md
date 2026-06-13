@@ -26,6 +26,73 @@ DOUYIN_SPI_TOKEN=可选，SPI 回调鉴权令牌
 | `POST /api/douyin/spi/coupon/issue` | 抖音三方发券 SPI（下单后抖音回调） |
 | `POST /api/douyin/redeem` | 微信小程序会员中心兑券 |
 | `GET /api/douyin/redeem-hint` | 券码兑换指引 |
+| `GET /api/douyin/landing/links` | 生成抖音落地页 + 唤起微信小程序链接 |
+| `GET /douyin/landing` | 抖音 H5 落地页（点击唤起微信小程序） |
+
+## 抖音落地页 / 唤起微信小程序
+
+用于抖音广告、主页、私信、短视频挂载等场景：用户点击 H5 落地页后唤起微信小程序。
+
+### 1. 生成跳转链接（API）
+
+```powershell
+Invoke-RestMethod "https://api.zntb.lhyun.net/api/douyin/landing/links?page=home&from=douyin"
+```
+
+常用 `page` 预设：
+
+| page | 说明 |
+|------|------|
+| `home` | 小程序首页 |
+| `membership` | 会员中心 |
+| `douyin_redeem` | 会员中心并定位到抖音券兑换 |
+| `promotion` | 达人推广中心 |
+
+带达人推广码：
+
+```powershell
+Invoke-RestMethod "https://api.zntb.lhyun.net/api/douyin/landing/links?page=home&invite=ABC123&from=douyin"
+```
+
+返回字段：
+
+| 字段 | 用途 |
+|------|------|
+| `landing_page_url` | **抖音投放落地页链接**（推荐填这个） |
+| `url_scheme` | 微信 URL Scheme，可直接唤起小程序 |
+| `url_link` | 微信 URL Link，备用外链 |
+| `share_path` | 小程序内路径 |
+
+### 2. 落地页示例
+
+首页投放：
+
+```text
+https://api.zntb.lhyun.net/douyin/landing?page=home&from=douyin
+```
+
+抖音券兑换：
+
+```text
+https://api.zntb.lhyun.net/douyin/landing?page=douyin_redeem&from=douyin
+```
+
+达人推广：
+
+```text
+https://api.zntb.lhyun.net/douyin/landing?page=home&invite=达人推广码&from=douyin
+```
+
+### 3. 前置条件
+
+需已配置 `WECHAT_APPID` 与 `WECHAT_SECRET`。微信 URL Scheme / URL Link 需企业主体小程序权限。
+
+可选环境变量：
+
+```text
+DOUYIN_LANDING_BASE_URL=https://api.zntb.lhyun.net
+WECHAT_LINK_ENV_VERSION=release
+```
 
 ## 抖音后台需配置
 
