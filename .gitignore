@@ -15,6 +15,7 @@ ENV/
 # WeChat Pay certificates and local secrets
 server/certs/*.pem
 ecosystem.secrets.js
+server/local.secrets.env
 
 # Local environment
 .env
