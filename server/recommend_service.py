@@ -8,6 +8,19 @@ from db import get_connection, row_to_dict, rows_to_dicts
 from province_rules_service import _batch_category, _normalize_province, _score_rule_match
 from services import matches_subject_requirement
 
+try:
+    from crawler_service import normalize_batch_name as normalize_import_batch_name
+except ImportError:
+    def normalize_import_batch_name(name: str) -> str:
+        raw = (name or '').strip()
+        mapping = {
+            '本科一批': '本科批',
+            '本科二批': '本科批',
+            '本科': '本科批',
+            '专科': '专科批',
+        }
+        return mapping.get(raw, raw or '本科批')
+
 BATCH_ALIAS_GROUPS: dict[str, list[str]] = {
     '本科批': ['本科批', '本科', '本科普通批', '普通本科批', '本科一批', '本科二批'],
     '专科批': ['专科批', '专科', '高职专科批', '高职高专批', '高专批'],
@@ -191,13 +204,37 @@ def build_weighted_items(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 score_sum += record['min_score'] * weight
         weighted_rank = round(rank_sum / weight_sum) if weight_sum else None
         weighted_score = round(score_sum / weight_sum) if weight_sum else latest.get('min_score')
+        record_2025 = next((item for item in sorted_records if int(item.get('year') or 0) == ADMISSION_REFERENCE_YEAR), None)
         weighted_items.append({
             **latest,
             'weighted_rank': weighted_rank,
             'weighted_score': weighted_score,
             'years_used': [item['year'] for item in sorted_records],
+            'admission_score_2025': (record_2025 or {}).get('min_score'),
+            'admission_rank_2025': (record_2025 or {}).get('min_rank'),
         })
     return weighted_items
+
+
+def build_rank_windows(user_rank: int, segment: str, batch: str) -> list[tuple[int | None, int | None]]:
+    from rank_strategy_service import get_band_coefficients, get_pool_rank_window, is_zhuanke_batch
+
+    if not user_rank or user_rank <= 0:
+        return [(None, None)]
+
+    base_min, base_max = get_pool_rank_window(user_rank, segment, batch)
+    coeffs = get_band_coefficients(segment, batch)
+    windows: list[tuple[int | None, int | None]] = [(base_min, base_max)]
+    for widen in (1.5, 2.5, 5.0, 10.0):
+        lower = max(1, int(user_rank * coeffs['冲'][0] * 0.80 / widen))
+        upper = int(user_rank * coeffs['保'][1] * 1.20 * widen)
+        if is_zhuanke_batch(batch):
+            upper = max(upper, int(user_rank * 1.50 * widen))
+        candidate = (lower, upper)
+        if candidate not in windows:
+            windows.append(candidate)
+    windows.append((None, None))
+    return windows
 
 
 def _query_rows_for_batches(
@@ -258,16 +295,14 @@ def fetch_recommendation_candidates(
             if alias and alias not in batches:
                 batches.append(alias)
 
-    rank_min: int | None = None
-    rank_max: int | None = None
-    if user_rank and user_rank > 0:
-        from rank_strategy_service import get_pool_rank_window
-        rank_min, rank_max = get_pool_rank_window(user_rank, segment, requested_batch)
+    rank_windows = build_rank_windows(user_rank or 0, segment, requested_batch) if user_rank and user_rank > 0 else [(None, None)]
+    rank_min, rank_max = rank_windows[0]
 
     meta: dict[str, Any] = {
         'tried_batches': batches,
         'relaxed_major_filter': False,
         'rank_window': [rank_min, rank_max] if rank_min is not None else None,
+        'rank_window_relaxed': False,
         'available_batches': available_batch_names,
         'available_batch_counts': {
             str(item.get('batch') or ''): int(item.get('school_major_count') or item.get('record_count') or 0)
@@ -279,40 +314,52 @@ def fetch_recommendation_candidates(
         'batch_hint': '',
     }
     effective_batch = requested_batch
+    weighted_items: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
 
-    rows, effective_batch = _query_rows_for_batches(
-        province,
-        batches or [requested_batch],
-        subject_combination,
-        cities=cities,
-        school_types=school_types,
-        major_types=major_types,
-        only_public=only_public,
-        rank_min=rank_min,
-        rank_max=rank_max,
-    )
-    if rows and effective_batch and effective_batch != requested_batch:
-        meta['batch_fallback'] = effective_batch
-
-    weighted_items = build_weighted_items(rows)
-    if len(weighted_items) < total_slots and major_types:
-        relaxed_rows, relaxed_batch = _query_rows_for_batches(
+    def query_candidates(
+        current_major_types: list[str] | None,
+        window: tuple[int | None, int | None],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
+        window_min, window_max = window
+        query_rows, query_batch = _query_rows_for_batches(
             province,
             batches or [requested_batch],
             subject_combination,
             cities=cities,
             school_types=school_types,
-            major_types=None,
+            major_types=current_major_types,
             only_public=only_public,
-            rank_min=rank_min,
-            rank_max=rank_max,
+            rank_min=window_min,
+            rank_max=window_max,
         )
-        if relaxed_rows:
-            effective_batch = relaxed_batch
-            weighted_items = build_weighted_items(relaxed_rows)
-            meta['relaxed_major_filter'] = True
-            if relaxed_batch and relaxed_batch != requested_batch:
-                meta['batch_fallback'] = relaxed_batch
+        return query_rows, build_weighted_items(query_rows), query_batch
+
+    for window_index, window in enumerate(rank_windows):
+        rank_min, rank_max = window
+        rows, weighted_items, effective_batch = query_candidates(major_types, window)
+        if rows and effective_batch and effective_batch != requested_batch:
+            meta['batch_fallback'] = effective_batch
+        if len(weighted_items) >= total_slots:
+            if window_index > 0:
+                meta['rank_window_relaxed'] = True
+                meta['rank_window'] = [rank_min, rank_max] if rank_min is not None else None
+            break
+
+        if major_types:
+            relaxed_rows, relaxed_items, relaxed_batch = query_candidates(None, window)
+            if relaxed_items and len(relaxed_items) > len(weighted_items):
+                rows = relaxed_rows
+                weighted_items = relaxed_items
+                effective_batch = relaxed_batch
+                meta['relaxed_major_filter'] = True
+                if relaxed_batch and relaxed_batch != requested_batch:
+                    meta['batch_fallback'] = relaxed_batch
+            if len(weighted_items) >= total_slots:
+                if window_index > 0:
+                    meta['rank_window_relaxed'] = True
+                    meta['rank_window'] = [rank_min, rank_max] if rank_min is not None else None
+                break
 
     if not weighted_items:
         meta['batch_hint'] = _build_batch_hint(
@@ -345,6 +392,72 @@ def ensure_draft_item_admission_columns() -> None:
             connection.commit()
 
 
+def _merge_admission_stats(
+    stats: dict[tuple[int, int], dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> None:
+    for row in rows:
+        school_id = row.get('school_id')
+        major_id = row.get('major_id')
+        if school_id is None or major_id is None:
+            continue
+        key = (int(school_id), int(major_id))
+        existing = stats.get(key)
+        if not existing or (row.get('min_rank') is not None and (
+            existing.get('min_rank') is None or int(row['min_rank']) < int(existing['min_rank'])
+        )):
+            stats[key] = row
+
+
+def _lookup_admission_rows(
+    *,
+    year: int,
+    province: str,
+    batch: str,
+    school_major_pairs: list[tuple[int, int]] | None = None,
+    school_major_codes: list[tuple[str, str]] | None = None,
+    use_batch_filter: bool = True,
+) -> list[dict[str, Any]]:
+    if not school_major_pairs and not school_major_codes:
+        return []
+
+    variants = province_variants(province)
+    province_placeholders = ','.join(['?'] * len(variants))
+    params: list[Any] = [year, *variants]
+    batch_clause = ''
+    if use_batch_filter:
+        batch_aliases = expand_batch_aliases(batch) or [batch]
+        batch_placeholders = ','.join(['?'] * len(batch_aliases))
+        batch_clause = f' AND batch IN ({batch_placeholders})'
+        params.extend(batch_aliases)
+
+    if school_major_pairs:
+        pair_placeholders = ','.join(['(?, ?)'] * len(school_major_pairs))
+        for school_id, major_id in school_major_pairs:
+            params.extend([school_id, major_id])
+        sql = f'''
+        SELECT school_id, major_id, school_code, major_code, min_score, min_rank, year, batch
+        FROM admission_records
+        WHERE year = ?
+          AND province IN ({province_placeholders}){batch_clause}
+          AND (school_id, major_id) IN ({pair_placeholders})
+        '''
+    else:
+        code_placeholders = ','.join(['(?, ?)'] * len(school_major_codes or []))
+        for school_code, major_code in school_major_codes or []:
+            params.extend([school_code, major_code])
+        sql = f'''
+        SELECT school_id, major_id, school_code, major_code, min_score, min_rank, year, batch
+        FROM admission_records
+        WHERE year = ?
+          AND province IN ({province_placeholders}){batch_clause}
+          AND (school_code, major_code) IN ({code_placeholders})
+        '''
+
+    with get_connection() as connection:
+        return rows_to_dicts(connection.execute(sql, params).fetchall())
+
+
 def lookup_admission_stats_by_year(
     items: list[dict[str, Any]],
     province: str,
@@ -366,33 +479,63 @@ def lookup_admission_stats_by_year(
     if not pairs:
         return {}
 
-    variants = province_variants(province)
-    province_placeholders = ','.join(['?'] * len(variants))
-    batch_aliases = expand_batch_aliases(batch) or [batch]
-    batch_placeholders = ','.join(['?'] * len(batch_aliases))
-    pair_placeholders = ','.join(['(?, ?)'] * len(pairs))
-    params: list[Any] = [year, *variants, *batch_aliases]
-    for school_id, major_id in pairs:
-        params.extend([school_id, major_id])
-
-    sql = f'''
-    SELECT school_id, major_id, min_score, min_rank, year, batch
-    FROM admission_records
-    WHERE year = ?
-      AND province IN ({province_placeholders})
-      AND batch IN ({batch_placeholders})
-      AND (school_id, major_id) IN ({pair_placeholders})
-    '''
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
     stats: dict[tuple[int, int], dict[str, Any]] = {}
-    for row in rows:
-        key = (int(row['school_id']), int(row['major_id']))
-        existing = stats.get(key)
-        if not existing or (row.get('min_rank') is not None and (
-            existing.get('min_rank') is None or int(row['min_rank']) < int(existing['min_rank'])
-        )):
-            stats[key] = row
+    normalized_batch = normalize_import_batch_name(batch)
+    for candidate_batch in dict.fromkeys([batch, normalized_batch]):
+        _merge_admission_stats(
+            stats,
+            _lookup_admission_rows(
+                year=year,
+                province=province,
+                batch=candidate_batch,
+                school_major_pairs=pairs,
+                use_batch_filter=True,
+            ),
+        )
+
+    missing_pairs = [key for key in pairs if key not in stats]
+    if missing_pairs:
+        code_pairs: list[tuple[str, str]] = []
+        code_to_key: dict[tuple[str, str], tuple[int, int]] = {}
+        for item in items:
+            school_id = item.get('school_id')
+            major_id = item.get('major_id')
+            school_code = str(item.get('school_code') or '').strip()
+            major_code = str(item.get('major_code') or '').strip()
+            if not school_id or not major_id or not school_code or not major_code:
+                continue
+            key = (int(school_id), int(major_id))
+            if key not in missing_pairs:
+                continue
+            code_key = (school_code, major_code)
+            code_pairs.append(code_key)
+            code_to_key[code_key] = key
+        if code_pairs:
+            for candidate_batch in dict.fromkeys([batch, normalized_batch]):
+                for row in _lookup_admission_rows(
+                    year=year,
+                    province=province,
+                    batch=candidate_batch,
+                    school_major_codes=code_pairs,
+                    use_batch_filter=True,
+                ):
+                    mapped_key = code_to_key.get((str(row.get('school_code') or '').strip(), str(row.get('major_code') or '').strip()))
+                    if mapped_key:
+                        _merge_admission_stats(stats, [{**row, 'school_id': mapped_key[0], 'major_id': mapped_key[1]}])
+
+    still_missing = [key for key in pairs if key not in stats]
+    if still_missing:
+        _merge_admission_stats(
+            stats,
+            _lookup_admission_rows(
+                year=year,
+                province=province,
+                batch=batch,
+                school_major_pairs=still_missing,
+                use_batch_filter=False,
+            ),
+        )
+
     return stats
 
 
@@ -401,8 +544,15 @@ def attach_admission_year_stats(
     province: str,
     batch: str,
     year: int = ADMISSION_REFERENCE_YEAR,
+    *,
+    fallback_batch: str | None = None,
 ) -> list[dict[str, Any]]:
     stats = lookup_admission_stats_by_year(items, province, batch, year)
+    if fallback_batch and normalize_import_batch_name(fallback_batch) != normalize_import_batch_name(batch):
+        fallback_stats = lookup_admission_stats_by_year(items, province, fallback_batch, year)
+        for key, value in fallback_stats.items():
+            stats.setdefault(key, value)
+
     enriched: list[dict[str, Any]] = []
     for item in items:
         row = dict(item)

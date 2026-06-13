@@ -2080,7 +2080,7 @@ def recommend(request: RecommendRequest):
         batch=effective_batch,
         segment=segment,
         total_slots=total_slots,
-        max_majors_per_school=province_rule.get('major_count_per_school'),
+        max_majors_per_school=province_rule.get('major_count_per_school') or 6,
         user_score=user_score,
     )
     if strategy_rank_hint:
@@ -2100,6 +2100,7 @@ def recommend(request: RecommendRequest):
         'candidate_pool': candidate_meta.get('candidate_pool'),
         'relaxed_major_filter': candidate_meta.get('relaxed_major_filter'),
         'rank_window': candidate_meta.get('rank_window'),
+        'rank_window_relaxed': candidate_meta.get('rank_window_relaxed'),
     }
 
     items = []
@@ -2134,7 +2135,7 @@ def recommend(request: RecommendRequest):
             'risk_reason': get_risk_reason(gradient_type, is_adjustable)
         })
 
-    items = attach_admission_year_stats(items, request.province, effective_batch)
+    items = attach_admission_year_stats(items, request.province, effective_batch, fallback_batch=request.batch)
 
     risk = inspect_plan_risk(items)
     draft_id = None
@@ -2169,6 +2170,12 @@ def recommend(request: RecommendRequest):
             'available_batches': candidate_meta.get('available_batches') or [],
             'available_batch_counts': candidate_meta.get('available_batch_counts') or {},
             'relaxed_major_filter': bool(candidate_meta.get('relaxed_major_filter')),
+            'rank_window': candidate_meta.get('rank_window'),
+            'rank_window_relaxed': bool(candidate_meta.get('rank_window_relaxed')),
+            'shortfall_hint': (
+                f'候选池仅 {candidate_meta.get("candidate_pool")} 条，未达到目标 {total_slots} 个志愿。'
+                '请补充录取数据、放宽筛选条件，或核对档案批次是否与导入数据一致。'
+            ) if len(items) < total_slots else '',
         },
         'draft_id': draft_id,
     }
