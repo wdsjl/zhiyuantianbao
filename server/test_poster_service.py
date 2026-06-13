@@ -5,7 +5,14 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-from poster_service import compose_referral_poster, poster_metadata, poster_template_path
+from poster_service import (
+    POSTER_HEIGHT,
+    POSTER_WIDTH,
+    compose_referral_poster,
+    poster_metadata,
+    poster_template_path,
+    render_default_poster_background,
+)
 
 
 def _fake_qrcode_bytes(size: int = 200) -> bytes:
@@ -23,6 +30,12 @@ class PosterServiceTests(unittest.TestCase):
     def test_template_exists(self):
         self.assertTrue(poster_template_path().exists())
 
+    def test_default_background_is_portrait_9_16(self):
+        image = render_default_poster_background()
+        self.assertEqual(image.size, (POSTER_WIDTH, POSTER_HEIGHT))
+        self.assertGreater(POSTER_HEIGHT, POSTER_WIDTH)
+        self.assertAlmostEqual(POSTER_WIDTH / POSTER_HEIGHT, 9 / 16, places=2)
+
     def test_compose_referral_poster_returns_png(self):
         poster = compose_referral_poster(
             _fake_qrcode_bytes(),
@@ -31,13 +44,14 @@ class PosterServiceTests(unittest.TestCase):
         )
         self.assertTrue(poster.startswith(b'\x89PNG'))
         with Image.open(io.BytesIO(poster)) as image:
-            self.assertGreater(image.width, 200)
-            self.assertGreater(image.height, 200)
+            self.assertEqual(image.size, (POSTER_WIDTH, POSTER_HEIGHT))
 
     def test_poster_metadata(self):
         meta = poster_metadata()
         self.assertEqual(meta['brand_name'], '智愿填报')
-        self.assertTrue(meta['template_exists'])
+        self.assertEqual(meta['output_size']['width'], POSTER_WIDTH)
+        self.assertEqual(meta['output_size']['height'], POSTER_HEIGHT)
+        self.assertEqual(meta['output_size']['ratio'], '9:16')
 
     @patch('referral_service.generate_poster_qrcode', return_value=_fake_qrcode_bytes())
     def test_poster_image_base64_uses_template(self, _mock_qr):
