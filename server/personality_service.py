@@ -140,7 +140,12 @@ def build_personality_ai_context(personality: dict[str, Any]) -> str:
     ])
 
 
-def build_career_report_prompt(profile: dict[str, Any], personality: dict[str, Any]) -> str:
+def build_career_report_prompt(
+    profile: dict[str, Any],
+    personality: dict[str, Any],
+    province_rule_context: str | None = None,
+    admission_data_context: str | None = None,
+) -> str:
     context = build_personality_ai_context(personality)
     student_name = (profile.get('name') or profile.get('studentName') or '同学').strip() or '同学'
     greeting = (
@@ -167,4 +172,10 @@ def build_career_report_prompt(profile: dict[str, Any], personality: dict[str, A
 
 霍兰德测评数据：
 {context}
+
+本省志愿填报规则（系统数据库）：
+{province_rule_context or '未匹配到省份规则。'}
+
+本省历年录取数据库摘要（系统数据库）：
+{admission_data_context or '暂无数据库录取记录摘要。'}
 '''

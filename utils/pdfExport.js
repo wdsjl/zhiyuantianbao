@@ -19,10 +19,21 @@ function buildStudentPdfFileName(profile, label) {
   return ensurePdfExtension(`${name}的${sanitizeFileName(label)}`);
 }
 
+function decodePdfFilename(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  try {
+    return decodeURIComponent(text);
+  } catch (error) {
+    return text;
+  }
+}
+
 function resolveResponseFileName(res, fallback) {
   const headers = res.header || {};
   const fromHeader = headers['X-Pdf-Filename'] || headers['x-pdf-filename'];
-  return ensurePdfExtension(fromHeader || fallback || '学生的报告.pdf');
+  const decoded = decodePdfFilename(fromHeader);
+  return ensurePdfExtension(decoded || fallback || '学生的报告.pdf');
 }
 
 function getFileSystem() {
