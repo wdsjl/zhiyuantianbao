@@ -558,7 +558,7 @@ def admin_score_segments(message: str = ''):
       <div class="card">
         <h2>导入一分一段表</h2>
         {message_html}
-        <p class="muted">支持河南省考试院发布的 <strong>PDF / Excel / CSV</strong>。表头需含「分数」和「累计人数」或「位次」（可有标题行，系统自动识别）。</p>
+        <p class="muted">支持河南省考试院发布的 <strong>PDF / Excel / CSV</strong>。表头需含「分数」和「累计人数」或「位次」；也支持<strong>无表头五列</strong>：<code>分数, 本段人数, 累计人数, 年份, 科类</code>。</p>
         <p class="muted"><strong>河南新高考</strong>请分别导入 <strong>物理类</strong>、<strong>历史类</strong> 两张表（科类选物理/历史）。批次可填「本科批」或留空。</p>
         <form action="/admin/score-segments/import" method="post" enctype="multipart/form-data" class="toolbar" style="flex-wrap:wrap;gap:12px">
           <input name="province" value="河南" placeholder="省份" required />
@@ -572,7 +572,7 @@ def admin_score_segments(message: str = ''):
           <input type="file" name="file" accept=".pdf,.xlsx,.xls,.csv" required />
           <button type="submit">上传并导入</button>
         </form>
-        <p class="muted">Excel/CSV 示例列：<code>分数, 本段人数, 累计人数</code>。模板：<code>database/score_segment_import_template.csv</code></p>
+        <p class="muted">Excel/CSV 示例列：<code>分数, 本段人数, 累计人数, 2025, 物理类</code>（第三列必须是累计位次，不是本段人数累加）。模板：<code>database/score_segment_import_template.csv</code></p>
       </div>
       <div class="card">
         <h2>已导入的一分一段表</h2>

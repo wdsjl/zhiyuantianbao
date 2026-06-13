@@ -121,6 +121,116 @@ def detect_score_header_row_index(table: list[list[Any]]) -> int:
     return -1
 
 
+def _cell_value(row: list[Any] | tuple[Any, ...], index: int) -> Any:
+    if index >= len(row):
+        return None
+    return row[index]
+
+
+def _looks_like_score(value: int | None) -> bool:
+    return value is not None and 100 <= value <= 900
+
+
+def _looks_like_year(value: int | None) -> bool:
+    return value is not None and 2020 <= value <= 2035
+
+
+def parse_columnar_segments(
+    table: list[list[Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """识别河南常见无表头五列：分数 | 本段人数 | 累计人数 | 年份 | 科类。"""
+    rows: list[dict[str, Any]] = []
+    meta: dict[str, Any] = {'year': None, 'subject_type': ''}
+    matched = 0
+
+    for row in table:
+        if not row:
+            continue
+        first = _to_int(_cell_value(row, 0))
+        second = _to_int(_cell_value(row, 1))
+        third = _to_int(_cell_value(row, 2))
+        fourth = _to_int(_cell_value(row, 3))
+        fifth = str(_cell_value(row, 4) or '').strip()
+
+        if _looks_like_year(first) and _normalize_subject_type(fifth):
+            meta['year'] = first
+            meta['subject_type'] = _normalize_subject_type(fifth)
+            continue
+
+        score = first
+        if not _looks_like_score(score):
+            continue
+
+        segment_count: int | None = None
+        cumulative_rank: int | None = None
+
+        if third is not None and second is not None:
+            if third >= second:
+                segment_count = second
+                cumulative_rank = third
+            else:
+                cumulative_rank = second
+                segment_count = third
+        elif second is not None:
+            cumulative_rank = second
+
+        if cumulative_rank is None:
+            continue
+
+        if _looks_like_year(fourth):
+            meta['year'] = fourth
+        if fifth:
+            subject = _normalize_subject_type(fifth)
+            if subject:
+                meta['subject_type'] = subject
+
+        rows.append({
+            'score': int(score),
+            'segment_count': segment_count,
+            'cumulative_rank': int(cumulative_rank),
+        })
+        matched += 1
+
+    return rows, meta
+
+
+def parse_segments_from_matrix(
+    table: list[list[Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    _, header_rows = parse_table_matrix(table)
+    if header_rows:
+        return header_rows, {}
+
+    columnar_rows, meta = parse_columnar_segments(table)
+    if columnar_rows:
+        return columnar_rows, meta
+
+    return [], {}
+
+
+def validate_segment_rows(rows: list[dict[str, Any]]) -> None:
+    if len(rows) < 10:
+        raise ValueError(f'识别到的有效分数行过少（{len(rows)} 行），请检查文件列顺序是否为：分数、本段人数、累计人数')
+
+    sorted_rows = sorted(rows, key=lambda item: item['score'], reverse=True)
+    top = sorted_rows[0]
+    bottom = sorted_rows[-1]
+    if int(top['cumulative_rank']) > 20000:
+        raise ValueError(
+            f'最高分 {top["score"]} 的累计位次为 {top["cumulative_rank"]}，明显偏大。'
+            '请确认第三列是「累计人数/位次」，第二列是「本段人数」。'
+        )
+    if int(bottom['cumulative_rank']) < int(top['cumulative_rank']):
+        raise ValueError('累计位次未随分数递减而递增，请检查列顺序是否颠倒了')
+
+    prev_cumulative = 0
+    for row in sorted_rows:
+        cumulative = int(row['cumulative_rank'])
+        if cumulative < prev_cumulative:
+            raise ValueError(f'分数 {row["score"]} 的累计位次小于更高分数，数据顺序异常')
+        prev_cumulative = cumulative
+
+
 def parse_table_matrix(
     table: list[list[Any]],
 ) -> tuple[dict[str, int], list[dict[str, Any]]]:
@@ -208,7 +318,7 @@ def extract_segments_from_pdf(content: bytes) -> list[dict[str, Any]]:
     with pdfplumber.open(io.BytesIO(content)) as pdf:
         for page in pdf.pages:
             for table in page.extract_tables() or []:
-                _, rows = parse_table_matrix(table)
+                rows, _ = parse_segments_from_matrix(table)
                 collected.extend(rows)
             if collected:
                 continue
@@ -247,7 +357,7 @@ def _extract_segments_from_text(text: str) -> list[dict[str, Any]]:
     return rows
 
 
-def extract_segments_from_spreadsheet(content: bytes, filename: str) -> list[dict[str, Any]]:
+def extract_segments_from_spreadsheet(content: bytes, filename: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     matrix: list[list[Any]] = []
     lower = (filename or '').lower()
     if lower.endswith('.csv'):
@@ -259,14 +369,20 @@ def extract_segments_from_spreadsheet(content: bytes, filename: str) -> list[dic
         workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         worksheet = workbook.active
         matrix = [list(row) for row in worksheet.iter_rows(values_only=True)]
-    _, parsed = parse_table_matrix(matrix)
-    return finalize_segment_rows(parsed)
+    parsed, meta = parse_segments_from_matrix(matrix)
+    finalized = finalize_segment_rows(parsed)
+    if finalized:
+        validate_segment_rows(finalized)
+    return finalized, meta
 
 
-def extract_segments_from_file(content: bytes, filename: str) -> list[dict[str, Any]]:
+def extract_segments_from_file(content: bytes, filename: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     lower = (filename or '').lower()
     if lower.endswith('.pdf') or content[:4] == b'%PDF':
-        return extract_segments_from_pdf(content)
+        segments = extract_segments_from_pdf(content)
+        if segments:
+            validate_segment_rows(segments)
+        return segments, {}
     if lower.endswith(('.xlsx', '.xls', '.csv')):
         return extract_segments_from_spreadsheet(content, filename)
     raise ValueError('仅支持 PDF、Excel 或 CSV 格式的一分一段表')
@@ -361,7 +477,13 @@ def import_score_segment_file(
             subject_type = '物理'
         elif '历史' in lower_name or '文科' in lower_name:
             subject_type = '历史'
-    segments = extract_segments_from_file(content, filename)
+    segments, meta = extract_segments_from_file(content, filename)
+    file_year = meta.get('year')
+    if file_year and not year:
+        year = int(file_year)
+    file_subject = _normalize_subject_type(str(meta.get('subject_type') or ''))
+    if file_subject and not subject_type:
+        subject_type = file_subject
     return upsert_score_rank_table(
         province=province,
         year=year,
@@ -374,6 +496,30 @@ def import_score_segment_file(
     )
 
 
+def _query_score_rank_table(
+    province_variants: list[str],
+    *,
+    year: int | None,
+    batch: str,
+    subject_type: str,
+) -> dict[str, Any] | None:
+    placeholders = ','.join(['?'] * len(province_variants))
+    sql = f'SELECT * FROM score_rank_tables WHERE province IN ({placeholders})'
+    params: list[Any] = [*province_variants]
+    if year:
+        sql += ' AND year = ?'
+        params.append(year)
+    if batch:
+        sql += ' AND batch = ?'
+        params.append(batch)
+    if subject_type:
+        sql += ' AND subject_type = ?'
+        params.append(subject_type)
+    sql += ' ORDER BY year DESC, table_id DESC LIMIT 1'
+    with get_connection() as connection:
+        return row_to_dict(connection.execute(sql, params).fetchone())
+
+
 def find_score_rank_table(
     province: str,
     year: int | None = None,
@@ -382,22 +528,34 @@ def find_score_rank_table(
 ) -> dict[str, Any] | None:
     ensure_score_segment_tables()
     variants = _province_variants(province)
-    placeholders = ','.join(['?'] * len(variants))
-    sql = f'SELECT * FROM score_rank_tables WHERE province IN ({placeholders})'
-    params: list[Any] = [*variants]
-    if year:
-        sql += ' AND year = ?'
-        params.append(year)
-    if batch:
-        sql += ' AND batch = ?'
-        params.append(batch)
     normalized_subject = _normalize_subject_type(subject_type)
-    if normalized_subject:
-        sql += ' AND subject_type = ?'
-        params.append(normalized_subject)
-    sql += ' ORDER BY year DESC, table_id DESC LIMIT 1'
-    with get_connection() as connection:
-        return row_to_dict(connection.execute(sql, params).fetchone())
+    normalized_batch = (batch or '').strip()
+
+    batch_candidates: list[str] = []
+    for value in (normalized_batch, ''):
+        if value not in batch_candidates:
+            batch_candidates.append(value)
+    if normalized_batch in ('本科批', '本科'):
+        for value in ('', '本科批', '本科'):
+            if value not in batch_candidates:
+                batch_candidates.append(value)
+
+    subject_candidates: list[str] = []
+    for value in (normalized_subject, ''):
+        if value not in subject_candidates:
+            subject_candidates.append(value)
+
+    for batch_value in batch_candidates:
+        for subject_value in subject_candidates:
+            table = _query_score_rank_table(
+                variants,
+                year=year,
+                batch=batch_value,
+                subject_type=subject_value,
+            )
+            if table:
+                return table
+    return None
 
 
 def lookup_rank_by_score(
