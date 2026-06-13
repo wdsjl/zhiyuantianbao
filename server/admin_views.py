@@ -75,6 +75,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
       <nav>
         <a href="/admin">首页</a>
         <a href="/admin/import">数据导入</a>
+        <a href="/admin/score-segments">一分一段</a>
         <a href="/admin/crawler">数据采集</a>
         <a href="/admin/import/logs">导入日志</a>
         <a href="/admin/schools">院校数据</a>
@@ -529,6 +530,61 @@ def admin_import(message: str = ''):
       </div>
     '''
     return render_page('数据导入', body)
+
+
+def admin_score_segments(message: str = ''):
+    from score_segment_service import list_score_rank_tables
+
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    tables = list_score_rank_tables(100)
+    rows_html = ''
+    for row in tables:
+        rows_html += f'''
+          <tr>
+            <td>{row.get('table_id', '')}</td>
+            <td>{escape(str(row.get('province') or ''))}</td>
+            <td>{row.get('year', '')}</td>
+            <td>{escape(str(row.get('batch') or ''))}</td>
+            <td>{escape(str(row.get('subject_type') or '不限'))}</td>
+            <td>{row.get('row_count', 0)}</td>
+            <td>{escape(str(row.get('source_file') or ''))}</td>
+            <td>{escape(str(row.get('updated_at') or row.get('created_at') or ''))}</td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="8" class="muted">暂无一分一段表，请先上传导入</td></tr>'
+
+    body = f'''
+      <div class="card">
+        <h2>导入一分一段表</h2>
+        {message_html}
+        <p class="muted">支持河南省考试院发布的 <strong>PDF / Excel / CSV</strong>。表头需含「分数」和「累计人数」或「位次」（可有标题行，系统自动识别）。</p>
+        <p class="muted"><strong>河南新高考</strong>请分别导入 <strong>物理类</strong>、<strong>历史类</strong> 两张表（科类选物理/历史）。批次可填「本科批」或留空。</p>
+        <form action="/admin/score-segments/import" method="post" enctype="multipart/form-data" class="toolbar" style="flex-wrap:wrap;gap:12px">
+          <input name="province" value="河南" placeholder="省份" required />
+          <input name="year" type="number" value="2025" placeholder="年份" required />
+          <input name="batch" value="本科批" placeholder="批次，可留空" />
+          <select name="subject_type">
+            <option value="">自动识别（看文件名）</option>
+            <option value="物理">物理类</option>
+            <option value="历史">历史类</option>
+          </select>
+          <input type="file" name="file" accept=".pdf,.xlsx,.xls,.csv" required />
+          <button type="submit">上传并导入</button>
+        </form>
+        <p class="muted">Excel/CSV 示例列：<code>分数, 本段人数, 累计人数</code>。模板：<code>database/score_segment_import_template.csv</code></p>
+      </div>
+      <div class="card">
+        <h2>已导入的一分一段表</h2>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>省份</th><th>年份</th><th>批次</th><th>科类</th><th>行数</th><th>来源文件</th><th>更新时间</th></tr>
+          </thead>
+          <tbody>{rows_html}</tbody>
+        </table>
+      </div>
+    '''
+    return render_page('一分一段表', body)
 
 
 def admin_logs(log_id: int | None = None, message: str = ''):

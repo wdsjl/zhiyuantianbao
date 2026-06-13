@@ -45,7 +45,7 @@ from admin_views import (
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
-    admin_referrals, admin_referral_withdrawals,
+    admin_referrals, admin_referral_withdrawals, admin_score_segments,
 )
 from crawler_service import (
     crawl_and_import, crawl_and_import_years, import_schools_only, ensure_crawl_tables,
@@ -128,6 +128,8 @@ sync_plan_catalog()
 from douyin_coupon_service import ensure_douyin_coupon_tables
 ensure_douyin_coupon_tables()
 ensure_province_rules_seeded()
+from score_segment_service import ensure_score_segment_tables
+ensure_score_segment_tables()
 from user_flags_service import ensure_user_flags
 ensure_user_flags()
 expire_overdue_memberships()
@@ -322,6 +324,42 @@ async def admin_import_submit(file: UploadFile = File(...)):
 @app.get('/admin/import/logs')
 def admin_import_logs_page(log_id: int | None = None, message: str = ''):
     return admin_logs(log_id, message)
+
+
+@app.get('/admin/score-segments')
+def admin_score_segments_page(message: str = ''):
+    return admin_score_segments(message)
+
+
+@app.post('/admin/score-segments/import')
+async def admin_score_segments_import(
+    file: UploadFile = File(...),
+    province: str = Form('河南'),
+    year: str = Form('2025'),
+    batch: str = Form(''),
+    subject_type: str = Form(''),
+):
+    from score_segment_service import import_score_segment_file
+
+    content = await file.read()
+    try:
+        result = import_score_segment_file(
+            content,
+            file.filename or 'upload',
+            province=province,
+            year=int(year),
+            batch=batch,
+            subject_type=subject_type,
+        )
+        message = (
+            f"一分一段导入成功：{result['province']} {result['year']}年 "
+            f"{result.get('batch') or '全批次'} "
+            f"{result.get('subject_type') or '不限科类'}，"
+            f"共 {result['row_count']} 行，分数区间 {result['score_min']}~{result['score_max']}"
+        )
+        return admin_score_segments(message)
+    except Exception as exc:
+        return admin_score_segments(f'导入失败：{exc}')
 
 
 @app.get('/admin/schools')
@@ -1797,12 +1835,21 @@ def lookup_score_segment(
     year: int | None = Query(None),
     batch: str = Query(''),
     subject_type: str = Query(''),
+    subject_combination: str = Query(''),
 ):
-    from score_segment_service import lookup_rank_by_score, lookup_score_by_rank, find_score_rank_table
+    from score_segment_service import (
+        lookup_rank_by_score,
+        lookup_score_by_rank,
+        find_score_rank_table,
+        infer_subject_type_from_combination,
+    )
 
     if score is None and rank is None:
         raise HTTPException(status_code=400, detail='请提供 score 或 rank 参数')
-    table = find_score_rank_table(province, year, batch, subject_type)
+    resolved_subject = subject_type or infer_subject_type_from_combination(subject_combination)
+    table = find_score_rank_table(province, year, batch, resolved_subject)
+    if not table and resolved_subject:
+        table = find_score_rank_table(province, year, batch, '')
     if not table:
         raise HTTPException(status_code=404, detail='未找到对应一分一段表，请先在后台导入')
     result = {
@@ -1814,14 +1861,22 @@ def lookup_score_segment(
     }
     if score is not None:
         estimated_rank = lookup_rank_by_score(
-            province, int(score), year=year, batch=batch, subject_type=subject_type
+            province, int(score), year=year, batch=batch, subject_type=resolved_subject
         )
+        if estimated_rank is None and resolved_subject:
+            estimated_rank = lookup_rank_by_score(
+                province, int(score), year=year, batch=batch, subject_type=''
+            )
         result['score'] = int(score)
         result['rank'] = estimated_rank
     if rank is not None:
         estimated_score = lookup_score_by_rank(
-            province, int(rank), year=year, batch=batch, subject_type=subject_type
+            province, int(rank), year=year, batch=batch, subject_type=resolved_subject
         )
+        if estimated_score is None and resolved_subject:
+            estimated_score = lookup_score_by_rank(
+                province, int(rank), year=year, batch=batch, subject_type=''
+            )
         result['rank'] = int(rank)
         result['score'] = estimated_score
     return result

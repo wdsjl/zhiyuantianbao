@@ -260,10 +260,13 @@ Page({
       wx.showToast({ title: '请填写省份', icon: 'none' });
       return;
     }
+    const profile = loadActiveProfileSync();
+    const subjectCombination = profile.subjectCombination || '';
     const data = {
       province: queryProvince,
       year: queryYear,
-      batch: queryBatch
+      batch: queryBatch,
+      subject_combination: subjectCombination
     };
     if (queryMode === 'score') {
       if (!queryScore) {

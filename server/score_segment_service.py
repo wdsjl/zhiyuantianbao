@@ -7,9 +7,10 @@ import re
 from typing import Any
 
 from db import get_connection, row_to_dict, rows_to_dicts
-SCORE_HEADER_ALIASES: tuple[str, ...] = ('分数', '文化课成绩', '高考成绩', '分值', '总分')
-SEGMENT_COUNT_ALIASES: tuple[str, ...] = ('本段人数', '人数', '同分人数', '本段人數')
-CUMULATIVE_ALIASES: tuple[str, ...] = ('累计人数', '累计', '累计位次', '位次', '累计人數')
+SCORE_HEADER_ALIASES: tuple[str, ...] = ('分数', '文化课成绩', '高考成绩', '分值', '总分', '文化分')
+SEGMENT_COUNT_ALIASES: tuple[str, ...] = ('本段人数', '人数', '同分人数', '本段人數', '段内人数')
+CUMULATIVE_ALIASES: tuple[str, ...] = ('累计人数', '累计', '累计位次', '位次', '累计人數', '累计数')
+SUBJECT_TYPE_ALIASES: tuple[str, ...] = ('物理', '历史', '理科', '文科', '物理类', '历史类')
 BATCH_ALIASES: tuple[str, ...] = ('本科批', '专科批', '本科', '专科')
 
 
@@ -74,12 +75,34 @@ def _to_int(value: Any) -> int | None:
         return None
 
 
-def parse_table_matrix(
-    table: list[list[Any]],
-) -> tuple[dict[str, int], list[dict[str, Any]]]:
-    header_indexes: dict[str, int] = {}
-    header_row_index = -1
-    for index, row in enumerate(table[:10]):
+def _normalize_province(value: str) -> str:
+    text = (value or '').strip()
+    for suffix in ('省', '市', '自治区', '壮族自治区', '回族自治区', '维吾尔自治区'):
+        if text.endswith(suffix):
+            return text[: -len(suffix)]
+    return text
+
+
+def _province_variants(province: str) -> list[str]:
+    base = _normalize_province(province)
+    variants: list[str] = []
+    for value in ((province or '').strip(), base, f'{base}省', f'{base}市'):
+        if value and value not in variants:
+            variants.append(value)
+    return variants or [(province or '').strip()]
+
+
+def _normalize_subject_type(value: str) -> str:
+    text = (value or '').strip()
+    if '物理' in text or text in ('理科', '理工'):
+        return '物理'
+    if '历史' in text or text in ('文科', '文史'):
+        return '历史'
+    return text
+
+
+def detect_score_header_row_index(table: list[list[Any]]) -> int:
+    for index, row in enumerate(table[:40]):
         mapping: dict[str, int] = {}
         for col_index, cell in enumerate(row or []):
             header = str(cell or '').strip()
@@ -92,16 +115,31 @@ def parse_table_matrix(
             elif _match_alias(header, CUMULATIVE_ALIASES):
                 mapping['cumulative_rank'] = col_index
         if 'score' in mapping and ('cumulative_rank' in mapping or 'segment_count' in mapping):
-            header_indexes = mapping
-            header_row_index = index
-            break
+            return index
         if 'score' in mapping and len(mapping) >= 2:
-            header_indexes = mapping
-            header_row_index = index
-            break
+            return index
+    return -1
 
+
+def parse_table_matrix(
+    table: list[list[Any]],
+) -> tuple[dict[str, int], list[dict[str, Any]]]:
+    header_row_index = detect_score_header_row_index(table)
     if header_row_index < 0:
         return {}, []
+
+    row = table[header_row_index]
+    header_indexes: dict[str, int] = {}
+    for col_index, cell in enumerate(row or []):
+        header = str(cell or '').strip()
+        if not header:
+            continue
+        if _match_alias(header, SCORE_HEADER_ALIASES):
+            header_indexes['score'] = col_index
+        elif _match_alias(header, SEGMENT_COUNT_ALIASES):
+            header_indexes['segment_count'] = col_index
+        elif _match_alias(header, CUMULATIVE_ALIASES):
+            header_indexes['cumulative_rank'] = col_index
 
     rows: list[dict[str, Any]] = []
     for row in table[header_row_index + 1:]:
@@ -246,6 +284,8 @@ def upsert_score_rank_table(
     segments: list[dict[str, Any]],
 ) -> dict[str, Any]:
     ensure_score_segment_tables()
+    province = _normalize_province(province)
+    subject_type = _normalize_subject_type(subject_type)
     if not segments:
         raise ValueError('未能从文件中识别出一分一段数据，请检查表头是否含「分数」「累计人数/位次」等列')
 
@@ -295,6 +335,7 @@ def upsert_score_rank_table(
         'province': province,
         'year': year,
         'batch': batch,
+        'subject_type': subject_type or '',
         'row_count': len(segments),
         'score_min': min(item['score'] for item in segments),
         'score_max': max(item['score'] for item in segments),
@@ -312,11 +353,19 @@ def import_score_segment_file(
     subject_type: str = '',
     title: str = '',
 ) -> dict[str, Any]:
+    province = _normalize_province(province)
+    subject_type = _normalize_subject_type(subject_type)
+    if not subject_type:
+        lower_name = (filename or '').lower()
+        if '物理' in lower_name or '理科' in lower_name:
+            subject_type = '物理'
+        elif '历史' in lower_name or '文科' in lower_name:
+            subject_type = '历史'
     segments = extract_segments_from_file(content, filename)
     return upsert_score_rank_table(
         province=province,
         year=year,
-        batch=batch,
+        batch=batch or '',
         exam_type=exam_type,
         subject_type=subject_type,
         title=title,
@@ -332,17 +381,20 @@ def find_score_rank_table(
     subject_type: str = '',
 ) -> dict[str, Any] | None:
     ensure_score_segment_tables()
-    sql = 'SELECT * FROM score_rank_tables WHERE province = ?'
-    params: list[Any] = [province]
+    variants = _province_variants(province)
+    placeholders = ','.join(['?'] * len(variants))
+    sql = f'SELECT * FROM score_rank_tables WHERE province IN ({placeholders})'
+    params: list[Any] = [*variants]
     if year:
         sql += ' AND year = ?'
         params.append(year)
     if batch:
         sql += ' AND batch = ?'
         params.append(batch)
-    if subject_type:
+    normalized_subject = _normalize_subject_type(subject_type)
+    if normalized_subject:
         sql += ' AND subject_type = ?'
-        params.append(subject_type)
+        params.append(normalized_subject)
     sql += ' ORDER BY year DESC, table_id DESC LIMIT 1'
     with get_connection() as connection:
         return row_to_dict(connection.execute(sql, params).fetchone())
@@ -426,6 +478,15 @@ def lookup_score_by_rank(
         if row:
             return int(row['score'])
     return None
+
+
+def infer_subject_type_from_combination(subject_combination: str) -> str:
+    combo = (subject_combination or '').replace('/', '+').replace('、', '+')
+    if '物理' in combo or combo.startswith('物') or '+物' in combo or '物化' in combo:
+        return '物理'
+    if '历史' in combo or combo.startswith('历') or '+历' in combo or '史政' in combo:
+        return '历史'
+    return ''
 
 
 def list_score_rank_tables(limit: int = 50) -> list[dict[str, Any]]:
