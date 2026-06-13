@@ -782,7 +782,8 @@ def api_membership_plans():
 def api_membership_permission_consume(permission_code: str, user_id: int):
     result = consume_permission(user_id, permission_code)
     if not result.get('allowed'):
-        raise HTTPException(status_code=403, detail=result.get('message') or '无权限使用该功能')
+        message = result.get('message') or '无权限使用该功能'
+        raise HTTPException(status_code=403, detail=str(message))
     return result
 
 

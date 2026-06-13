@@ -98,6 +98,24 @@ function hasPermission(entitlements, permissionCode) {
   return Number(permission.limit) < 0 || Number(usage.remaining || 0) > 0;
 }
 
+function normalizeModalMessage(message, fallback) {
+  if (message === null || message === undefined || message === '') {
+    return fallback || '';
+  }
+  if (typeof message === 'string') return message;
+  if (typeof message === 'object') {
+    if (message.message) return normalizeModalMessage(message.message, fallback);
+    if (message.msg) return String(message.msg);
+    if (message.detail) return normalizeModalMessage(message.detail, fallback);
+    try {
+      return JSON.stringify(message);
+    } catch (error) {
+      return fallback || '请求失败';
+    }
+  }
+  return String(message);
+}
+
 function requirePermission(permissionCode, title, options = {}) {
   wx.removeStorageSync('memberEntitlements');
   return refreshUserIdentityFromServer()
@@ -122,15 +140,20 @@ function requirePermission(permissionCode, title, options = {}) {
           }
           return fetchEntitlements().then((latest) => {
             const planName = latest && latest.plan ? latest.plan.plan_name : '免费版';
-            const hint = getMembershipStatusMessage(latest)
-              || res.message
-              || `当前套餐为「${planName}」，未开通该功能或次数已用完。`;
+            const hint = normalizeModalMessage(
+              getMembershipStatusMessage(latest) || res.message,
+              `当前套餐为「${planName}」，未开通该功能或次数已用完。`
+            );
             showUpgradeModal(permissionCode, title, hint);
             return false;
           });
         })
         .catch((error) => {
-          showUpgradeModal(permissionCode, title, error.message || '权限校验失败，请稍后重试');
+          showUpgradeModal(
+            permissionCode,
+            title,
+            normalizeModalMessage(error && error.message, '权限校验失败，请稍后重试')
+          );
           return false;
         });
     });
@@ -157,9 +180,10 @@ function goMembershipPage() {
 
 function showUpgradeModal(permissionCode, title, message) {
   const name = title || PERMISSION_LABELS[permissionCode] || '该功能';
+  const fallback = `${name}需要开通对应会员后使用，或当前套餐次数已用完。请前往会员中心使用星鼎豆支付开通。`;
   wx.showModal({
     title: '会员功能',
-    content: message || `${name}需要开通对应会员后使用，或当前套餐次数已用完。请前往会员中心使用星鼎豆支付开通。`,
+    content: normalizeModalMessage(message, fallback),
     confirmText: '查看会员',
     cancelText: '稍后再说',
     success: (res) => {
