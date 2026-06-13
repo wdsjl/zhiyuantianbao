@@ -38,7 +38,7 @@
       <button class="primary-btn" bindtap="applyFilter">一键筛选</button>
     </view>
 
-    <view class="result-summary">匹配院校 {{filteredSchools.length}} 所 · 参考省份 {{profileProvince}} {{profileBatch}}</view>
+    <view class="result-summary">已加载 {{filteredSchools.length}} / {{schoolTotal}} 所 · {{profileProvince}} {{profileBatch}}</view>
 
     <view wx:for="{{filteredSchools}}" wx:key="id" class="card school-card" data-school="{{item}}" bindtap="openSchoolDetail">
       <view class="school-head">
@@ -57,6 +57,8 @@
       <view class="majors">{{item.majorsText}}</view>
       <button class="secondary-btn add-btn" data-school="{{item}}" catchtap="addToVolunteer">查看专业与录取</button>
     </view>
+    <view wx:if="{{schoolHasMore}}" class="load-more muted">上拉加载更多院校...</view>
+    <view wx:elif="{{filteredSchools.length}}" class="load-more muted">已显示全部 {{schoolTotal}} 所院校</view>
   </block>
 
   <block wx:elif="{{activeTab === 'query'}}">

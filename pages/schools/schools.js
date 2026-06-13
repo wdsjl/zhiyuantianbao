@@ -22,6 +22,11 @@ Page({
       durations: []
     },
     filteredSchools: [],
+    schoolTotal: 0,
+    schoolOffset: 0,
+    schoolPageSize: 100,
+    schoolHasMore: false,
+    rankMap: {},
     profileProvince: '河南',
     profileBatch: '本科批',
     announcementKeyword: '',
@@ -51,6 +56,11 @@ Page({
     this.syncProfileDefaults();
     if (this.data.activeTab === 'announcements' && !this.data.announcements.length) {
       this.fetchAnnouncements();
+    }
+  },
+  onReachBottom() {
+    if (this.data.activeTab === 'schools' && this.data.schoolHasMore && !this.data.loading) {
+      this.fetchSchools(false);
     }
   },
   syncProfileDefaults() {
@@ -89,7 +99,9 @@ Page({
         type: school.is_public ? '公办' : '民办',
         tags,
         majorsText: snapshot.major_count
-          ? `近年 ${snapshot.major_count || 0} 个专业有录取数据`
+          ? (snapshot.best_min_rank
+            ? `近年 ${snapshot.major_count} 个专业有录取/计划数据`
+            : `${snapshot.plan_major_count || snapshot.major_count} 个招生专业`)
           : '点击查看招生专业与历年分数',
         subject: school.education_level || '本科',
         minRank: minRank ? String(minRank) : '--',
@@ -157,30 +169,34 @@ Page({
   getDoubleFirstParam() {
     return this.data.selected.tags.includes('双一流') ? 1 : undefined;
   },
-  fetchRankSnapshot(schoolIds) {
-    if (!schoolIds.length) return Promise.resolve({});
+  fetchRankSnapshot() {
     return request({
       url: '/api/schools/rank-snapshot',
       data: {
         province: this.data.profileProvince,
         batch: this.data.profileBatch,
-        limit: 200
+        keyword: this.data.keyword || '',
+        limit: 5000
       }
     }).then((res) => {
       const rankMap = {};
       (res.list || []).forEach((item) => {
         rankMap[item.school_id] = item;
       });
+      this.setData({ rankMap });
       return rankMap;
     }).catch(() => ({}));
   },
-  fetchSchools() {
+  fetchSchools(reset = true) {
     const city = this.data.selected.cities.length === 1 ? this.data.selected.cities[0] : '';
+    const offset = reset ? 0 : this.data.schoolOffset;
     const data = {
       keyword: this.data.keyword,
+      province: this.data.profileProvince,
+      batch: this.data.profileBatch,
       city,
-      limit: 50,
-      offset: 0
+      limit: this.data.schoolPageSize,
+      offset
     };
     const isPublic = this.getPublicParam();
     const isDoubleFirst = this.getDoubleFirstParam();
@@ -188,18 +204,25 @@ Page({
     if (isDoubleFirst !== undefined) data.is_double_first_class = isDoubleFirst;
 
     this.setData({ loading: true });
-    request({ url: '/api/schools', data })
+    const rankPromise = reset ? this.fetchRankSnapshot() : Promise.resolve(this.data.rankMap || {});
+    rankPromise
+      .then((rankMap) => request({ url: '/api/schools', data }))
       .then((res) => {
         let list = res.list || [];
+        const total = Number(res.total || 0);
         list = this.applyClientFilters(list);
-        const schoolIds = list.map((item) => item.school_id).filter(Boolean);
-        return this.fetchRankSnapshot(schoolIds).then((rankMap) => {
-          this.setData({
-            filteredSchools: this.formatSchools(list, rankMap),
-            showFilter: false
-          });
-          if (!list.length) wx.showToast({ title: '建议放宽筛选条件', icon: 'none' });
+        const rankMap = this.data.rankMap || {};
+        const formatted = this.formatSchools(list, rankMap);
+        const merged = reset ? formatted : [...this.data.filteredSchools, ...formatted];
+        const nextOffset = offset + (res.list || []).length;
+        this.setData({
+          filteredSchools: merged,
+          schoolTotal: total || merged.length,
+          schoolOffset: nextOffset,
+          schoolHasMore: nextOffset < (total || merged.length),
+          showFilter: false
         });
+        if (!merged.length) wx.showToast({ title: '暂无院校数据，请先导入招生计划', icon: 'none' });
       })
       .catch(() => {
         wx.showToast({ title: '接口连接失败，请确认后端已启动', icon: 'none' });

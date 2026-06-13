@@ -52,6 +52,13 @@
   margin: 18rpx 4rpx;
 }
 
+.load-more {
+  text-align: center;
+  color: #98a2b3;
+  font-size: 24rpx;
+  padding: 24rpx 0 40rpx;
+}
+
 .school-card {
   position: relative;
 }

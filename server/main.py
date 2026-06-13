@@ -1649,32 +1649,25 @@ def list_parent_binds(parent_user_id: int):
 def list_schools(
     keyword: str = '',
     city: str = '',
+    province: str = '',
+    batch: str = '',
     is_public: int | None = Query(default=None),
     is_double_first_class: int | None = Query(default=None),
-    limit: int = 50,
-    offset: int = 0
+    limit: int = 200,
+    offset: int = 0,
 ):
-    sql = 'SELECT * FROM schools WHERE 1=1'
-    params = []
-    if keyword:
-        sql += ' AND (school_name LIKE ? OR school_code LIKE ? OR city LIKE ?)'
-        like = f'%{keyword}%'
-        params.extend([like, like, like])
-    if city:
-        sql += ' AND city = ?'
-        params.append(city)
-    if is_public is not None:
-        sql += ' AND is_public = ?'
-        params.append(is_public)
-    if is_double_first_class is not None:
-        sql += ' AND is_double_first_class = ?'
-        params.append(is_double_first_class)
-    sql += ' ORDER BY is_985 DESC, is_211 DESC, is_double_first_class DESC, school_id ASC LIMIT ? OFFSET ?'
-    params.extend([limit, offset])
+    from school_library_service import list_province_schools
 
-    with get_connection() as connection:
-        rows = connection.execute(sql, params).fetchall()
-    return {'list': rows_to_dicts(rows)}
+    return list_province_schools(
+        province,
+        batch,
+        keyword=keyword,
+        city=city,
+        is_public=is_public,
+        is_double_first_class=is_double_first_class,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @app.get('/api/schools/{school_id}')
@@ -1771,49 +1764,19 @@ def school_rank_snapshot(
     batch: str = '本科批',
     year: int | None = None,
     keyword: str = '',
-    limit: int = 100,
+    limit: int = 5000,
 ):
-    from recommend_service import expand_batch_aliases, province_variants
+    from school_library_service import build_school_snapshot_map
 
-    variants = province_variants(province)
-    province_placeholders = ','.join(['?'] * len(variants))
-    batch_aliases = expand_batch_aliases(batch) or [batch]
-    batch_placeholders = ','.join(['?'] * len(batch_aliases))
-    sql = f'''
-    SELECT
-      ar.school_id,
-      s.school_name,
-      s.city,
-      s.is_985,
-      s.is_211,
-      s.is_double_first_class,
-      MIN(ar.min_rank) AS best_min_rank,
-      MIN(ar.min_score) AS best_min_score,
-      COUNT(DISTINCT ar.major_id) AS major_count,
-      MAX(ar.year) AS latest_year
-    FROM admission_records ar
-    JOIN schools s ON s.school_id = ar.school_id
-    WHERE ar.province IN ({province_placeholders})
-      AND ar.batch IN ({batch_placeholders})
-      AND ar.min_rank IS NOT NULL
-    '''
-    params = [*variants, *batch_aliases]
-    if year is not None:
-        sql += ' AND ar.year = ?'
-        params.append(year)
-    if keyword:
-        like = f'%{keyword}%'
-        sql += ' AND (s.school_name LIKE ? OR s.school_code LIKE ?)'
-        params.extend([like, like])
-    sql += '''
-    GROUP BY ar.school_id
-    ORDER BY best_min_rank ASC
-    LIMIT ?
-    '''
-    params.append(limit)
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
-    return {'list': rows, 'province': province, 'batch': batch, 'year': year}
+    snapshot = build_school_snapshot_map(province, batch, year=year, keyword=keyword, limit=limit)
+    rows = sorted(
+        snapshot.values(),
+        key=lambda item: (
+            item.get('best_min_rank') is None,
+            int(item.get('best_min_rank') or 10**9),
+        ),
+    )
+    return {'list': rows, 'province': province, 'batch': batch, 'year': year, 'total': len(rows)}
 
 
 @app.get('/api/score-segments/tables')
