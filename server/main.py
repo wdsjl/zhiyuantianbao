@@ -1331,7 +1331,7 @@ def api_referral_dashboard(user_id: int = Query(...)):
 def api_referral_poster(user_id: int = Query(...)):
     try:
         agent = register_agent(user_id)
-        image_base64 = poster_image_base64(agent['invite_code'])
+        image_base64 = poster_image_base64(agent['invite_code'], agent.get('display_name') or '')
         return {
             'invite_code': agent['invite_code'],
             'display_name': agent.get('display_name'),
