@@ -47,6 +47,8 @@
           {{form.targetBatch || '请选择目标批次'}}
         </view>
       </picker>
+      <view wx:if="{{batchDataSummary}}" class="sub-text batch-data-summary">{{batchDataSummary}}</view>
+      <view wx:if="{{batchWarning}}" class="warn-box batch-warning">{{batchWarning}}</view>
     </view>
 
     <view wx:if="{{form.role === '家长'}}" class="form-item">

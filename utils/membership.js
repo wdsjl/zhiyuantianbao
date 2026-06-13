@@ -155,6 +155,11 @@ function goMembershipPage() {
   wx.switchTab({ url: '/pages/membership/membership' });
 }
 
+function goDouyinRedeemPage() {
+  wx.setStorageSync('membershipScrollTarget', 'douyin');
+  goMembershipPage();
+}
+
 function showUpgradeModal(permissionCode, title, message) {
   const name = title || PERMISSION_LABELS[permissionCode] || '该功能';
   wx.showModal({
@@ -176,5 +181,6 @@ module.exports = {
   getCurrentUserId,
   syncUserIdentity,
   refreshUserIdentityFromServer,
-  goMembershipPage
+  goMembershipPage,
+  goDouyinRedeemPage
 };

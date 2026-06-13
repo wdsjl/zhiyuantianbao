@@ -43,8 +43,8 @@ function ensureReportGreeting(report, profile) {
   return `${buildReportGreeting(profile)}\n\n${content}`;
 }
 
-const AI_GENERATED_NOTICE = '人工智能生成';
-const AI_GENERATED_MARKERS = [AI_GENERATED_NOTICE, 'AI生成'];
+const AI_GENERATED_NOTICE = 'AI生成 · 人工智能生成';
+const AI_GENERATED_MARKERS = ['人工智能生成', 'AI生成'];
 
 function hasAiGeneratedNotice(text) {
   const content = String(text || '').trim();
