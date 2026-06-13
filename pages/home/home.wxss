@@ -173,11 +173,25 @@
   margin-top: 20rpx;
 }
 
+.douyin-banner,
 .pay-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
+}
+
+.douyin-banner {
+  background: linear-gradient(135deg, #fff0f6, #ffffff);
+  border: 2rpx solid #ffadd2;
+  margin-bottom: 24rpx;
+}
+
+.douyin-banner .pay-banner-title {
+  color: #c41d7f;
+}
+
+.pay-banner {
   background: linear-gradient(135deg, #fff7e6, #ffffff);
   border: 2rpx solid #ffe7ba;
 }

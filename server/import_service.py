@@ -7,6 +7,19 @@ from openpyxl import load_workbook
 
 from db import get_connection, row_to_dict
 
+try:
+    from crawler_service import normalize_batch_name
+except ImportError:
+    def normalize_batch_name(name: str) -> str:
+        raw = (name or '').strip()
+        mapping = {
+            '本科一批': '本科批',
+            '本科二批': '本科批',
+            '本科': '本科批',
+            '专科': '专科批',
+        }
+        return mapping.get(raw, raw or '本科批')
+
 REQUIRED_HEADERS = ['年份', '省份', '批次', '院校代码', '院校名称', '专业代码', '专业名称']
 
 HEADER_MAP = {
@@ -263,6 +276,7 @@ def import_admission_rows(filename: str, rows: list[dict[str, Any]]) -> dict[str
                 for field in ['year', 'province', 'batch', 'school_code', 'school_name', 'major_code', 'major_name']:
                     if not row.get(field):
                         raise ValueError(f'第 {index} 行缺少字段：{field}')
+                row['batch'] = normalize_batch_name(str(row.get('batch') or ''))
                 school_id = get_or_create_school(connection, row)
                 major_id = get_or_create_major(connection, row)
                 upsert_plan(connection, row, school_id, major_id)

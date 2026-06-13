@@ -18,7 +18,10 @@ def pdf_text(value: Any) -> str:
 
 
 def hex_text(value: Any) -> str:
-    return pdf_text(value).encode('utf-16-be').hex().upper()
+    text = pdf_text(value)
+    if not text:
+        return 'FEFF'  # UTF-16 BE BOM，空行占位
+    return text.encode('utf-16-be', errors='ignore').hex().upper()
 
 
 def normalize_pdf_filename_part(value: str, fallback: str = '学生') -> str:
@@ -75,8 +78,8 @@ def ensure_report_greeting(body: str, student: dict) -> str:
     return f'{build_report_greeting(student)}\n\n{content}'
 
 
-AI_GENERATED_NOTICE = '人工智能生成'
-AI_GENERATED_MARKERS = (AI_GENERATED_NOTICE, 'AI生成')
+AI_GENERATED_NOTICE = 'AI生成 · 人工智能生成'
+AI_GENERATED_MARKERS = ('人工智能生成', 'AI生成')
 
 
 def append_ai_generated_notice(text: str) -> str:
@@ -104,6 +107,65 @@ def pdf_content_disposition(filename: str) -> str:
     full_name = f'{normalize_pdf_filename_part(base, "导出")}.pdf'
     ascii_fallback = full_name if full_name.isascii() else 'report.pdf'
     return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quote(full_name)}'
+
+def display_width(value: Any) -> int:
+    width = 0
+    for char in pdf_text(value):
+        width += 2 if ord(char) > 127 else 1
+    return width
+
+
+def pad_column(value: Any, width: int) -> str:
+    text = pdf_text(value)
+    gap = width - display_width(text)
+    if gap <= 0:
+        return text
+    return f'{text}{" " * gap}'
+
+
+def wrap_display_segments(segments: list[str], max_width: int, separator: str = '    ') -> list[str]:
+    lines: list[str] = []
+    current = ''
+    for segment in segments:
+        piece = pdf_text(segment)
+        if not piece:
+            continue
+        candidate = f'{current}{separator}{piece}' if current else piece
+        if display_width(candidate) <= max_width:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+        if display_width(piece) <= max_width:
+            current = piece
+        else:
+            lines.extend(wrap_display_text(piece, max_width))
+            current = ''
+    if current:
+        lines.append(current)
+    return lines or ['']
+
+
+def wrap_display_text(value: Any, max_width: int) -> list[str]:
+    text = pdf_text(value)
+    if not text:
+        return ['']
+    lines: list[str] = []
+    current = ''
+    current_width = 0
+    for char in text:
+        char_width = 2 if ord(char) > 127 else 1
+        if current_width + char_width > max_width and current:
+            lines.append(current)
+            current = char
+            current_width = char_width
+        else:
+            current += char
+            current_width += char_width
+    if current:
+        lines.append(current)
+    return lines or ['']
+
 
 def wrap_text(value: Any, max_chars: int) -> list[str]:
     text = pdf_text(value)
@@ -148,11 +210,84 @@ def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
     return build_pdf(lines)
 
 
-def build_pdf(lines: list[str]) -> bytes:
-    page_width = 595
-    page_height = 842
-    margin_x = 42
-    top_y = 800
+LANDSCAPE_LINE_WIDTH = 100
+
+
+def format_pdf_value(value: Any, fallback: str = '暂无') -> str:
+    if value is None or value == '':
+        return fallback
+    return pdf_text(value)
+
+
+def format_admission_2025_display(score: Any, rank: Any) -> str:
+    if score is None or score == '':
+        score_part = '暂无分'
+    else:
+        score_part = f'{pdf_text(score)}分'
+    if rank is None or rank == '':
+        rank_part = '位次暂无'
+    else:
+        rank_part = f'位次{pdf_text(rank)}'
+    return f'{score_part} / {rank_part}'
+
+
+def truncate_display_text(value: Any, max_width: int, suffix: str = '…') -> str:
+    text = pdf_text(value)
+    if display_width(text) <= max_width:
+        return text
+    suffix_width = display_width(suffix)
+    kept = ''
+    kept_width = 0
+    for char in text:
+        char_width = 2 if ord(char) > 127 else 1
+        if kept_width + char_width + suffix_width > max_width:
+            break
+        kept += char
+        kept_width += char_width
+    return f'{kept}{suffix}'
+
+
+def format_volunteer_item_block(item: dict[str, Any], line_width: int = LANDSCAPE_LINE_WIDTH) -> list[str]:
+    """每条志愿固定 4 行：院校 / 专业 / 录取信息含风险 / 说明。"""
+    school_name = format_pdf_value(item.get('school_name'))
+    school_code = format_pdf_value(item.get('school_code'), '')
+    major_name = format_pdf_value(item.get('major_name'))
+    major_code = format_pdf_value(item.get('major_code'), '')
+    school = f'{school_name}（{school_code}）' if school_code else school_name
+    major = f'{major_name}（{major_code}）' if major_code else major_name
+
+    admission_2025 = format_admission_2025_display(
+        item.get('admission_score_2025'),
+        item.get('admission_rank_2025'),
+    )
+    city = format_pdf_value(item.get('city'))
+    tuition = format_pdf_value(item.get('tuition'))
+    duration = format_pdf_value(item.get('duration'))
+    adjustable = '是' if item.get('is_adjustable') else '否'
+    risk_level = format_pdf_value(item.get('risk_level'))
+    risk_reason = format_pdf_value(item.get('risk_reason'), '暂无说明')
+
+    line1 = truncate_display_text(
+        f'【{item.get("sort_order", "")}】{item.get("gradient_type", "")}  {school}',
+        line_width,
+    )
+    line2 = truncate_display_text(f'专业：{major}', line_width)
+    field_sep = '    '
+    line3 = truncate_display_text(
+        f'2025录取：{admission_2025}{field_sep}'
+        f'城市：{city}{field_sep}学费：{tuition}{field_sep}学制：{duration}{field_sep}'
+        f'调剂：{adjustable}{field_sep}风险：{risk_level}',
+        line_width,
+    )
+    line4 = truncate_display_text(f'说明：{risk_reason}', line_width)
+    return [line1, line2, line3, line4]
+
+
+def build_pdf(lines: list[str], *, landscape: bool = False) -> bytes:
+    page_width = 842 if landscape else 595
+    page_height = 595 if landscape else 842
+    margin_x = 36 if landscape else 42
+    top_y = page_height - 42
     line_height = 18
     bottom_y = 42
     pages: list[list[str]] = []
@@ -243,19 +378,13 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
         f'省份：{draft.get("province", "")}    年份：{draft.get("year", "")}    批次：{draft.get("batch", "")}',
         '',
         '三、志愿明细',
-        '序号  梯度  院校代码/院校名称  专业代码/专业名称  城市  学费  学制  调剂  风险',
+        '每条志愿固定 4 行：院校 / 专业 / 2025录取与风险 / 说明。',
+        '',
     ])
-    for item in items:
-        main = (
-            f'{item.get("sort_order", "")}  {item.get("gradient_type", "")}  '
-            f'{item.get("school_code", "")}/{item.get("school_name", "")}  '
-            f'{item.get("major_code", "")}/{item.get("major_name", "")}  '
-            f'{item.get("city", "")}  {item.get("tuition", "")}  {item.get("duration", "")}  '
-            f'{"是" if item.get("is_adjustable") else "否"}  {item.get("risk_level", "")}'
-        )
-        lines.extend(wrap_text(main, 48))
-        if item.get('risk_reason'):
-            lines.extend(wrap_text(f'    风险说明：{item.get("risk_reason")}', 52))
+    for index, item in enumerate(items):
+        lines.extend(format_volunteer_item_block(item))
+        if index < len(items) - 1:
+            lines.append('')
     if draft.get('ai_explain'):
         lines.extend(['', '四、AI 志愿方案解读'])
         for paragraph in append_ai_generated_notice(str(draft.get('ai_explain') or '')).splitlines():
@@ -264,4 +393,4 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
     else:
         disclaimer_title = '四、免责声明'
     lines.extend(['', disclaimer_title, '本系统基于历史数据、位次和风险规则进行辅助分析，不构成录取承诺。请考生和家长以官方政策、招生章程、正式填报系统为准。'])
-    return build_pdf(lines)
+    return build_pdf(lines, landscape=True)
