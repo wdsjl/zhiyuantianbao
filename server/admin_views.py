@@ -17,6 +17,7 @@ from admin_data_service import (
 )
 from crawler_config import PROVINCE_IDS, REGION_ORDER, CRAWL_PRESETS
 from crawler_service import list_crawl_logs, get_crawl_log, default_recent_years, get_province_data_overview, has_running_crawl
+from henan_admission_crawler_service import get_henan_admission_summary, cli_command_full, cli_command_trial
 
 
 def render_page(title: str, body: str) -> HTMLResponse:
@@ -297,10 +298,29 @@ def admin_home():
 def admin_crawler(message: str = '', crawl_id: int | None = None):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     recent_years = default_recent_years(3)
+    henan_summary = get_henan_admission_summary()
+    henan_year_rows = ''
+    for row in henan_summary.get('year_stats') or []:
+        henan_year_rows += f'''
+          <tr>
+            <td>{row.get("year", "")}</td>
+            <td>{row.get("admission_count", 0)}</td>
+            <td>{row.get("plan_count", 0)}</td>
+            <td>{row.get("school_count", 0)}</td>
+            <td>{row.get("score_count", 0)}</td>
+            <td>{row.get("rank_count", 0)}</td>
+            <td>{row.get("admitted_count", 0)}</td>
+          </tr>
+        '''
+    if not henan_year_rows:
+        henan_year_rows = '<tr><td colspan="7" class="muted">暂无河南录取数据，请点击下方按钮开始采集</td></tr>'
+    running_any = has_running_crawl()
+    henan_running = henan_summary.get('is_running')
+    henan_disabled = 'disabled' if henan_running or running_any else ''
+    henan_totals = henan_summary.get('totals') or {}
     overview = get_province_data_overview()
     configured_count = len(overview)
     ready_count = sum(1 for item in overview if item['admission_count'] > 0)
-    running_any = has_running_crawl()
     province_options = ''.join(
         f'<option value="{escape(name)}">{escape(name)}</option>' for name in PROVINCE_IDS
     )
@@ -400,6 +420,43 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
     body = f'''
       {detail_html}
       <div class="card">
+        <h2>河南录取数据（近三年全量）</h2>
+        <p class="muted">
+          采集全国高校在<strong>河南省</strong>的录取分数、录取位次、录取人数、招生计划、选科要求、学费、学制等志愿填报相关数据。
+          默认覆盖最近 3 个录取年份（{", ".join(str(year) for year in henan_summary.get("years") or recent_years)}）。
+        </p>
+        <div class="grid">
+          <div><div class="muted">录取记录</div><div class="stat">{henan_totals.get("admission_count", 0)}</div></div>
+          <div><div class="muted">招生计划</div><div class="stat">{henan_totals.get("plan_count", 0)}</div></div>
+          <div><div class="muted">含分数</div><div class="stat">{henan_totals.get("score_count", 0)}</div></div>
+          <div><div class="muted">含位次</div><div class="stat">{henan_totals.get("rank_count", 0)}</div></div>
+        </div>
+        <table style="margin-top:16px">
+          <thead>
+            <tr>
+              <th>年份</th><th>录取记录</th><th>招生计划</th><th>院校数</th><th>含分数</th><th>含位次</th><th>含录取人数</th>
+            </tr>
+          </thead>
+          <tbody>{henan_year_rows}</tbody>
+        </table>
+        <div class="toolbar" style="margin-top:16px">
+          <form method="post" action="/admin/crawler/henan" style="display:inline">
+            <input type="hidden" name="mode" value="full" />
+            <button type="submit" {henan_disabled}>河南近三年全量采集</button>
+          </form>
+          <form method="post" action="/admin/crawler/henan" style="display:inline">
+            <input type="hidden" name="mode" value="trial" />
+            <button type="submit" class="btn-muted" {henan_disabled}>河南试跑（20校×3年）</button>
+          </form>
+          <a class="button btn-muted" href="/admin/admissions?province=河南">查看河南录取数据</a>
+        </div>
+        <p class="muted" style="margin-top:12px">
+          命令行全量：<code>cd server && {escape(cli_command_full())}</code><br>
+          命令行试跑：<code>cd server && {escape(cli_command_trial())}</code>
+        </p>
+        <p class="muted">最近采集：{escape(str(henan_summary.get("last_success_at") or henan_summary.get("last_crawl_at") or "—"))}</p>
+      </div>
+      <div class="card">
         <h2>全国省份采集配置</h2>
         {message_html}
         {running_hint}
@@ -456,9 +513,11 @@ def admin_import(message: str = ''):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     body = f'''
       <div class="card">
-        <h2>导入历年录取数据</h2>
+        <h2>导入招生计划 / 录取数据</h2>
         {message_html}
-        <p class="muted">支持 `.xlsx` 和 `.csv`。请使用模板字段：年份、省份、批次、院校代码、院校名称、专业代码、专业名称等。</p>
+        <p class="muted">支持 `.xlsx` 和 `.csv`。可直接上传河南省官方招生计划表（含标题行也可），系统会自动识别表头。</p>
+        <p class="muted">河南格式关键列：年份、省份、批次、科类、院校代码、院校名称、院校专业组代码、专业代码、专业全称/专业名称、选科要求、计划人数、学制、学费、门类、专业类。</p>
+        <p class="muted">若文件仅有招生计划、没有最低分/最低位次，会写入招生计划表；含分数位次列时同时写入录取数据表。</p>
         <form action="/admin/import" method="post" enctype="multipart/form-data">
           <div class="toolbar">
             <input type="file" name="file" accept=".xlsx,.csv" required />
@@ -1136,11 +1195,14 @@ def admin_membership_users(keyword: str = '', message: str = ''):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     rows = ''
     for user in users:
+        is_super = int(user.get('is_super_tester') or 0)
+        super_tag = '<span class="tag active">超级测试</span>' if is_super else '<span class="muted">普通</span>'
         rows += f'''
           <tr>
             <td>{user.get('user_id', '')}</td><td>{escape(str(user.get('phone') or ''))}</td><td>{escape(str(user.get('student_name') or user.get('name') or ''))}</td>
             <td>{escape(str(user.get('school_name') or ''))}</td><td>{escape(str(user.get('score') or ''))}</td><td>{escape(str(user.get('rank') or ''))}</td>
             <td><span class="tag">{escape(str(user.get('plan_name') or '免费版'))}</span><br/><span class="muted">{escape(str(user.get('expires_at') or '长期/未开通'))}</span></td>
+            <td><strong>{int(user.get('bean_balance') or 0)}</strong> 豆<br/>{super_tag}</td>
             <td>
               <form method="post" action="/admin/membership/users/grant" class="toolbar" style="margin:0">
                 <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
@@ -1148,6 +1210,23 @@ def admin_membership_users(keyword: str = '', message: str = ''):
                 <input name="days" placeholder="天数，留空按套餐" style="min-width:120px;width:120px" />
                 <input name="remark" placeholder="备注" />
                 <button type="submit">开通/调整</button>
+              </form>
+              <form method="post" action="/admin/membership/users/beans/adjust" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input name="amount" placeholder="+增加/-扣减" style="min-width:100px;width:100px" />
+                <input name="remark" value="测试加豆" style="min-width:100px;width:100px" />
+                <button type="submit">调整星鼎豆</button>
+              </form>
+              <form method="post" action="/admin/membership/users/beans/set" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input name="balance" placeholder="设为余额" style="min-width:100px;width:100px" />
+                <input name="remark" value="测试设余额" style="min-width:100px;width:100px" />
+                <button type="submit">设置余额</button>
+              </form>
+              <form method="post" action="/admin/membership/users/super-tester" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input type="hidden" name="enabled" value="{0 if is_super else 1}" />
+                <button type="submit" class="btn-sm">{'取消超级测试' if is_super else '设为超级测试'}</button>
               </form>
               <form method="post" action="/admin/membership/users/revoke" style="display:inline;margin-top:6px" onsubmit="return confirm('确认撤销该用户会员？')">
                 <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
@@ -1157,7 +1236,7 @@ def admin_membership_users(keyword: str = '', message: str = ''):
           </tr>
         '''
     if not rows:
-        rows = '<tr><td colspan="8" class="muted">暂无用户</td></tr>'
+        rows = '<tr><td colspan="9" class="muted">暂无用户</td></tr>'
     expiring_rows = ''
     for member in expiring:
         expiring_rows += f'''
@@ -1195,11 +1274,15 @@ def admin_membership_users(keyword: str = '', message: str = ''):
         <h2>用户会员管理</h2>
         {message_html}
         <p class="muted">个人主体阶段可用于手动开通/调整权益；企业主体接入微信支付后，也可继续作为客服后台。</p>
+        <div class="warn-box">
+          <strong>超级测试账号：</strong>设为超级测试后，该用户生成 AI 报告<strong>不扣星鼎豆</strong>，会员功能<strong>不限次数</strong>，便于反复测试。
+          仍可通过「调整星鼎豆 / 设置余额」随意充值测试豆。
+        </div>
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="手机号 / 姓名 / 学校" />
           <button type="submit">搜索</button>
         </form>
-        <table><thead><tr><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>分数</th><th>位次</th><th>当前会员</th><th>开通/调整</th></tr></thead><tbody>{rows}</tbody></table>
+        <table><thead><tr><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>分数</th><th>位次</th><th>当前会员</th><th>星鼎豆/测试</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table>
       </div>
     '''
     return render_page('用户会员管理', body)

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -110,12 +111,26 @@ def default_recent_years(count: int = 3, end_year: int | None = None) -> list[in
 
 
 def normalize_batch_name(name: str) -> str:
+    raw = (name or '').strip()
     mapping = {
         '平行录取一段': '普通类一段',
         '普通类平行录取': '普通类一段',
         '普通类平行录取一段': '普通类一段',
+        '本科': '本科批',
+        '本科一批': '本科批',
+        '本科二批': '本科批',
+        '本科普通批': '本科批',
+        '普通本科批': '本科批',
+        '专科': '专科批',
+        '高职专科': '专科批',
+        '高职专科批': '专科批',
+        '高职高专批': '专科批',
     }
-    return mapping.get(name, name or '普通类一段')
+    if raw in mapping:
+        return mapping[raw]
+    if raw:
+        return raw
+    return '普通类一段'
 
 
 def major_code_from_item(item: dict[str, Any]) -> str:
@@ -132,6 +147,51 @@ def plan_map(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         key = f'{item.get("spe_id")}:{item.get("special_id")}:{item.get("spname")}'
         result[key] = item
     return result
+
+
+def extract_campus_from_text(*texts: Any) -> str:
+    for text in texts:
+        if not text:
+            continue
+        match = re.search(r'办学地点[:：]([^;；)）]+)', str(text))
+        if match:
+            return match.group(1).strip()
+    return ''
+
+
+def build_subject_requirement(score_item: dict[str, Any] | None, plan_item: dict[str, Any] | None) -> str:
+    parts: list[str] = []
+    for source in (score_item or {}, plan_item or {}):
+        for key in ('sp_xuanke', 'sg_xuanke', 'sp_info', 'sg_info', 'first_km'):
+            value = source.get(key)
+            text = str(value or '').strip()
+            if text and text != '-':
+                parts.append(text)
+    return '；'.join(dict.fromkeys(parts))
+
+
+def build_special_notes(score_item: dict[str, Any] | None, plan_item: dict[str, Any] | None) -> str:
+    parts: list[str] = []
+    zslx_name = (score_item or {}).get('zslx_name') or (plan_item or {}).get('zslx_name')
+    if zslx_name:
+        parts.append(f'招生类型：{zslx_name}')
+    sg_name = (score_item or {}).get('sg_name') or (plan_item or {}).get('sg_name')
+    if sg_name:
+        parts.append(f'专业组：{sg_name}')
+    for source in (score_item or {}, plan_item or {}):
+        for key in ('info', 'remark'):
+            value = source.get(key)
+            text = str(value or '').strip()
+            if text:
+                parts.append(text)
+    return '；'.join(dict.fromkeys(parts))
+
+
+def resolve_enrollment_count(score_item: dict[str, Any] | None, plan_item: dict[str, Any] | None) -> int | None:
+    admitted = parse_optional_int((score_item or {}).get('lq_num'))
+    if admitted is not None:
+        return admitted
+    return parse_optional_int((plan_item or {}).get('num'))
 
 
 def find_plan_for_score(score_item: dict[str, Any], plans: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
@@ -151,23 +211,26 @@ def find_plan_for_score(score_item: dict[str, Any], plans: dict[str, dict[str, A
 def build_import_row(
     school_brief: dict[str, Any],
     school_detail: dict[str, Any] | None,
-    score_item: dict[str, Any],
+    score_item: dict[str, Any] | None,
     plan_item: dict[str, Any] | None,
     year: int,
     province_name: str,
 ) -> dict[str, Any]:
     detail = school_detail or {}
+    score = score_item or {}
+    plan = plan_item or {}
     school_name = detail.get('name') or school_brief.get('name') or ''
     school_code = str(detail.get('zs_code') or detail.get('code_enroll') or school_brief.get('school_id') or '').strip()
     if len(school_code) > 5:
         school_code = school_code[:5]
-    plan = plan_item or {}
-    major_name = score_item.get('spname') or score_item.get('sp_name') or plan.get('spname') or '未知专业'
-    major_code = major_code_from_item(plan if plan else score_item)
+    major_name = score.get('spname') or score.get('sp_name') or plan.get('spname') or plan.get('sp_name') or '未知专业'
+    major_code = major_code_from_item(plan if plan else score)
+    campus = extract_campus_from_text(major_name, plan.get('spname'), plan.get('sp_name'), score.get('spname'), score.get('sp_name'))
+    tuition_value = plan.get('tuition')
     return {
         'year': year,
         'province': province_name,
-        'batch': normalize_batch_name(score_item.get('local_batch_name') or plan.get('local_batch_name') or ''),
+        'batch': normalize_batch_name(score.get('local_batch_name') or plan.get('local_batch_name') or ''),
         'school_code': school_code,
         'school_name': school_name,
         'school_province': school_brief.get('p') or detail.get('belong') or '',
@@ -180,19 +243,25 @@ def build_import_row(
         'is_public': 0 if (school_brief.get('nature') == '民办' or detail.get('school_nature') == '36001') else 1,
         'major_code': major_code,
         'major_name': major_name,
-        'major_category': score_item.get('level2_name') or plan.get('level2_name') or '',
-        'major_type': score_item.get('level3_name') or plan.get('level3_name') or '',
+        'major_category': score.get('level2_name') or plan.get('level2_name') or '',
+        'major_type': score.get('level3_name') or plan.get('level3_name') or '',
         'degree_type': '本科',
         'duration': plan.get('length') or '',
-        'subject_requirement': score_item.get('sp_info') or plan.get('sp_info') or '',
-        'enrollment_count': int(plan.get('num') or 0) or None,
-        'tuition': int(float(plan.get('tuition') or 0)) if plan.get('tuition') else None,
-        'min_score': parse_optional_int(score_item.get('min')),
-        'min_rank': parse_optional_int(score_item.get('min_section')),
-        'avg_score': parse_optional_int(score_item.get('average')),
-        'max_score': parse_optional_int(score_item.get('max')),
-        'max_rank': parse_optional_int(score_item.get('max_section')),
+        'subject_requirement': build_subject_requirement(score_item, plan_item),
+        'enrollment_count': resolve_enrollment_count(score_item, plan_item),
+        'tuition': int(float(tuition_value)) if tuition_value not in (None, '', '-') else None,
+        'campus': campus,
+        'special_notes': build_special_notes(score_item, plan_item),
+        'min_score': parse_optional_int(score.get('min')),
+        'min_rank': parse_optional_int(score.get('min_section')),
+        'avg_score': parse_optional_int(score.get('average')),
+        'max_score': parse_optional_int(score.get('max')),
+        'max_rank': parse_optional_int(score.get('max_section') or score.get('range_max_rank')),
     }
+
+
+def plan_item_key(plan_item: dict[str, Any]) -> str:
+    return f'{plan_item.get("spe_id")}:{plan_item.get("special_id")}:{plan_item.get("spname") or plan_item.get("sp_name")}'
 
 
 def crawl_school_rows(school_id: str, school_brief: dict[str, Any], year: int, province_name: str, province_id: str) -> list[dict[str, Any]]:
@@ -202,12 +271,27 @@ def crawl_school_rows(school_id: str, school_brief: dict[str, Any], year: int, p
     time.sleep(REQUEST_INTERVAL)
     plan_items = fetch_batch_items(f'schoolspecialplan/{school_id}/{year}/{province_id}.json')
     plans = plan_map(plan_items)
-    rows = []
+    rows: list[dict[str, Any]] = []
+    matched_plan_keys: set[str] = set()
     for score_item in score_items:
-        if parse_optional_int(score_item.get('min')) is None and parse_optional_int(score_item.get('min_section')) is None:
+        has_score = parse_optional_int(score_item.get('min')) is not None
+        has_rank = parse_optional_int(score_item.get('min_section')) is not None
+        has_admitted = parse_optional_int(score_item.get('lq_num')) is not None
+        if not has_score and not has_rank and not has_admitted:
             continue
         plan_item = find_plan_for_score(score_item, plans)
+        if plan_item:
+            matched_plan_keys.add(plan_item_key(plan_item))
         rows.append(build_import_row(school_brief, detail, score_item, plan_item, year, province_name))
+    for plan_item in plans.values():
+        key = plan_item_key(plan_item)
+        if key in matched_plan_keys:
+            continue
+        if not plan_item.get('spname') and not plan_item.get('sp_name'):
+            continue
+        if resolve_enrollment_count(None, plan_item) is None and not plan_item.get('tuition'):
+            continue
+        rows.append(build_import_row(school_brief, detail, None, plan_item, year, province_name))
     return rows
 
 
