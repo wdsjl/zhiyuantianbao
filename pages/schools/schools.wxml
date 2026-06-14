@@ -77,12 +77,15 @@
         <view class="tag-row type-row">
           <text wx:for="{{batchOptions}}" wx:key="*this" class="tag {{queryBatch === item ? 'active' : ''}}" data-batch="{{item}}" bindtap="onQueryBatchChange">{{item || '不限批次'}}</text>
         </view>
+        <view class="tag-row type-row">
+          <text wx:for="{{subjectTypeOptions}}" wx:key="*this" class="tag {{querySubjectType === item ? 'active' : ''}}" data-subject="{{item}}" bindtap="onQuerySubjectTypeChange">{{item === '物理' ? '物理类' : (item === '历史' ? '历史类' : '科类不限')}}</text>
+        </view>
         <input wx:if="{{queryMode === 'score'}}" class="input block-input" type="number" placeholder="请输入高考分数" value="{{queryScore}}" bindinput="onQueryScoreInput" />
         <input wx:else class="input block-input" type="number" placeholder="请输入全省位次" value="{{queryRank}}" bindinput="onQueryRankInput" />
         <button class="primary-btn" bindtap="lookupScoreSegment" loading="{{queryLoading}}">查询</button>
       </view>
       <view wx:if="{{queryResult}}" class="query-result">
-        <view class="result-line">省份：{{queryResult.province}} · {{queryResult.year}}年 · {{queryResult.batch || '全批次'}}</view>
+        <view class="result-line">省份：{{queryResult.province}} · {{queryResult.year}}年 · {{queryResult.batch || '全批次'}}{{queryResult.subject_type ? ' · ' + queryResult.subject_type + '类' : ''}}</view>
         <view wx:if="{{queryResult.score}}" class="result-highlight">分数 {{queryResult.score}} → 位次约 {{queryResult.rank || '暂无'}}</view>
         <view wx:if="{{queryResult.rank && queryMode === 'rank'}}" class="result-highlight">位次 {{queryResult.rank}} → 分数约 {{queryResult.score || '暂无'}}</view>
       </view>

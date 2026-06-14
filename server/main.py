@@ -1851,7 +1851,21 @@ def lookup_score_segment(
     if not table and resolved_subject:
         table = find_score_rank_table(province, year, batch, '')
     if not table:
-        raise HTTPException(status_code=404, detail='未找到对应一分一段表，请先在后台导入')
+        from score_segment_service import summarize_score_tables_for_province
+
+        available = summarize_score_tables_for_province(province)
+        if not available:
+            raise HTTPException(status_code=404, detail='未找到一分一段表，请先在后台导入')
+        hints = []
+        for row in available[:6]:
+            subject = row.get('subject_type') or '不限科类'
+            batch_label = row.get('batch') or '全批次'
+            hints.append(f'{row.get("year")}年·{subject}·{batch_label}')
+        year_hint = f'（您查询的是 {year or "不限"} 年）' if year else ''
+        raise HTTPException(
+            status_code=404,
+            detail=f'未找到匹配的一分一段表{year_hint}。已导入：{"；".join(hints)}',
+        )
     result = {
         'province': province,
         'year': table.get('year'),

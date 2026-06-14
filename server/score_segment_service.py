@@ -656,3 +656,23 @@ def list_score_rank_tables(limit: int = 50) -> list[dict[str, Any]]:
                 [int(limit)],
             ).fetchall()
         )
+
+
+def summarize_score_tables_for_province(province: str) -> list[dict[str, Any]]:
+    """按省份汇总已导入的一分一段表，供查询失败时提示可用年份/科类。"""
+    ensure_score_segment_tables()
+    variants = _province_variants(province)
+    placeholders = ','.join(['?'] * len(variants))
+    with get_connection() as connection:
+        rows = rows_to_dicts(
+            connection.execute(
+                f'''
+                SELECT year, batch, subject_type, row_count
+                FROM score_rank_tables
+                WHERE province IN ({placeholders})
+                ORDER BY year DESC, subject_type ASC, batch ASC
+                ''',
+                variants,
+            ).fetchall()
+        )
+    return rows

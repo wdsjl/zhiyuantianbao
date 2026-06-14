@@ -5,6 +5,18 @@ const { TYPE_OPTIONS, openAnnouncement } = require('../../utils/announcement');
 
 const YEAR_OPTIONS = [2026, 2025, 2024];
 const BATCH_OPTIONS = ['本科批', '专科批', ''];
+const SUBJECT_TYPE_OPTIONS = ['', '物理', '历史'];
+
+function inferSubjectType(subjectCombination) {
+  const combo = String(subjectCombination || '').replace(/\//g, '+').replace(/、/g, '+');
+  if (combo.includes('物理') || combo.startsWith('物') || combo.includes('+物') || combo.includes('物化')) {
+    return '物理';
+  }
+  if (combo.includes('历史') || combo.startsWith('历') || combo.includes('+历') || combo.includes('史政')) {
+    return '历史';
+  }
+  return '';
+}
 
 Page({
   data: {
@@ -36,8 +48,9 @@ Page({
     announcementLoading: false,
     queryMode: 'score',
     queryProvince: '河南',
-    queryYear: 2026,
+    queryYear: 2025,
     queryBatch: '本科批',
+    querySubjectType: '',
     queryScore: '',
     queryRank: '',
     queryResult: null,
@@ -46,10 +59,12 @@ Page({
     admissionRecords: [],
     admissionLoading: false,
     yearOptions: YEAR_OPTIONS,
-    batchOptions: BATCH_OPTIONS
+    batchOptions: BATCH_OPTIONS,
+    subjectTypeOptions: SUBJECT_TYPE_OPTIONS
   },
   onLoad() {
     this.syncProfileDefaults();
+    this.syncScoreSegmentDefaults();
     this.fetchSchools();
   },
   onShow() {
@@ -67,16 +82,42 @@ Page({
     const profile = loadActiveProfileSync();
     const province = profile.province || '河南';
     const batch = profile.targetBatch || profile.batch || '本科批';
+    const subjectType = inferSubjectType(profile.subjectCombination);
     this.setData({
       profileProvince: province,
       profileBatch: batch,
       queryProvince: province,
-      queryBatch: batch
+      queryBatch: batch,
+      querySubjectType: subjectType
     });
+  },
+  syncScoreSegmentDefaults() {
+    const province = this.data.queryProvince || this.data.profileProvince || '河南';
+    request({
+      url: '/api/score-segments/tables',
+      data: { province, limit: 20 }
+    })
+      .then((res) => {
+        const tables = res.list || [];
+        if (!tables.length) return;
+        const years = [...new Set(tables.map((item) => Number(item.year)).filter(Boolean))].sort((a, b) => b - a);
+        const next = {};
+        if (years.length && !years.includes(Number(this.data.queryYear))) {
+          next.queryYear = years[0];
+        }
+        if (Object.keys(next).length) {
+          this.setData(next);
+        }
+      })
+      .catch(() => {});
   },
   switchTab(event) {
     const activeTab = event.currentTarget.dataset.tab;
     this.setData({ activeTab });
+    if (activeTab === 'query') {
+      this.syncProfileDefaults();
+      this.syncScoreSegmentDefaults();
+    }
     if (activeTab === 'announcements') {
       this.fetchAnnouncements();
     }
@@ -131,10 +172,13 @@ Page({
     this.setData({ queryProvince: event.detail.value });
   },
   onQueryYearChange(event) {
-    this.setData({ queryYear: Number(event.currentTarget.dataset.year) || 2026 });
+    this.setData({ queryYear: Number(event.currentTarget.dataset.year) || 2025, queryResult: null });
   },
   onQueryBatchChange(event) {
-    this.setData({ queryBatch: event.currentTarget.dataset.batch || '' });
+    this.setData({ queryBatch: event.currentTarget.dataset.batch || '', queryResult: null });
+  },
+  onQuerySubjectTypeChange(event) {
+    this.setData({ querySubjectType: event.currentTarget.dataset.subject || '', queryResult: null });
   },
   onQueryScoreInput(event) {
     this.setData({ queryScore: event.detail.value });
@@ -255,7 +299,7 @@ Page({
       });
   },
   lookupScoreSegment() {
-    const { queryMode, queryProvince, queryYear, queryBatch, queryScore, queryRank } = this.data;
+    const { queryMode, queryProvince, queryYear, queryBatch, queryScore, queryRank, querySubjectType } = this.data;
     if (!queryProvince) {
       wx.showToast({ title: '请填写省份', icon: 'none' });
       return;
@@ -266,7 +310,8 @@ Page({
       province: queryProvince,
       year: queryYear,
       batch: queryBatch,
-      subject_combination: subjectCombination
+      subject_combination: subjectCombination,
+      subject_type: querySubjectType || inferSubjectType(subjectCombination)
     };
     if (queryMode === 'score') {
       if (!queryScore) {
@@ -287,8 +332,8 @@ Page({
         this.setData({ queryResult: res });
       })
       .catch((err) => {
-        const msg = (err && err.detail) || '未找到一分一段表，请先在后台导入';
-        wx.showToast({ title: msg, icon: 'none' });
+        const msg = (err && err.message) || '未找到一分一段表，请先在后台导入';
+        wx.showToast({ title: msg, icon: 'none', duration: 3000 });
       })
       .finally(() => {
         this.setData({ queryLoading: false });
