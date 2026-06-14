@@ -101,6 +101,10 @@ Page({
     const { goMembershipPage } = require('../../utils/membership');
     goMembershipPage();
   },
+  goDouyinRedeem() {
+    const { goDouyinRedeemPage } = require('../../utils/membership');
+    goDouyinRedeemPage();
+  },
   goStudentReport() {
     wx.navigateTo({ url: '/pages/student-report/student-report' });
   }

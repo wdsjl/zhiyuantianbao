@@ -67,7 +67,9 @@ class RecommendRequest(BaseModel):
     only_public: Optional[bool] = None
     accept_adjustment: bool = True
     plan_style: str = 'balanced'
-    volunteer_count: int = 9
+    volunteer_count: int = 0  # 0 或历史默认 9 均按省份规则生成
+    student_id: Optional[int] = None
+    auto_save_draft: bool = True
 
 
 class RiskInspectRequest(BaseModel):
@@ -90,6 +92,8 @@ class DraftItem(BaseModel):
     is_adjustable: bool = True
     risk_level: Optional[str] = None
     risk_reason: Optional[str] = None
+    admission_score_2025: Optional[int] = None
+    admission_rank_2025: Optional[int] = None
 
 
 class DraftCreateRequest(BaseModel):
@@ -151,6 +155,11 @@ class OpenRequestCreate(BaseModel):
     contact_phone: Optional[str] = None
     message: Optional[str] = None
     request_type: str = 'open'
+
+
+class DouyinRedeemRequest(BaseModel):
+    user_id: int
+    coupon_code: str
 
 
 class PaymentCreateRequest(BaseModel):
