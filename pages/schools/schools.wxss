@@ -118,6 +118,40 @@
   margin-top: 20rpx;
 }
 
+.query-field {
+  margin-bottom: 8rpx;
+}
+
+.query-label {
+  color: #344054;
+  font-size: 26rpx;
+  font-weight: 600;
+  margin: 8rpx 0 4rpx;
+}
+
+.query-required {
+  margin-left: 8rpx;
+  color: #f04438;
+  font-size: 22rpx;
+  font-weight: 500;
+}
+
+.query-hint {
+  margin-bottom: 4rpx;
+}
+
+.subject-type-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.subject-tag {
+  flex: 1;
+  text-align: center;
+  padding: 22rpx 0;
+  font-size: 28rpx;
+}
+
 .block-input {
   width: 100%;
   margin-bottom: 16rpx;

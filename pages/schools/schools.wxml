@@ -71,14 +71,30 @@
       </view>
       <view class="query-form">
         <input class="input block-input" placeholder="省份，如河南" value="{{queryProvince}}" bindinput="onQueryProvinceInput" />
-        <view class="tag-row type-row">
-          <text wx:for="{{yearOptions}}" wx:key="*this" class="tag {{queryYear === item ? 'active' : ''}}" data-year="{{item}}" bindtap="onQueryYearChange">{{item}}年</text>
+        <view class="query-field">
+          <view class="query-label">年份</view>
+          <view class="tag-row type-row">
+            <text wx:for="{{yearOptions}}" wx:key="*this" class="tag {{queryYear === item ? 'active' : ''}}" data-year="{{item}}" bindtap="onQueryYearChange">{{item}}年</text>
+          </view>
         </view>
-        <view class="tag-row type-row">
-          <text wx:for="{{batchOptions}}" wx:key="*this" class="tag {{queryBatch === item ? 'active' : ''}}" data-batch="{{item}}" bindtap="onQueryBatchChange">{{item || '不限批次'}}</text>
+        <view class="query-field">
+          <view class="query-label">批次</view>
+          <view class="tag-row type-row">
+            <text wx:for="{{batchOptions}}" wx:key="*this" class="tag {{queryBatch === item ? 'active' : ''}}" data-batch="{{item}}" bindtap="onQueryBatchChange">{{item || '不限批次'}}</text>
+          </view>
         </view>
-        <view class="tag-row type-row">
-          <text wx:for="{{subjectTypeOptions}}" wx:key="*this" class="tag {{querySubjectType === item ? 'active' : ''}}" data-subject="{{item}}" bindtap="onQuerySubjectTypeChange">{{item === '物理' ? '物理类' : (item === '历史' ? '历史类' : '科类不限')}}</text>
+        <view class="query-field">
+          <view class="query-label">科类<text class="query-required">必选</text></view>
+          <view class="sub-text query-hint">河南新高考请选物理类或历史类，与一分一段表一致</view>
+          <view class="tag-row type-row subject-type-row">
+            <text
+              wx:for="{{subjectTypeOptions}}"
+              wx:key="value"
+              class="tag subject-tag {{querySubjectType === item.value ? 'active' : ''}}"
+              data-subject="{{item.value}}"
+              bindtap="onQuerySubjectTypeChange"
+            >{{item.label}}</text>
+          </view>
         </view>
         <input wx:if="{{queryMode === 'score'}}" class="input block-input" type="number" placeholder="请输入高考分数" value="{{queryScore}}" bindinput="onQueryScoreInput" />
         <input wx:else class="input block-input" type="number" placeholder="请输入全省位次" value="{{queryRank}}" bindinput="onQueryRankInput" />

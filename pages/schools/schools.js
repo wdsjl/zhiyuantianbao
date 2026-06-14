@@ -5,7 +5,10 @@ const { TYPE_OPTIONS, openAnnouncement } = require('../../utils/announcement');
 
 const YEAR_OPTIONS = [2026, 2025, 2024];
 const BATCH_OPTIONS = ['本科批', '专科批', ''];
-const SUBJECT_TYPE_OPTIONS = ['', '物理', '历史'];
+const SUBJECT_TYPE_OPTIONS = [
+  { value: '物理', label: '物理类' },
+  { value: '历史', label: '历史类' }
+];
 
 function inferSubjectType(subjectCombination) {
   const combo = String(subjectCombination || '').replace(/\//g, '+').replace(/、/g, '+');
@@ -82,14 +85,19 @@ Page({
     const profile = loadActiveProfileSync();
     const province = profile.province || '河南';
     const batch = profile.targetBatch || profile.batch || '本科批';
-    const subjectType = inferSubjectType(profile.subjectCombination) || (province === '河南' ? '物理' : '');
-    this.setData({
+    const profileSubject = inferSubjectType(profile.subjectCombination);
+    const updates = {
       profileProvince: province,
       profileBatch: batch,
       queryProvince: province,
-      queryBatch: batch,
-      querySubjectType: subjectType
-    });
+      queryBatch: batch
+    };
+    if (profileSubject) {
+      updates.querySubjectType = profileSubject;
+    } else if (!this.data.querySubjectType) {
+      updates.querySubjectType = '物理';
+    }
+    this.setData(updates);
   },
   syncScoreSegmentDefaults() {
     const province = this.data.queryProvince || this.data.profileProvince || '河南';
@@ -304,6 +312,10 @@ Page({
       wx.showToast({ title: '请填写省份', icon: 'none' });
       return;
     }
+    if (!querySubjectType) {
+      wx.showToast({ title: '请选择物理类或历史类', icon: 'none' });
+      return;
+    }
     const profile = loadActiveProfileSync();
     const subjectCombination = profile.subjectCombination || '';
     const data = {
@@ -311,7 +323,7 @@ Page({
       year: queryYear,
       batch: queryBatch,
       subject_combination: subjectCombination,
-      subject_type: querySubjectType || inferSubjectType(subjectCombination)
+      subject_type: querySubjectType
     };
     if (queryMode === 'score') {
       if (!queryScore) {
