@@ -97,7 +97,17 @@ class ScoreSegmentServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_segment_rows(rows)
 
-    def test_validate_accepts_realistic_henan_sample(self):
+    def test_validate_allows_mid_score_with_high_rank(self):
+        rows = [
+            {'score': 690, 'segment_count': 30, 'cumulative_rank': 1800},
+            {'score': 680, 'segment_count': 42, 'cumulative_rank': 2600},
+            {'score': 650, 'segment_count': 180, 'cumulative_rank': 8281},
+            {'score': 645, 'segment_count': 200, 'cumulative_rank': 10445},
+            {'score': 633, 'segment_count': 198, 'cumulative_rank': 16998},
+        ]
+        for score in range(632, 620, -1):
+            rows.append({'score': score, 'segment_count': 180, 'cumulative_rank': 16998 + (633 - score) * 200})
+        validate_segment_rows(rows)
         rows = [
             {'score': 690, 'segment_count': 30, 'cumulative_rank': 1800},
             {'score': 685, 'segment_count': 35, 'cumulative_rank': 2100},

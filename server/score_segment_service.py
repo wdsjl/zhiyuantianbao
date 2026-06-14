@@ -250,23 +250,13 @@ def validate_segment_rows(rows: list[dict[str, Any]]) -> None:
                 '请确认第三列是「累计人数/位次」，且不要仅有「分数+本段人数」两列。'
             )
 
-    high_score_rows = [row for row in sorted_rows if int(row['score']) >= 675]
-    if high_score_rows and int(high_score_rows[0]['cumulative_rank']) > 8000:
-        raise ValueError(
-            f'高分 {high_score_rows[0]["score"]} 的位次为 {high_score_rows[0]["cumulative_rank"]}，'
-            '明显偏大。若 Excel 无表头，请使用五列：分数、本段人数、累计人数、年份、科类。'
-        )
-
-    top_score = int(top['score'])
-    top_rank = int(top['cumulative_rank'])
-    if top_score >= 700:
-        for row in sorted_rows:
-            gap = top_score - int(row['score'])
-            if 0 <= gap <= 80 and int(row['cumulative_rank']) > max(10000, top_rank + 8000):
-                raise ValueError(
-                    f'分数 {row["score"]} 的位次 {row["cumulative_rank"]} 疑似由本段人数累加得到，'
-                    '请确认第三列是「累计人数/位次」。'
-                )
+    # 仅检查高分段：累加错误时 680 分位次常 >1 万，而官方表约两三千
+    for check_score in (680, 675, 670):
+        if check_score in by_score and by_score[check_score] > 10000:
+            raise ValueError(
+                f'分数 {check_score} 的位次 {by_score[check_score]} 明显偏大，'
+                '疑似把本段人数累加成了位次。请确认第三列是「累计人数/位次」。'
+            )
 
 
 def parse_table_matrix(
