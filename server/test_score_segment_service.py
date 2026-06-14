@@ -88,6 +88,40 @@ class ScoreSegmentServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_segment_rows(rows)
 
+    def test_validate_rejects_summed_segment_pattern(self):
+        rows = []
+        cumulative = 0
+        for score in range(750, 639, -1):
+            cumulative += 150
+            rows.append({'score': score, 'segment_count': 150, 'cumulative_rank': cumulative})
+        with self.assertRaises(ValueError):
+            validate_segment_rows(rows)
+
+    def test_validate_accepts_realistic_henan_sample(self):
+        rows = [
+            {'score': 690, 'segment_count': 30, 'cumulative_rank': 1800},
+            {'score': 685, 'segment_count': 35, 'cumulative_rank': 2100},
+            {'score': 680, 'segment_count': 42, 'cumulative_rank': 2600},
+            {'score': 679, 'segment_count': 35, 'cumulative_rank': 2642},
+            {'score': 675, 'segment_count': 40, 'cumulative_rank': 2800},
+            {'score': 669, 'segment_count': 162, 'cumulative_rank': 3200},
+            {'score': 660, 'segment_count': 120, 'cumulative_rank': 5200},
+            {'score': 650, 'segment_count': 180, 'cumulative_rank': 8281},
+            {'score': 640, 'segment_count': 200, 'cumulative_rank': 12000},
+            {'score': 633, 'segment_count': 198, 'cumulative_rank': 16998},
+        ]
+        validate_segment_rows(rows)
+
+    def test_columnar_preferred_with_title_row(self):
+        table = [['河南省2025年普通类一分一段表']]
+        for score in range(690, 639, -1):
+            table.append([score, 40, 1800 + (690 - score) * 35, 2025, '物理类'])
+        rows, meta = parse_segments_from_matrix(table)
+        self.assertGreaterEqual(len(rows), 10)
+        self.assertEqual(meta['subject_type'], '物理')
+        by_score = {row['score']: row['cumulative_rank'] for row in rows}
+        self.assertLess(by_score[680], by_score[650])
+
 
 if __name__ == '__main__':
     unittest.main()

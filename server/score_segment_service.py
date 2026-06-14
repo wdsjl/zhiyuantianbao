@@ -20,7 +20,11 @@ def _normalize_header(value: Any) -> str:
 
 def _match_alias(header: str, aliases: tuple[str, ...]) -> bool:
     normalized = _normalize_header(header)
-    return any(alias in normalized or normalized in alias for alias in aliases)
+    return any(
+        normalized == alias or normalized.endswith(alias) or alias.endswith(normalized)
+        for alias in aliases
+        if len(alias) >= 2
+    )
 
 
 def ensure_score_segment_tables() -> None:
@@ -110,13 +114,11 @@ def detect_score_header_row_index(table: list[list[Any]]) -> int:
                 continue
             if _match_alias(header, SCORE_HEADER_ALIASES):
                 mapping['score'] = col_index
-            elif _match_alias(header, SEGMENT_COUNT_ALIASES):
-                mapping['segment_count'] = col_index
             elif _match_alias(header, CUMULATIVE_ALIASES):
                 mapping['cumulative_rank'] = col_index
-        if 'score' in mapping and ('cumulative_rank' in mapping or 'segment_count' in mapping):
-            return index
-        if 'score' in mapping and len(mapping) >= 2:
+            elif _match_alias(header, SEGMENT_COUNT_ALIASES):
+                mapping['segment_count'] = col_index
+        if 'score' in mapping and 'cumulative_rank' in mapping:
             return index
     return -1
 
@@ -197,15 +199,25 @@ def parse_columnar_segments(
 def parse_segments_from_matrix(
     table: list[list[Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    columnar_rows, meta = parse_columnar_segments(table)
+    if columnar_rows and _columnar_rows_look_valid(columnar_rows):
+        return columnar_rows, meta
+
     _, header_rows = parse_table_matrix(table)
     if header_rows:
         return header_rows, {}
 
-    columnar_rows, meta = parse_columnar_segments(table)
     if columnar_rows:
         return columnar_rows, meta
 
     return [], {}
+
+
+def _columnar_rows_look_valid(rows: list[dict[str, Any]]) -> bool:
+    if len(rows) < 10:
+        return False
+    with_cumulative = sum(1 for row in rows if row.get('cumulative_rank') is not None)
+    return with_cumulative >= max(10, int(len(rows) * 0.8))
 
 
 def validate_segment_rows(rows: list[dict[str, Any]]) -> None:
@@ -230,6 +242,32 @@ def validate_segment_rows(rows: list[dict[str, Any]]) -> None:
             raise ValueError(f'分数 {row["score"]} 的累计位次小于更高分数，数据顺序异常')
         prev_cumulative = cumulative
 
+    by_score = {int(row['score']): int(row['cumulative_rank']) for row in rows}
+    for high, low in ((680, 650), (650, 600), (700, 680)):
+        if high in by_score and low in by_score and by_score[high] >= by_score[low]:
+            raise ValueError(
+                f'分数 {high} 的位次 {by_score[high]} 不应差于 {low} 分的位次 {by_score[low]}，'
+                '请确认第三列是「累计人数/位次」，且不要仅有「分数+本段人数」两列。'
+            )
+
+    high_score_rows = [row for row in sorted_rows if int(row['score']) >= 675]
+    if high_score_rows and int(high_score_rows[0]['cumulative_rank']) > 8000:
+        raise ValueError(
+            f'高分 {high_score_rows[0]["score"]} 的位次为 {high_score_rows[0]["cumulative_rank"]}，'
+            '明显偏大。若 Excel 无表头，请使用五列：分数、本段人数、累计人数、年份、科类。'
+        )
+
+    top_score = int(top['score'])
+    top_rank = int(top['cumulative_rank'])
+    if top_score >= 700:
+        for row in sorted_rows:
+            gap = top_score - int(row['score'])
+            if 0 <= gap <= 80 and int(row['cumulative_rank']) > max(10000, top_rank + 8000):
+                raise ValueError(
+                    f'分数 {row["score"]} 的位次 {row["cumulative_rank"]} 疑似由本段人数累加得到，'
+                    '请确认第三列是「累计人数/位次」。'
+                )
+
 
 def parse_table_matrix(
     table: list[list[Any]],
@@ -246,10 +284,10 @@ def parse_table_matrix(
             continue
         if _match_alias(header, SCORE_HEADER_ALIASES):
             header_indexes['score'] = col_index
-        elif _match_alias(header, SEGMENT_COUNT_ALIASES):
-            header_indexes['segment_count'] = col_index
         elif _match_alias(header, CUMULATIVE_ALIASES):
             header_indexes['cumulative_rank'] = col_index
+        elif _match_alias(header, SEGMENT_COUNT_ALIASES):
+            header_indexes['segment_count'] = col_index
 
     rows: list[dict[str, Any]] = []
     for row in table[header_row_index + 1:]:
@@ -280,7 +318,10 @@ def finalize_segment_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not cleaned:
         return []
 
-    has_cumulative = any(row.get('cumulative_rank') for row in cleaned)
+    has_cumulative = sum(1 for row in cleaned if row.get('cumulative_rank') not in (None, '')) >= max(
+        3,
+        int(len(cleaned) * 0.5),
+    )
     if has_cumulative:
         result = []
         for row in cleaned:
@@ -406,6 +447,15 @@ def upsert_score_rank_table(
         raise ValueError('未能从文件中识别出一分一段数据，请检查表头是否含「分数」「累计人数/位次」等列')
 
     with get_connection() as connection:
+        if subject_type:
+            connection.execute(
+                '''
+                DELETE FROM score_rank_tables
+                WHERE province = ? AND year = ? AND batch = ? AND subject_type = ''
+                ''',
+                [province, year, batch or ''],
+            )
+
         existing = row_to_dict(
             connection.execute(
                 '''
@@ -484,6 +534,8 @@ def import_score_segment_file(
     file_subject = _normalize_subject_type(str(meta.get('subject_type') or ''))
     if file_subject and not subject_type:
         subject_type = file_subject
+    if not subject_type:
+        raise ValueError('未能识别科类，请在导入时选择「物理类」或「历史类」，并确认 Excel 第 5 列为物理类/历史类')
     return upsert_score_rank_table(
         province=province,
         year=year,
@@ -496,13 +548,13 @@ def import_score_segment_file(
     )
 
 
-def _query_score_rank_table(
+def _list_matching_score_rank_tables(
     province_variants: list[str],
     *,
     year: int | None,
     batch: str,
-    subject_type: str,
-) -> dict[str, Any] | None:
+    subject_type: str = '',
+) -> list[dict[str, Any]]:
     placeholders = ','.join(['?'] * len(province_variants))
     sql = f'SELECT * FROM score_rank_tables WHERE province IN ({placeholders})'
     params: list[Any] = [*province_variants]
@@ -515,9 +567,9 @@ def _query_score_rank_table(
     if subject_type:
         sql += ' AND subject_type = ?'
         params.append(subject_type)
-    sql += ' ORDER BY year DESC, table_id DESC LIMIT 1'
+    sql += ' ORDER BY CASE WHEN subject_type = "" THEN 1 ELSE 0 END, row_count DESC, table_id DESC'
     with get_connection() as connection:
-        return row_to_dict(connection.execute(sql, params).fetchone())
+        return rows_to_dicts(connection.execute(sql, params).fetchall())
 
 
 def find_score_rank_table(
@@ -541,20 +593,32 @@ def find_score_rank_table(
                 batch_candidates.append(value)
 
     subject_candidates: list[str] = []
-    for value in (normalized_subject, ''):
-        if value not in subject_candidates:
-            subject_candidates.append(value)
+    if normalized_subject:
+        subject_candidates = [normalized_subject, '']
+    else:
+        for batch_value in batch_candidates:
+            typed = _list_matching_score_rank_tables(
+                variants,
+                year=year,
+                batch=batch_value,
+            )
+            typed = [item for item in typed if (item.get('subject_type') or '').strip()]
+            if len(typed) == 1:
+                return typed[0]
+            if len(typed) > 1:
+                return None
+        subject_candidates = ['']
 
     for batch_value in batch_candidates:
         for subject_value in subject_candidates:
-            table = _query_score_rank_table(
+            tables = _list_matching_score_rank_tables(
                 variants,
                 year=year,
                 batch=batch_value,
                 subject_type=subject_value,
             )
-            if table:
-                return table
+            if tables:
+                return tables[0]
     return None
 
 

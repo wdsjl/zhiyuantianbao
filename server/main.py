@@ -357,6 +357,19 @@ async def admin_score_segments_import(
             f"{result.get('subject_type') or '不限科类'}，"
             f"共 {result['row_count']} 行，分数区间 {result['score_min']}~{result['score_max']}"
         )
+        from score_segment_service import lookup_rank_by_score
+
+        for sample_score in (680, 650):
+            if result['score_min'] <= sample_score <= result['score_max']:
+                sample_rank = lookup_rank_by_score(
+                    result['province'],
+                    sample_score,
+                    year=result['year'],
+                    batch=result.get('batch') or '',
+                    subject_type=result.get('subject_type') or '',
+                )
+                if sample_rank:
+                    message += f"；{sample_score}分→位次约{sample_rank}"
         return admin_score_segments(message)
     except Exception as exc:
         return admin_score_segments(f'导入失败：{exc}')
@@ -1862,9 +1875,11 @@ def lookup_score_segment(
             batch_label = row.get('batch') or '全批次'
             hints.append(f'{row.get("year")}年·{subject}·{batch_label}')
         year_hint = f'（您查询的是 {year or "不限"} 年）' if year else ''
+        typed_count = sum(1 for row in available if (row.get('subject_type') or '').strip())
+        subject_hint = '，请选择物理类或历史类' if typed_count > 1 and not resolved_subject else ''
         raise HTTPException(
             status_code=404,
-            detail=f'未找到匹配的一分一段表{year_hint}。已导入：{"；".join(hints)}',
+            detail=f'未找到匹配的一分一段表{year_hint}{subject_hint}。已导入：{"；".join(hints)}',
         )
     result = {
         'province': province,

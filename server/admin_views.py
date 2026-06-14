@@ -564,9 +564,9 @@ def admin_score_segments(message: str = ''):
           <input name="province" value="河南" placeholder="省份" required />
           <input name="year" type="number" value="2025" placeholder="年份" required />
           <input name="batch" value="本科批" placeholder="批次，可留空" />
-          <select name="subject_type">
-            <option value="">自动识别（看文件名）</option>
-            <option value="物理">物理类</option>
+          <select name="subject_type" required>
+            <option value="">请选择科类</option>
+            <option value="物理" selected>物理类</option>
             <option value="历史">历史类</option>
           </select>
           <input type="file" name="file" accept=".pdf,.xlsx,.xls,.csv" required />

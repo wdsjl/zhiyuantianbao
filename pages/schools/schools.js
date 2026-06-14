@@ -50,7 +50,7 @@ Page({
     queryProvince: '河南',
     queryYear: 2025,
     queryBatch: '本科批',
-    querySubjectType: '',
+    querySubjectType: '物理',
     queryScore: '',
     queryRank: '',
     queryResult: null,
@@ -82,7 +82,7 @@ Page({
     const profile = loadActiveProfileSync();
     const province = profile.province || '河南';
     const batch = profile.targetBatch || profile.batch || '本科批';
-    const subjectType = inferSubjectType(profile.subjectCombination);
+    const subjectType = inferSubjectType(profile.subjectCombination) || (province === '河南' ? '物理' : '');
     this.setData({
       profileProvince: province,
       profileBatch: batch,
