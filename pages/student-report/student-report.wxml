@@ -1,8 +1,12 @@
 <view class="container">
   <view class="card hero-card">
     <ai-generated-label />
-    <view class="section-title">AI 个性化填报报告</view>
-    <view class="sub-text">流程第 3～4 步：填写个人需求后，系统将分数、霍兰德测评和偏好发给大模型，生成你的专属报告。</view>
+    <view class="section-title">AI 个性化填报报告（可选）</view>
+    <view class="sub-text">大模型报告为增值功能，非必选。完成测评后可直接去「填报志愿」页智能生成方案；修改分数/位次后需重新生成报告。</view>
+  </view>
+
+  <view wx:if="{{reportStale}}" class="card">
+    <view class="warn-box">当前报告与档案分数/位次不一致，已失效。请重新生成，或跳过此步直接去填报志愿。</view>
   </view>
 
   <view class="card">

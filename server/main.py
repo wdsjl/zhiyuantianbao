@@ -15,6 +15,7 @@ from schemas import (
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
+    profile_snapshot_matches_student,
 )
 from personality_service import (
     ensure_personality_tables, save_assessment, get_latest_assessment, save_ai_career_report,
@@ -1725,6 +1726,7 @@ def ai_plan_explain(request: PlanExplainRequest):
 省份：{profile.get('province', '')}
 批次：{profile.get('targetBatch', profile.get('batch', ''))}
 选科：{profile.get('subjectCombination', '')}
+高考分数：{profile.get('score', '')}
 全省位次 X：{profile.get('rank', '')}
 
 霍兰德职业兴趣测评（供专业适配参考）：
@@ -1806,6 +1808,7 @@ def ai_student_report(request: StudentReportRequest):
             request.user_id,
             request.preferences or {},
             content,
+            profile=request.profile,
         )
         return {'report': content, 'report_id': report_id}
     except Exception as exc:
@@ -1816,8 +1819,15 @@ def ai_student_report(request: StudentReportRequest):
 def get_student_report(student_id: int):
     report = get_latest_student_report(student_id)
     if not report:
-        return {'report': None}
-    return {'report': report}
+        return {'report': None, 'stale': False}
+    student = None
+    try:
+        student = _load_student_or_404(student_id)
+    except HTTPException:
+        student = None
+    snapshot = (report.get('preferences') or {}).get('_profile_snapshot')
+    stale = not profile_snapshot_matches_student(snapshot, student) if student else False
+    return {'report': report, 'stale': stale}
 
 
 def _load_student_or_404(student_id: int) -> dict:

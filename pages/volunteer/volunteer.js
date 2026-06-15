@@ -5,6 +5,12 @@ const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
 const { formatAiContent } = require('../../utils/reportFormat');
+const {
+  loadPlanIfCurrent,
+  savePlanArtifact,
+  invalidatePlanArtifacts,
+  buildProfileSnapshot
+} = require('../../utils/profileSnapshot');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -91,21 +97,23 @@ Page({
     planStyleOptions: PLAN_STYLE_OPTIONS,
     strategyMeta: null,
     pdfReady: false,
-    pdfFileName: ''
+    pdfFileName: '',
+    planStale: false
   },
   onShow() {
     const savedStyle = wx.getStorageSync('volunteerPlanStyle') || 'balanced';
     this.setData({ planStyle: savedStyle });
     refreshActiveProfile().then((profile) => {
-      this.setData({ profile: profile || loadActiveProfileSync() });
+      const resolvedProfile = profile || loadActiveProfileSync();
+      this.setData({ profile: resolvedProfile });
+      this.restorePlanState(resolvedProfile);
       this.consumePendingPlanAppend();
     });
     let personality = wx.getStorageSync('personalityResult') || null;
     if (personality) {
       const { migrateLegacyResult } = require('../../utils/personality');
       personality = migrateLegacyResult(personality);
-      const studentAiReport = wx.getStorageSync('studentAiReport') || '';
-      const aiCareerReport = studentAiReport || wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
+      const aiCareerReport = wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
       if (aiCareerReport) personality = { ...personality, aiCareerReport };
     }
     if (!personality) {
@@ -123,15 +131,40 @@ Page({
       return;
     }
     this.setData({ personality });
-    const currentPlan = wx.getStorageSync('currentPlan') || [];
-    if (currentPlan.length) {
-      const plan = currentPlan.map((item) => ({
+    fetchEntitlements();
+  },
+  restorePlanState(profile) {
+    const { plan, aiExplain, stale } = loadPlanIfCurrent(profile);
+    if (stale) {
+      invalidatePlanArtifacts();
+      this.setData({ plan: [], aiExplain: '', riskResult: null, planStale: true });
+      wx.showModal({
+        title: '档案已变更',
+        content: '分数或位次与当前志愿方案不一致，旧方案已清空。请重新点击「智能生成」。',
+        showCancel: false
+      });
+      return;
+    }
+    if (!plan.length) {
+      this.setData({ planStale: false });
+      return;
+    }
+    const riskResult = wx.getStorageSync('currentRiskResult') || null;
+    const riskClass = riskResult && riskResult.level === '高'
+      ? 'risk-high'
+      : riskResult && riskResult.level === '中'
+        ? 'risk-mid'
+        : 'risk-low';
+    this.setData({
+      plan: plan.map((item) => ({
         ...item,
         gradientClass: item.gradientClass || getGradientClass(item.gradientType)
-      }));
-      this.setData({ plan, aiExplain: formatAiContent(wx.getStorageSync('currentAiExplain') || '') });
-    }
-    fetchEntitlements();
+      })),
+      aiExplain: formatAiContent(aiExplain || ''),
+      riskResult,
+      riskClass,
+      planStale: false
+    });
   },
   consumePendingPlanAppend() {
     const pending = wx.getStorageSync('pendingPlanAppend');
@@ -149,7 +182,7 @@ Page({
       personalityMatched: false
     });
     this.setData({ plan, riskResult: null, aiExplain: '' });
-    wx.setStorageSync('currentPlan', plan);
+    savePlanArtifact(plan, this.data.profile);
     wx.removeStorageSync('currentAiExplain');
     wx.showToast({ title: '已加入志愿方案', icon: 'success' });
   },
@@ -158,8 +191,11 @@ Page({
     const plan = [...this.data.plan];
     plan.splice(index, 1);
     this.setData({ plan, riskResult: null, aiExplain: '' });
-    wx.setStorageSync('currentPlan', plan);
+    savePlanArtifact(plan, this.data.profile);
     wx.removeStorageSync('currentAiExplain');
+  },
+  goProfile() {
+    wx.navigateTo({ url: '/pages/profile/profile' });
   },
   ensureProfile() {
     const { profile } = this.data;
@@ -220,8 +256,8 @@ Page({
         }));
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
-        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta: res.strategy || null });
-        wx.setStorageSync('currentPlan', plan);
+        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta: res.strategy || null, planStale: false });
+        savePlanArtifact(plan, profile);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
         wx.showToast({ title: '已生成志愿方案', icon: 'success' });
@@ -278,7 +314,7 @@ Page({
     plan[index].riskLevel = getLocalRiskLevel(plan[index].gradientType, checked);
     plan[index].riskReason = getLocalRiskReason(plan[index].gradientType, checked);
     this.setData({ plan, riskResult: null, aiExplain: '' });
-    wx.setStorageSync('currentPlan', plan);
+    savePlanArtifact(plan, this.data.profile);
     wx.removeStorageSync('currentAiExplain');
   },
   saveDraft() {
@@ -350,6 +386,16 @@ Page({
   doExplainPlan() {
     if (!this.data.plan.length) {
       wx.showToast({ title: '请先生成志愿方案', icon: 'none' });
+      return;
+    }
+    const profile = this.data.profile || loadActiveProfileSync();
+    const planSnapshot = wx.getStorageSync('currentPlanSnapshot') || '';
+    if (planSnapshot && planSnapshot !== buildProfileSnapshot(profile)) {
+      wx.showModal({
+        title: '请先重新生成志愿',
+        content: '当前志愿方案与档案分数/位次不一致，AI 解读将基于错误数据。请先点击「智能生成」。',
+        showCancel: false
+      });
       return;
     }
     this.setData({ aiLoading: true });
