@@ -13,9 +13,12 @@ from typing import Any, Callable
 from announcement_sources_config import (
     ANNOUNCEMENT_TYPES,
     ANNOUNCEMENT_YEAR_DEFAULT,
+    EXCLUDE_KEYWORDS,
     PROVINCIAL_ANNOUNCEMENT_SOURCES,
     RECRUIT_KEYWORDS,
     SCHOOL_RECRUIT_PATHS,
+    STRONG_RECRUIT_TITLE_KEYWORDS,
+    STRONG_RECRUIT_URL_HINTS,
     YEAR_KEYWORDS,
 )
 from db import get_connection, row_to_dict, rows_to_dicts
@@ -153,22 +156,48 @@ def classify_announcement_type(title: str, url: str) -> str:
     return '其他招生信息'
 
 
+def is_excluded_announcement(title: str, url: str) -> bool:
+    text = f'{title} {url}'
+    return any(keyword in text for keyword in EXCLUDE_KEYWORDS)
+
+
+def has_strong_recruit_signal(title: str, url: str) -> bool:
+    if any(keyword in title for keyword in STRONG_RECRUIT_TITLE_KEYWORDS):
+        return True
+    url_lower = (url or '').lower()
+    return any(hint in url_lower for hint in STRONG_RECRUIT_URL_HINTS)
+
+
 def is_relevant_announcement(title: str, url: str, year: int = ANNOUNCEMENT_YEAR_DEFAULT) -> tuple[bool, list[str]]:
-    text = f'{title} {url}'.lower()
+    if is_excluded_announcement(title, url):
+        return False, []
+    if not has_strong_recruit_signal(title, url):
+        return False, []
+
     matched: list[str] = []
-    if not any(keyword in title or keyword in url for keyword in RECRUIT_KEYWORDS):
-        return False, matched
     for keyword in RECRUIT_KEYWORDS:
         if keyword in title or keyword in url:
             matched.append(keyword)
+    if not matched:
+        return False, matched
+
     year_text = str(year)
     has_year = year_text in title or year_text in url or any(key in title or key in url for key in YEAR_KEYWORDS)
-    # 无年份时保留「招生章程/简章/计划」类，可能是当年最新
-    if not has_year and not any(key in title for key in ('章程', '简章', '计划', '公告')):
+    if not has_year and not any(key in title for key in ('章程', '简章', '计划', '招生公告', '招生简章', '招生计划')):
         return False, matched
     if has_year:
         matched.append(year_text)
     return True, matched
+
+
+def should_auto_reject_announcement(title: str, url: str, announcement_type: str = '') -> bool:
+    if is_excluded_announcement(title, url):
+        return True
+    if not has_strong_recruit_signal(title, url):
+        return True
+    if announcement_type == '其他招生信息':
+        return True
+    return False
 
 
 def mentions_henan(title: str, url: str, context: str = '') -> bool:
@@ -350,6 +379,7 @@ def crawl_page_for_announcements(
             'published_at': item.get('published_at'),
             'matched_keywords': keywords,
             'mentions_henan': mentions_henan(item['title'], item['url'], item.get('context', '')),
+            'review_status': 'pending',
         }
         if upsert_announcement(payload):
             created += 1
@@ -680,6 +710,68 @@ def review_announcement(announcement_id: int, review_status: str) -> None:
             [review_status, announcement_id],
         )
         connection.commit()
+
+
+def delete_announcement(announcement_id: int) -> bool:
+    ensure_announcement_tables()
+    with get_connection() as connection:
+        cursor = connection.execute(
+            'DELETE FROM enrollment_announcements WHERE announcement_id = ?',
+            [int(announcement_id)],
+        )
+        connection.commit()
+        return int(cursor.rowcount or 0) > 0
+
+
+def is_protected_announcement(row: dict[str, Any]) -> bool:
+    return (row.get('announcement_type') or '') == '招生官网' or (row.get('crawl_status') or '') == 'portal_link'
+
+
+def auto_audit_announcements(*, province: str = '', limit: int = 5000) -> dict[str, int]:
+    """自动审核：保留真实招生公告，驳回或删除无关内容。"""
+    ensure_announcement_tables()
+    rows = search_announcements(province=province, limit=limit)
+    approved = 0
+    rejected = 0
+    skipped = 0
+    for row in rows:
+        if is_protected_announcement(row):
+            skipped += 1
+            continue
+        title = str(row.get('title') or '')
+        url = str(row.get('url') or '')
+        announcement_type = str(row.get('announcement_type') or '')
+        if should_auto_reject_announcement(title, url, announcement_type):
+            review_announcement(int(row['announcement_id']), 'rejected')
+            rejected += 1
+        elif is_relevant_announcement(title, url, int(row.get('year') or ANNOUNCEMENT_YEAR_DEFAULT))[0]:
+            review_announcement(int(row['announcement_id']), 'approved')
+            approved += 1
+        else:
+            review_announcement(int(row['announcement_id']), 'rejected')
+            rejected += 1
+    return {'approved': approved, 'rejected': rejected, 'skipped': skipped, 'scanned': len(rows)}
+
+
+def purge_irrelevant_announcements(*, province: str = '', limit: int = 5000) -> dict[str, int]:
+    """直接删除非招生公告（保留招生官网链接）。"""
+    ensure_announcement_tables()
+    rows = search_announcements(province=province, limit=limit)
+    deleted = 0
+    skipped = 0
+    for row in rows:
+        if is_protected_announcement(row):
+            skipped += 1
+            continue
+        title = str(row.get('title') or '')
+        url = str(row.get('url') or '')
+        announcement_type = str(row.get('announcement_type') or '')
+        if should_auto_reject_announcement(title, url, announcement_type) or not is_relevant_announcement(
+            title, url, int(row.get('year') or ANNOUNCEMENT_YEAR_DEFAULT)
+        )[0]:
+            if delete_announcement(int(row['announcement_id'])):
+                deleted += 1
+    return {'deleted': deleted, 'skipped': skipped, 'scanned': len(rows)}
 
 
 def build_school_recruit_portal_url(website: str) -> str:

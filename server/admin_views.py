@@ -626,6 +626,9 @@ def admin_announcements(message: str = '', review_status: str = '', keyword: str
                 <input type="hidden" name="review_status" value="rejected" />
                 <button type="submit" class="btn-sm btn-muted">驳回</button>
               </form>
+              <form method="post" action="/admin/announcements/{row.get('announcement_id')}/delete" style="display:inline" onsubmit="return confirm('确定删除该条公告？')">
+                <button type="submit" class="btn-sm btn-muted">删除</button>
+              </form>
             </td>
           </tr>
         '''
@@ -679,16 +682,23 @@ def admin_announcements(message: str = '', review_status: str = '', keyword: str
 
       <div class="card">
         <h2>自动采集招生公告</h2>
-        <p class="muted">爬取河南省考试院、阳光高考及高校官网招生页，发现 PDF/章程/计划链接。新记录默认<strong>待审核</strong>。</p>
+        <p class="muted">爬取河南省考试院、阳光高考及高校官网招生页，发现 PDF/章程/计划链接。新记录默认<strong>待审核</strong>；系统会按关键词过滤招标、新闻等非招生内容。</p>
         <form method="post" action="/admin/announcements/crawl" class="toolbar">
           <input name="province" value="河南" />
           <input name="year" type="number" value="2026" />
           <input name="school_limit" type="number" value="200" />
           <button type="submit">启动后台采集</button>
         </form>
-        <form method="post" action="/admin/announcements/approve-pending" class="toolbar" style="margin-top:12px">
-          <button type="submit">批量通过待审核公告</button>
-        </form>
+        <div class="toolbar" style="margin-top:12px;flex-wrap:wrap;gap:8px">
+          <form method="post" action="/admin/announcements/auto-audit" style="display:inline">
+            <input type="hidden" name="province" value="河南" />
+            <button type="submit">自动审核（智能通过/驳回）</button>
+          </form>
+          <form method="post" action="/admin/announcements/purge-irrelevant" style="display:inline" onsubmit="return confirm('确定删除所有非招生类公告？招生官网链接不会删除。')">
+            <input type="hidden" name="province" value="河南" />
+            <button type="submit" class="btn-muted">一键清理非招生公告</button>
+          </form>
+        </div>
       </div>
 
       <div class="card">

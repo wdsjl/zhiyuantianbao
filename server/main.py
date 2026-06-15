@@ -455,6 +455,48 @@ def admin_announcements_approve_pending(province: str = Form('河南')):
         return RedirectResponse(f'/admin/announcements?message={quote(f"操作失败：{exc}")}', status_code=303)
 
 
+@app.post('/admin/announcements/auto-audit')
+def admin_announcements_auto_audit(province: str = Form('河南')):
+    from announcement_crawler_service import auto_audit_announcements
+
+    try:
+        result = auto_audit_announcements(province=province)
+        message = (
+            f'自动审核完成：通过 {result["approved"]} 条，驳回 {result["rejected"]} 条，'
+            f'跳过保护项 {result["skipped"]} 条（共扫描 {result["scanned"]} 条）'
+        )
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"自动审核失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/purge-irrelevant')
+def admin_announcements_purge_irrelevant(province: str = Form('河南')):
+    from announcement_crawler_service import purge_irrelevant_announcements
+
+    try:
+        result = purge_irrelevant_announcements(province=province)
+        message = (
+            f'已删除 {result["deleted"]} 条非招生公告，'
+            f'保留招生官网链接 {result["skipped"]} 条（共扫描 {result["scanned"]} 条）'
+        )
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"清理失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/{announcement_id}/delete')
+def admin_announcements_delete(announcement_id: int):
+    from announcement_crawler_service import delete_announcement
+
+    try:
+        deleted = delete_announcement(announcement_id)
+        message = '公告已删除' if deleted else '公告不存在或已删除'
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"删除失败：{exc}")}', status_code=303)
+
+
 @app.post('/admin/announcements/create')
 def admin_announcements_create(
     title: str = Form(...),
