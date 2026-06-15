@@ -102,12 +102,20 @@ def fulfill_wechat_order(
             return order
 
         method = pay_method or order.get('pay_method') or 'wechat_pay'
-        source = 'virtual_pay' if method == 'virtual_pay' else 'wechat_pay'
+        if method == 'virtual_pay':
+            source = 'virtual_pay'
+            channel_label = '虚拟支付'
+        elif method == 'douyin_coupon':
+            source = 'douyin_coupon'
+            channel_label = '抖音团购券'
+        else:
+            source = 'wechat_pay'
+            channel_label = '微信支付'
         membership_id = grant_membership(
             int(order['user_id']),
             order['plan_code'],
             None,
-            f'{"虚拟支付" if method == "virtual_pay" else "微信支付"}订单 {order_no}',
+            f'{channel_label}订单 {order_no}',
             source=source,
         )
         from bean_service import grant_plan_beans
@@ -115,7 +123,7 @@ def fulfill_wechat_order(
             int(order['user_id']),
             order['plan_code'],
             order_no=order_no,
-            remark=f'{"虚拟支付" if method == "virtual_pay" else "微信支付"}充值到账',
+            remark=f'{channel_label}充值到账',
         )
         connection.execute(
             '''

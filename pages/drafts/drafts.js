@@ -1,5 +1,6 @@
 const { request } = require('../../utils/request');
 const { loadActiveProfileSync } = require('../../utils/profileHelper');
+const { buildProfileSnapshot, savePlanArtifact } = require('../../utils/profileSnapshot');
 const { openPdfFromUrl, buildStudentPdfFileName } = require('../../utils/pdfExport');
 
 function normalizeServerDraft(draft) {
@@ -32,6 +33,10 @@ function normalizeServerDraft(draft) {
     id: draft.draft_id,
     name: draft.draft_name,
     createdAt: draft.created_at,
+    province: draft.province,
+    batch: draft.batch,
+    score: draft.score,
+    rank: draft.rank,
     plan,
     aiExplain: draft.ai_explain || draft.aiExplain || '',
     risk: {
@@ -77,10 +82,35 @@ Page({
   },
   editDraft(event) {
     const draft = this.data.drafts[event.currentTarget.dataset.index];
-    wx.setStorageSync('currentPlan', draft.plan);
+    const profile = loadActiveProfileSync();
+    const draftSnapshot = buildProfileSnapshot({
+      province: draft.province || (draft.profile && draft.profile.province),
+      targetBatch: draft.batch || (draft.profile && draft.profile.targetBatch),
+      subjectCombination: draft.profile && draft.profile.subjectCombination,
+      score: draft.score != null ? draft.score : (draft.profile && draft.profile.score),
+      rank: draft.rank != null ? draft.rank : (draft.profile && draft.profile.rank)
+    });
+    const currentSnapshot = buildProfileSnapshot(profile);
+    if (draftSnapshot && currentSnapshot && draftSnapshot !== currentSnapshot) {
+      wx.showModal({
+        title: '草稿与当前档案不一致',
+        content: '该草稿的分数/位次与当前档案不同，加载后请重新「智能生成」志愿方案。',
+        confirmText: '仍要加载',
+        success: (res) => {
+          if (!res.confirm) return;
+          this.applyDraft(draft);
+        }
+      });
+      return;
+    }
+    this.applyDraft(draft);
+  },
+  applyDraft(draft) {
+    const profile = loadActiveProfileSync();
+    savePlanArtifact(draft.plan || [], profile);
     wx.setStorageSync('currentDraftId', draft.id);
     wx.setStorageSync('currentDraftName', draft.name);
-    wx.setStorageSync('currentAiExplain', draft.aiExplain || '');
+    wx.removeStorageSync('currentAiExplain');
     wx.switchTab({ url: '/pages/volunteer/volunteer' });
   },
   exportDraft(event) {

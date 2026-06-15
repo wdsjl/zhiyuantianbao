@@ -113,14 +113,13 @@ function requirePermission(permissionCode, title, options = {}) {
       return request({ url, method: options.consume ? 'POST' : 'GET' })
         .then((res) => {
           if (res.allowed) {
-            return fetchEntitlements().then(() => {
-              if (res.remaining >= 0 && options.consume) {
-                wx.showToast({ title: `剩余${res.remaining}次`, icon: 'none' });
-              }
-              return true;
-            });
+            if (res.remaining >= 0 && options.consume) {
+              wx.showToast({ title: `剩余${res.remaining}次`, icon: 'none' });
+            }
+            fetchEntitlements().catch(() => null);
+            return true;
           }
-          return fetchEntitlements().then((latest) => {
+          return fetchEntitlements().catch(() => null).then((latest) => {
             const planName = latest && latest.plan ? latest.plan.plan_name : '免费版';
             const hint = getMembershipStatusMessage(latest)
               || res.message
@@ -155,6 +154,11 @@ function goMembershipPage() {
   wx.switchTab({ url: '/pages/membership/membership' });
 }
 
+function goDouyinRedeemPage() {
+  wx.setStorageSync('membershipScrollTarget', 'douyin');
+  goMembershipPage();
+}
+
 function showUpgradeModal(permissionCode, title, message) {
   const name = title || PERMISSION_LABELS[permissionCode] || '该功能';
   wx.showModal({
@@ -176,5 +180,6 @@ module.exports = {
   getCurrentUserId,
   syncUserIdentity,
   refreshUserIdentityFromServer,
-  goMembershipPage
+  goMembershipPage,
+  goDouyinRedeemPage
 };

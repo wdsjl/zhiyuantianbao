@@ -20,3 +20,11 @@
 .picker-placeholder {
   color: #98a2b3;
 }
+
+.batch-data-summary {
+  margin-top: 12rpx;
+}
+
+.batch-warning {
+  margin-top: 12rpx;
+}

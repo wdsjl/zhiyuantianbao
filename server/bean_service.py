@@ -170,7 +170,79 @@ def grant_plan_beans(user_id: int, plan_code: str, order_no: str = '', remark: s
         return {'user_id': user_id, 'balance': new_balance, 'granted': amount}
 
 
+def adjust_beans(user_id: int, change_amount: int, remark: str = '') -> dict[str, Any]:
+    """后台调整星鼎豆：正数增加，负数扣减。"""
+    ensure_bean_tables()
+    amount = int(change_amount)
+    if amount == 0:
+        return get_bean_balance(user_id)
+
+    with get_connection() as connection:
+        account = _get_account(connection, user_id)
+        new_balance = int(account.get('balance') or 0) + amount
+        if new_balance < 0:
+            raise ValueError(f'扣减后余额不能为负，当前余额 {account.get("balance") or 0}')
+        connection.execute(
+            '''
+            UPDATE user_bean_accounts
+            SET balance = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+            ''',
+            [new_balance, user_id],
+        )
+        _append_transaction(
+            connection,
+            user_id,
+            amount,
+            new_balance,
+            'admin_adjust',
+            remark or ('后台增加星鼎豆' if amount > 0 else '后台扣减星鼎豆'),
+        )
+        connection.commit()
+        return {'user_id': user_id, 'balance': new_balance, 'changed': amount}
+
+
+def set_bean_balance(user_id: int, balance: int, remark: str = '') -> dict[str, Any]:
+    """后台直接设置星鼎豆余额。"""
+    ensure_bean_tables()
+    target = max(0, int(balance))
+    with get_connection() as connection:
+        account = _get_account(connection, user_id)
+        current = int(account.get('balance') or 0)
+        delta = target - current
+        connection.execute(
+            '''
+            UPDATE user_bean_accounts
+            SET balance = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+            ''',
+            [target, user_id],
+        )
+        if delta != 0:
+            _append_transaction(
+                connection,
+                user_id,
+                delta,
+                target,
+                'admin_set',
+                remark or f'后台设置余额为 {target} 星鼎豆',
+            )
+        connection.commit()
+        return {'user_id': user_id, 'balance': target, 'changed': delta}
+
+
 def consume_report_beans(user_id: int, report_title: str = 'AI 报告') -> dict[str, Any]:
+    from user_flags_service import is_super_tester
+
+    if is_super_tester(user_id):
+        balance_info = get_bean_balance(user_id)
+        return {
+            **balance_info,
+            'consumed': 0,
+            'report_title': report_title,
+            'super_tester': True,
+        }
+
     ensure_bean_tables()
     cost = REPORT_BEAN_COST
     with get_connection() as connection:

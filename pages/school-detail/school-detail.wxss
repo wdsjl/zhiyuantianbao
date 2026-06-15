@@ -43,3 +43,31 @@
   width: 220rpx;
   margin-left: auto;
 }
+
+.announcement-item {
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #eef2f6;
+}
+
+.announcement-item:last-child {
+  border-bottom: none;
+}
+
+.announcement-type {
+  display: inline-flex;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  background: #e8f1ff;
+  color: #1677ff;
+  font-size: 22rpx;
+  font-weight: 600;
+  margin-bottom: 10rpx;
+}
+
+.announcement-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #101828;
+  line-height: 1.6;
+  margin-bottom: 8rpx;
+}

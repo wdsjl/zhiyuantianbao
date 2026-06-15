@@ -1,12 +1,14 @@
 const { request } = require('../../utils/request');
 const { loadActiveProfileSync } = require('../../utils/profileHelper');
 const { requirePermission } = require('../../utils/membership');
+const { openAnnouncement } = require('../../utils/announcement');
 
 Page({
   data: {
     schoolId: 0,
     school: null,
     plans: [],
+    announcements: [],
     loading: false
   },
   onLoad(options) {
@@ -20,6 +22,7 @@ Page({
   },
   fetchSchoolDetail() {
     const profile = loadActiveProfileSync();
+    const province = profile.province || '河南';
     this.setData({ loading: true });
     Promise.all([
       request({ url: `/api/schools/${this.data.schoolId}` }),
@@ -27,12 +30,22 @@ Page({
         url: '/api/admissions',
         data: {
           school_id: this.data.schoolId,
-          province: profile.province || '',
+          province,
           limit: 200
+        }
+      }),
+      request({
+        url: '/api/announcements',
+        data: {
+          school_id: this.data.schoolId,
+          province,
+          year: 2026,
+          review_status: 'approved',
+          limit: 20
         }
       })
     ])
-      .then(([schoolRes, admissionRes]) => {
+      .then(([schoolRes, admissionRes, announcementRes]) => {
         const school = schoolRes.school || null;
         const plans = (schoolRes.plans || []).map((plan, index) => ({
           ...plan,
@@ -51,7 +64,11 @@ Page({
             min_rank: admission ? admission.min_rank : null
           };
         });
-        this.setData({ school, plans: mergedPlans });
+        this.setData({
+          school,
+          plans: mergedPlans,
+          announcements: announcementRes.list || []
+        });
       })
       .catch(() => {
         wx.showToast({ title: '院校详情加载失败', icon: 'none' });
@@ -59,6 +76,9 @@ Page({
       .finally(() => {
         this.setData({ loading: false });
       });
+  },
+  openSchoolAnnouncement(event) {
+    openAnnouncement(event.currentTarget.dataset.item);
   },
   addMajorToPlan(event) {
     const plan = event.currentTarget.dataset.plan;

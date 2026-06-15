@@ -86,6 +86,13 @@ CRAWL_PRESETS: dict[str, CrawlPreset] = {
         'recent_years': 1,
         'description': '全部院校 × 最近一年数据',
     },
+    'henan_full_3y': {
+        'key': 'henan_full_3y',
+        'label': '河南近三年全量',
+        'school_limit': None,
+        'recent_years': 3,
+        'description': '河南全部院校 × 近三年录取分数、位次、人数、招生计划与选科要求',
+    },
 }
 
 

@@ -1,0 +1,44 @@
+.system-generated-label {
+  margin-bottom: 16rpx;
+}
+
+.system-generated-label.prominent {
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  background: #f0f9ff;
+  border: 1rpx solid #bae6fd;
+}
+
+.system-generated-label.compact {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 8rpx;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.system-generated-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  background: #0ea5e9;
+  color: #ffffff;
+  font-size: 22rpx;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.system-generated-label.compact .system-generated-badge {
+  font-size: 20rpx;
+  padding: 2rpx 10rpx;
+}
+
+.system-generated-tip {
+  display: block;
+  margin-top: 10rpx;
+  color: #0369a1;
+  font-size: 22rpx;
+  line-height: 1.5;
+}

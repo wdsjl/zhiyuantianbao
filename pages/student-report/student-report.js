@@ -10,6 +10,7 @@ const { formatReportContent } = require('../../utils/reportFormat');
 const { confirmReportBeanDeduction, consumeReportBeans } = require('../../utils/reportBean');
 const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
+const { loadReportIfCurrent, saveReportArtifact, clearDerivedArtifacts } = require('../../utils/profileSnapshot');
 
 const PREF_STORAGE_KEY = 'studentPreferences';
 
@@ -55,12 +56,16 @@ function buildVolunteerSummary() {
   const plan = wx.getStorageSync('currentPlan') || [];
   const risk = wx.getStorageSync('currentRiskResult') || null;
   if (!plan.length) return '';
-  const lines = plan.slice(0, 8).map((item, index) => (
+  const limit = Math.min(plan.length, 48);
+  const lines = plan.slice(0, limit).map((item, index) => (
     `${index + 1}. ${item.gradientType || item.gradient_type || ''} ${item.schoolName || item.school_name || ''} - ${item.majorName || item.major_name || ''}`
   ));
   const riskText = risk
-    ? `风险等级：${risk.level || ''}；冲${risk.chong || 0} 稳${risk.wen || 0} 保${risk.bao || 0} 垫${risk.dian || 0}`
-    : '';
+    ? `风险等级：${risk.level || ''}；冲${risk.chong || 0} 稳${risk.wen || 0} 保${risk.bao || 0} 垫${risk.dian || 0}；共 ${plan.length} 个志愿单位`
+    : `共 ${plan.length} 个志愿单位`;
+  if (plan.length > limit) {
+    return `${riskText}\n（摘要展示前 ${limit} 条）\n${lines.join('\n')}`.trim();
+  }
   return `${riskText}\n${lines.join('\n')}`.trim();
 }
 
@@ -72,13 +77,16 @@ Page({
     report: '',
     loading: false,
     pdfReady: false,
-    pdfFileName: ''
+    pdfFileName: '',
+    reportStale: false
   },
   onShow() {
     fetchEntitlements().catch(() => {});
     refreshActiveProfile().then((profile) => {
-      this.setData({ profile: profile || loadActiveProfileSync() });
-      this.loadServerReport();
+      const resolvedProfile = profile || loadActiveProfileSync();
+      this.setData({ profile: resolvedProfile });
+      this.restoreReportState(resolvedProfile);
+      this.loadServerReport(resolvedProfile);
     });
     let personality = wx.getStorageSync('personalityResult') || {};
     if (personality.code) personality = migrateLegacyResult(personality);
@@ -91,22 +99,37 @@ Page({
       wx.setStorageSync(PREF_STORAGE_KEY, mergedPrefs);
     }
     const profile = this.data.profile || loadActiveProfileSync();
-    const savedReport = formatReportContent(wx.getStorageSync('studentAiReport') || '', profile);
-    if (savedReport) wx.setStorageSync('studentAiReport', savedReport);
-    this.setData({ personality, preferences: mergedPrefs, report: savedReport, pdfReady: false, pdfFileName: '' });
+    this.setData({ personality, preferences: mergedPrefs, pdfReady: false, pdfFileName: '' });
     this._pdfFilePath = '';
     this._pdfFileName = '';
   },
-  loadServerReport() {
-    const profile = this.data.profile || loadActiveProfileSync();
-    const studentId = resolveStudentId(profile);
+  restoreReportState(profile) {
+    const { report, stale } = loadReportIfCurrent(profile);
+    if (stale) {
+      clearDerivedArtifacts();
+      this.setData({ report: '', reportStale: true });
+      return;
+    }
+    const formatted = report ? formatReportContent(report, profile) : '';
+    if (formatted) saveReportArtifact(formatted, profile);
+    this.setData({ report: formatted, reportStale: false });
+  },
+  loadServerReport(profile) {
+    const resolvedProfile = profile || this.data.profile || loadActiveProfileSync();
+    const studentId = resolveStudentId(resolvedProfile);
     if (!studentId) return;
     request({ url: `/api/ai/student-report?student_id=${studentId}` })
       .then((res) => {
+        if (res.stale) {
+          wx.removeStorageSync('studentAiReport');
+          wx.removeStorageSync('studentAiReportSnapshot');
+          this.setData({ report: '', reportStale: true });
+          return;
+        }
         if (res.report && res.report.report_content) {
-          const report = formatReportContent(res.report.report_content, profile);
-          wx.setStorageSync('studentAiReport', report);
-          this.setData({ report });
+          const report = formatReportContent(res.report.report_content, resolvedProfile);
+          saveReportArtifact(report, resolvedProfile);
+          this.setData({ report, reportStale: false });
         }
       })
       .catch(() => {});
@@ -181,8 +204,8 @@ Page({
     })
       .then((res) => {
         const report = formatReportContent(res.report || '', profile);
-        wx.setStorageSync('studentAiReport', report);
-        this.setData({ report, pdfReady: false, pdfFileName: '' });
+        saveReportArtifact(report, profile);
+        this.setData({ report, reportStale: false, pdfReady: false, pdfFileName: '' });
         this._pdfFilePath = '';
         this._pdfFileName = '';
         wx.showToast({ title: '报告已生成', icon: 'success' });

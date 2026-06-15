@@ -6,13 +6,14 @@
     "pages/personality/personality",
     "pages/volunteer/volunteer",
     "pages/mine/mine",
-    "pages/profile/profile",
+    "pages/eligible-pool/eligible-pool",
     "pages/drafts/drafts",
     "pages/membership/membership",
     "pages/compare/compare",
     "pages/student-report/student-report",
     "pages/promotion/promotion",
-    "pages/promotion/withdraw"
+    "pages/promotion/withdraw",
+    "pages/webview/webview"
   ],
   "window": {
     "navigationBarTitleText": "智愿填报",
@@ -51,6 +52,7 @@
   "style": "v2",
   "sitemapLocation": "sitemap.json",
   "usingComponents": {
-    "ai-generated-label": "/components/ai-generated-label/ai-generated-label"
+    "ai-generated-label": "/components/ai-generated-label/ai-generated-label",
+    "system-generated-label": "/components/system-generated-label/system-generated-label"
   }
 }

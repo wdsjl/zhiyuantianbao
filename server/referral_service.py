@@ -538,5 +538,23 @@ def list_commissions(keyword: str = '', status: str = '') -> list[dict[str, Any]
         return rows_to_dicts(connection.execute(sql, params).fetchall())
 
 
-def poster_image_base64(invite_code: str) -> str:
-    return base64.b64encode(generate_poster_qrcode(invite_code)).decode('ascii')
+def poster_image_base64(invite_code: str, display_name: str = '') -> str:
+    from poster_service import compose_referral_poster
+
+    qrcode_bytes = generate_poster_qrcode(invite_code)
+    poster_bytes = compose_referral_poster(
+        qrcode_bytes,
+        invite_code=invite_code,
+        display_name=display_name,
+    )
+    return base64.b64encode(poster_bytes).decode('ascii')
+
+
+def generate_poster_image(invite_code: str, display_name: str = '') -> bytes:
+    from poster_service import compose_referral_poster
+
+    return compose_referral_poster(
+        generate_poster_qrcode(invite_code),
+        invite_code=invite_code,
+        display_name=display_name,
+    )
