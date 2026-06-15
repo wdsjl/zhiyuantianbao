@@ -40,6 +40,8 @@ function clearDerivedArtifacts() {
   wx.removeStorageSync(STORAGE_KEYS.risk);
   wx.removeStorageSync(STORAGE_KEYS.draftId);
   wx.removeStorageSync(STORAGE_KEYS.draftName);
+  wx.removeStorageSync('eligiblePoolSnapshot');
+  wx.removeStorageSync('eligiblePoolSummary');
 }
 
 function saveReportArtifact(report, profile) {

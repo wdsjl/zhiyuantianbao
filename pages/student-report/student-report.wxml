@@ -1,8 +1,8 @@
 <view class="container">
   <view class="card hero-card">
     <ai-generated-label />
-    <view class="section-title">AI 个性化填报报告（可选）</view>
-    <view class="sub-text">大模型报告为增值功能，非必选。完成测评后可直接去「填报志愿」页智能生成方案；修改分数/位次后需重新生成报告。</view>
+    <view class="section-title">最终志愿报告（可选）</view>
+    <view class="sub-text">建议流程：可报院校检索 → 霍兰德测评 → 填写需求 → 智能生成志愿 → 再生成此报告。报告会结合你的志愿方案给出策略说明。</view>
   </view>
 
   <view wx:if="{{reportStale}}" class="card">

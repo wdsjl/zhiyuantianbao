@@ -115,20 +115,16 @@ Page({
       wx.showToast({ title: '保存成功', icon: 'success' });
       setTimeout(() => {
         const nextHint = profileChanged
-          ? '分数或位次已更新，之前的志愿方案和 AI 报告已清空。请重新「智能生成」志愿；AI 报告为可选项，也可直接填报志愿。'
-          : '下一步建议完成霍兰德职业兴趣测评，系统才能生成更准确的个性化报告。';
+          ? '分数或位次已更新，之前的检索结果和志愿方案已清空。请先查看「可报院校」，再智能生成最终志愿。'
+          : '下一步可检索所有可报院校专业，再完成测评与智能填报。';
         wx.showModal({
           title: profileChanged ? '档案已更新' : '档案已保存',
           content: nextHint,
-          confirmText: profileChanged ? '去填报志愿' : '去测评',
+          confirmText: profileChanged ? '查看可报院校' : '去检索',
           cancelText: '回首页',
           success: (modalRes) => {
             if (modalRes.confirm) {
-              if (profileChanged) {
-                wx.switchTab({ url: '/pages/volunteer/volunteer' });
-                return;
-              }
-              wx.navigateTo({ url: '/pages/personality/personality' });
+              wx.navigateTo({ url: '/pages/eligible-pool/eligible-pool' });
               return;
             }
             wx.switchTab({ url: '/pages/home/home' });

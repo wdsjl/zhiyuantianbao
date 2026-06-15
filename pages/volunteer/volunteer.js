@@ -5,6 +5,7 @@ const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
 const { formatAiContent } = require('../../utils/reportFormat');
+const { buildRecommendPayload } = require('../../utils/recommendPayload');
 const {
   loadPlanIfCurrent,
   savePlanArtifact,
@@ -118,19 +119,18 @@ Page({
     }
     if (!personality) {
       const profile = this.data.profile || loadActiveProfileSync();
-      const flow = getFlowStatus(profile);
       wx.showModal({
-        title: '请先完成前置流程',
-        content: `当前进度 ${flow.completedCount}/${flow.totalCount}。建议先完成：${flow.currentStep.title}，再生成志愿方案。`,
-        confirmText: '继续流程',
+        title: '建议先完成测评',
+        content: '完成霍兰德测评并填写个人需求后，智能填报会更贴合你的兴趣方向。也可先直接生成基础方案。',
+        confirmText: '去做测评',
         cancelText: '知道了',
         success: (res) => {
-          if (res.confirm) goNextStep(profile);
+          if (res.confirm) wx.navigateTo({ url: '/pages/personality/personality' });
         }
       });
-      return;
+    } else {
+      this.setData({ personality });
     }
-    this.setData({ personality });
     fetchEntitlements();
   },
   restorePlanState(profile) {
@@ -231,27 +231,20 @@ Page({
   doGeneratePlan() {
     const profile = this.data.profile;
     this.setData({ loading: true });
+    const payload = buildRecommendPayload(profile, {
+      personality: this.data.personality,
+      planStyle: this.data.planStyle,
+      hardFilterMajorTypes: false
+    });
     request({
       url: '/api/recommend',
       method: 'POST',
-      data: {
-        province: profile.province,
-        batch: profile.targetBatch,
-        score: Number(profile.score),
-        rank: Number(profile.rank),
-        subject_combination: profile.subjectCombination,
-        major_types: (this.data.personality && this.data.personality.majorTypes) || [],
-        accept_adjustment: true,
-        plan_style: this.data.planStyle || 'balanced',
-        volunteer_count: 9
-      }
+      data: payload
     })
       .then((res) => {
-        const personality = this.data.personality || {};
-        const preferredTypes = personality.majorTypes || [];
         const plan = normalizePlan(res.items || []).map((item) => ({
           ...item,
-          personalityMatched: preferredTypes.includes(item.majorType),
+          personalityMatched: item.personality_matched || item.personalityMatched || false,
           admissionProbability: item.admission_probability || ''
         }));
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });

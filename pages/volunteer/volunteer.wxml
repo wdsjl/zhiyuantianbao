@@ -1,7 +1,7 @@
 <view class="container">
   <view class="card">
     <view class="section-title">智能梯度志愿</view>
-    <view class="sub-text">按档案分数+位次双校验生成冲稳保方案，此功能系系统自动生成（大数据智能匹配），不依赖 AI 报告。</view>
+    <view class="sub-text">按档案分数+位次从全库检索候选池，结合霍兰德测评与个人需求智能生成最终冲稳保方案。</view>
     <view wx:if="{{profile.province}}" class="sub-text">
       当前档案：{{profile.province}} · {{profile.targetBatch || '未填批次'}} · {{profile.score || '--'}}分 / 位次{{profile.rank || '--'}}
       <text bindtap="goProfile" style="color:#1677ff;margin-left:12rpx">修改</text>
