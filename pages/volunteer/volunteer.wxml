@@ -1,5 +1,6 @@
 <view class="container">
   <view class="card">
+    <system-generated-label />
     <view class="section-title">智能梯度志愿</view>
     <view class="sub-text">按档案分数+位次双校验，在位次系数区间内划分冲稳保（高分段冲 0.85X~0.95X、保至约 1.18X）。生成前请确认档案准确。</view>
     <view wx:if="{{profile.province}}" class="sub-text profile-batch-tip">
@@ -45,6 +46,7 @@
   </view>
 
   <view wx:if="{{personality.code}}" class="card personality-match-card">
+    <system-generated-label compact />
     <view class="section-title">性格专业匹配</view>
     <view class="sub-text">测评结果：{{personality.code}} · {{personality.primaryType.name}}</view>
     <view class="tag-row personality-tags">
@@ -54,6 +56,7 @@
   </view>
 
   <view wx:if="{{riskResult}}" class="card">
+    <system-generated-label compact />
     <view class="risk-title">综合风险：<text class="{{riskClass}}">{{riskResult.level}}</text></view>
     <view class="gradient-stat">
       <text>冲 {{riskResult.chong}}</text>

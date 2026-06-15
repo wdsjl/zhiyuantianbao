@@ -80,6 +80,18 @@ def ensure_report_greeting(body: str, student: dict) -> str:
 
 AI_GENERATED_NOTICE = 'AI生成 · 人工智能生成'
 AI_GENERATED_MARKERS = ('人工智能生成', 'AI生成')
+SYSTEM_GENERATED_NOTICE = '此报告系系统自动生成（大数据智能匹配）'
+SYSTEM_GENERATED_MARKERS = ('系统自动生成', '大数据智能匹配')
+
+
+def append_system_generated_notice(text: str) -> str:
+    content = str(text or '').strip()
+    if not content:
+        return content
+    tail = content[-120:]
+    if any(marker in tail for marker in SYSTEM_GENERATED_MARKERS):
+        return content
+    return f'{content}\n\n—— {SYSTEM_GENERATED_NOTICE}'
 
 
 def append_ai_generated_notice(text: str) -> str:
@@ -363,7 +375,7 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
     lines.extend([
         '智愿填报志愿方案',
         f'导出时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
-        '提示：本方案仅供参考，最终以各省教育考试院和高校官方公布及正式填报系统为准。',
+        f'提示：{SYSTEM_GENERATED_NOTICE}。本方案仅供参考，最终以各省教育考试院和高校官方公布及正式填报系统为准。',
         '',
         build_report_greeting(student),
         '',

@@ -63,8 +63,9 @@
 
   <block wx:elif="{{activeTab === 'query'}}">
     <view class="card">
+      <system-generated-label />
       <view class="section-title">一分一段查位次</view>
-      <view class="sub-text">根据各省考试院一分一段表，由分数查位次或由位次查分数。</view>
+      <view class="sub-text">根据各省考试院一分一段表，由分数查位次或由位次查分数。查询结果系系统自动生成（大数据智能匹配）。</view>
       <view class="tag-row type-row">
         <text class="tag {{queryMode === 'score' ? 'active' : ''}}" data-mode="score" bindtap="onQueryModeChange">分数查位次</text>
         <text class="tag {{queryMode === 'rank' ? 'active' : ''}}" data-mode="rank" bindtap="onQueryModeChange">位次查分数</text>

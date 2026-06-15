@@ -52,6 +52,7 @@
   "style": "v2",
   "sitemapLocation": "sitemap.json",
   "usingComponents": {
-    "ai-generated-label": "/components/ai-generated-label/ai-generated-label"
+    "ai-generated-label": "/components/ai-generated-label/ai-generated-label",
+    "system-generated-label": "/components/system-generated-label/system-generated-label"
   }
 }
