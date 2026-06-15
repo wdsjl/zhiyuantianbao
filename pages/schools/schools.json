@@ -1,3 +1,4 @@
 {
-  "navigationBarTitleText": "院校库"
+  "navigationBarTitleText": "院校库",
+  "onReachBottomDistance": 120
 }

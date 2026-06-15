@@ -1,0 +1,4 @@
+<view class="system-generated-label {{compact ? 'compact' : 'prominent'}}">
+  <text class="system-generated-badge">系统自动生成</text>
+  <text wx:if="{{!compact}}" class="system-generated-tip">此报告系系统自动生成（大数据智能匹配）</text>
+</view>
