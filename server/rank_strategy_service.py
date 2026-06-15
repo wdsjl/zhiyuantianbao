@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+ALGORITHM_VERSION = '2026-03-score-rank-dual-v2'
+
 PLAN_STYLES: dict[str, dict[str, int]] = {
     'balanced': {'冲': 2, '稳': 5, '保': 2},
     'aggressive': {'冲': 3, '稳': 4, '保': 2},
@@ -25,6 +27,7 @@ AI_STRATEGY_PROMPT = (
     '结合选科、意向专业、城市、学费，分三类列出院校并标注录取概率。'
     '高分段（全省前10%）冲刺可放宽到 0.85X~0.95X、保底 1.10X~1.18X；'
     '低分段/专科批次保底放宽到 1.25X~1.35X。'
+    '各省志愿数量不同，冲稳保配额会按省规则等比放大（如河南本科批 48 组），不是固定冲3稳6保3。'
 )
 
 
@@ -70,6 +73,136 @@ def get_band_coefficients(segment: str, batch: str = '') -> dict[str, tuple[floa
     }
 
 
+def resolve_school_rank(item: dict[str, Any]) -> int | None:
+    rank = item.get('weighted_rank')
+    if rank is None:
+        rank = item.get('min_rank')
+    if rank is None:
+        return None
+    try:
+        return int(rank)
+    except (TypeError, ValueError):
+        return None
+
+
+def resolve_school_score(item: dict[str, Any]) -> int | None:
+    score = item.get('weighted_score')
+    if score is None:
+        score = item.get('min_score')
+    if score is None:
+        return None
+    try:
+        return int(score)
+    except (TypeError, ValueError):
+        return None
+
+
+def is_plausible_admission_pair(rank: int | None, score: int | None) -> bool:
+    """剔除分数与位次明显矛盾的脏数据（如 480 分却标位次 2000）。"""
+    if rank is None or rank <= 0:
+        return False
+    if score is None:
+        return True
+    if score >= 650 and rank > 12000:
+        return False
+    if score >= 620 and rank > 30000:
+        return False
+    if score >= 580 and rank > 60000:
+        return False
+    if score <= 520 and rank < 25000:
+        return False
+    if score <= 450 and rank < 50000:
+        return False
+    return True
+
+
+def is_candidate_match_for_user(
+    item: dict[str, Any],
+    user_rank: int,
+    user_score: int | None = None,
+    segment: str = 'mid',
+    batch: str = '',
+) -> bool:
+    school_rank = resolve_school_rank(item)
+    school_score = resolve_school_score(item)
+    if not is_plausible_admission_pair(school_rank, school_score):
+        return False
+    if not user_rank or user_rank <= 0:
+        return school_rank is not None
+
+    coeffs = get_band_coefficients(segment, batch)
+    max_rank = int(user_rank * coeffs['保'][1] * 1.35)
+    if school_rank is not None and school_rank > max_rank:
+        return False
+
+    if user_score and user_score >= 600 and school_score is not None:
+        if school_score < user_score - 90:
+            return False
+        if user_score >= 650 and school_score < user_score - 60:
+            return False
+    if user_score and user_score >= 650 and school_rank is not None:
+        if school_rank > int(user_rank * 2.2):
+            return False
+    return True
+
+
+def rank_distance(school_rank: int | None, user_rank: int) -> float:
+    if school_rank is None or not user_rank or user_rank <= 0:
+        return float('inf')
+    return abs(float(school_rank) - float(user_rank))
+
+
+def get_pool_rank_window(user_rank: int, segment: str = 'mid', batch: str = '') -> tuple[int, int]:
+    if not user_rank or user_rank <= 0:
+        return 1, 10_000_000
+    coeffs = get_band_coefficients(segment, batch)
+    lower = max(1, int(user_rank * coeffs['冲'][0] * 0.80))
+    upper = int(user_rank * coeffs['保'][1] * 1.20)
+    if is_zhuanke_batch(batch):
+        upper = max(upper, int(user_rank * 1.50))
+    return lower, upper
+
+
+def get_backfill_rank_cap(user_rank: int, segment: str = 'mid', batch: str = '') -> int:
+    if not user_rank or user_rank <= 0:
+        return 10_000_000
+    coeffs = get_band_coefficients(segment, batch)
+    return int(user_rank * coeffs['保'][1] * 1.30)
+
+
+def filter_rank_eligible_candidates(
+    candidates: list[dict[str, Any]],
+    user_rank: int,
+    segment: str = 'mid',
+    batch: str = '',
+    *,
+    user_score: int | None = None,
+    min_required: int = 0,
+) -> list[dict[str, Any]]:
+    with_rank = [
+        item for item in candidates
+        if resolve_school_rank(item) is not None
+        and is_candidate_match_for_user(item, user_rank, user_score, segment, batch)
+    ]
+    if not user_rank or user_rank <= 0:
+        return with_rank
+
+    lower, upper = get_pool_rank_window(user_rank, segment, batch)
+    filtered = [
+        item for item in with_rank
+        if lower <= int(resolve_school_rank(item) or 0) <= upper
+    ]
+    if len(filtered) >= min_required:
+        return filtered
+
+    coeffs = get_band_coefficients(segment, batch)
+    widened_upper = int(user_rank * coeffs['保'][1] * 1.25)
+    return [
+        item for item in with_rank
+        if lower <= int(resolve_school_rank(item) or 0) <= widened_upper
+    ]
+
+
 def classify_gradient(
     user_rank: int,
     school_rank: int | None,
@@ -79,7 +212,7 @@ def classify_gradient(
     if not user_rank or user_rank <= 0:
         return '稳'
     if school_rank is None:
-        return '稳'
+        return '垫'
 
     coeffs = get_band_coefficients(segment, batch)
     rank = float(school_rank)
@@ -101,21 +234,24 @@ def classify_gradient(
 
 
 def get_plan_quotas(plan_style: str, batch: str = '', total_slots: int | None = None) -> dict[str, int]:
+    from province_rules_service import DEFAULT_VOLUNTEER_COUNT
+
     if is_zhuanke_batch(batch):
         base = PLAN_STYLES_ZHUANKE.copy()
     else:
         base = PLAN_STYLES.get(plan_style, PLAN_STYLES['balanced']).copy()
 
-    if not total_slots or total_slots <= 0:
-        return base
+    slots = int(total_slots or 0)
+    if slots <= 0:
+        slots = DEFAULT_VOLUNTEER_COUNT
 
     base_total = sum(base.values())
-    if base_total == total_slots:
+    if base_total == slots:
         return base
 
-    scale = total_slots / base_total
+    scale = slots / base_total
     scaled = {key: max(0, int(round(count * scale))) for key, count in base.items()}
-    diff = total_slots - sum(scaled.values())
+    diff = slots - sum(scaled.values())
     if diff > 0:
         scaled['稳'] = scaled.get('稳', 0) + diff
     elif diff < 0:
@@ -144,6 +280,7 @@ def build_strategy_meta(
 ) -> dict[str, Any]:
     coeffs = get_band_coefficients(segment, batch)
     quotas = get_plan_quotas(plan_style, batch, total_slots)
+    pool_lower, pool_upper = get_pool_rank_window(user_rank, segment, batch)
     return {
         'user_rank': user_rank,
         'segment': segment,
@@ -155,7 +292,9 @@ def build_strategy_meta(
             'wen': [int(user_rank * coeffs['稳'][0]), int(user_rank * coeffs['稳'][1])],
             'bao': [int(user_rank * coeffs['保'][0]), int(user_rank * coeffs['保'][1])],
         },
-        'algorithm': '极简位次冲稳保：仅按全省位次 X 与固定系数划分，近三年录取位次加权',
+        'pool_rank_window': [pool_lower, pool_upper],
+        'algorithm': '位次+分数双校验冲稳保：位次系数划分冲稳保，分数与位次矛盾数据剔除',
+        'algorithm_version': ALGORITHM_VERSION,
         'ai_prompt_hint': AI_STRATEGY_PROMPT,
     }
 
@@ -166,13 +305,30 @@ def assemble_recommendation_plan(
     plan_style: str = 'balanced',
     batch: str = '',
     segment: str = 'mid',
-    total_slots: int = 9,
+    total_slots: int | None = None,
+    max_majors_per_school: int | None = None,
+    user_score: int | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    quotas = get_plan_quotas(plan_style, batch, total_slots)
+    from province_rules_service import DEFAULT_VOLUNTEER_COUNT
+
+    slots = int(total_slots or 0)
+    if slots <= 0:
+        slots = DEFAULT_VOLUNTEER_COUNT
+
+    quotas = get_plan_quotas(plan_style, batch, slots)
+    eligible = filter_rank_eligible_candidates(
+        candidates,
+        user_rank,
+        segment,
+        batch,
+        user_score=user_score,
+        min_required=slots,
+    )
+    backfill_cap = get_backfill_rank_cap(user_rank, segment, batch)
     buckets: dict[str, list[dict[str, Any]]] = {'冲': [], '稳': [], '保': [], '垫': []}
 
-    for item in candidates:
-        school_rank = item.get('weighted_rank') or item.get('min_rank')
+    for item in eligible:
+        school_rank = resolve_school_rank(item)
         gradient = classify_gradient(user_rank, school_rank, segment, batch)
         enriched = {
             **item,
@@ -183,11 +339,25 @@ def assemble_recommendation_plan(
 
     for gradient in buckets:
         buckets[gradient].sort(
-            key=lambda row: abs((row.get('weighted_rank') or row.get('min_rank') or user_rank) - user_rank)
+            key=lambda row: rank_distance(resolve_school_rank(row), user_rank)
         )
 
     selected: list[dict[str, Any]] = []
     used_keys: set[tuple[Any, Any]] = set()
+    school_pick_counts: dict[Any, int] = {}
+
+    def can_pick_school(row: dict[str, Any]) -> bool:
+        if not max_majors_per_school or max_majors_per_school <= 0:
+            return True
+        school_id = row.get('school_id')
+        if school_id is None:
+            return True
+        return school_pick_counts.get(school_id, 0) < max_majors_per_school
+
+    def record_pick(row: dict[str, Any]) -> None:
+        school_id = row.get('school_id')
+        if school_id is not None:
+            school_pick_counts[school_id] = school_pick_counts.get(school_id, 0) + 1
 
     def pick_from_bucket(gradient: str, limit: int) -> None:
         count = 0
@@ -195,36 +365,50 @@ def assemble_recommendation_plan(
             if count >= limit:
                 break
             key = (row.get('school_id'), row.get('major_id'))
-            if key in used_keys:
+            if key in used_keys or not can_pick_school(row):
                 continue
             selected.append(row)
             used_keys.add(key)
+            record_pick(row)
             count += 1
 
     for gradient in ('冲', '稳', '保'):
         pick_from_bucket(gradient, quotas.get(gradient, 0))
 
-    if len(selected) < total_slots:
-        for gradient in ('稳', '保', '垫', '冲'):
+    if len(selected) < slots:
+        backfill_gradients = ('稳', '保', '冲') if not is_zhuanke_batch(batch) else ('稳', '保', '垫', '冲')
+        for gradient in backfill_gradients:
             for row in buckets[gradient]:
-                if len(selected) >= total_slots:
+                if len(selected) >= slots:
                     break
+                if not is_candidate_match_for_user(row, user_rank, user_score, segment, batch):
+                    continue
+                school_rank = resolve_school_rank(row)
+                if school_rank is not None and school_rank > backfill_cap:
+                    continue
                 key = (row.get('school_id'), row.get('major_id'))
-                if key in used_keys:
+                if key in used_keys or not can_pick_school(row):
                     continue
                 selected.append(row)
                 used_keys.add(key)
+                record_pick(row)
 
+    selected = [
+        row for row in selected
+        if is_candidate_match_for_user(row, user_rank, user_score, segment, batch)
+    ]
     selected.sort(
         key=lambda row: (
             {'冲': 0, '稳': 1, '保': 2, '垫': 3}.get(row.get('gradient_type', '稳'), 9),
-            abs((row.get('weighted_rank') or user_rank) - user_rank),
+            rank_distance(resolve_school_rank(row), user_rank),
         )
     )
 
-    meta = build_strategy_meta(user_rank, segment, batch, plan_style, total_slots)
+    meta = build_strategy_meta(user_rank, segment, batch, plan_style, slots)
     meta['selected_counts'] = {
         gradient: sum(1 for row in selected if row.get('gradient_type') == gradient)
         for gradient in ('冲', '稳', '保', '垫')
     }
-    return selected[:total_slots], meta
+    meta['candidate_pool_before_filter'] = len(candidates)
+    meta['candidate_pool_after_filter'] = len(eligible)
+    return selected[:slots], meta

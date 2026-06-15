@@ -17,6 +17,7 @@ from admin_data_service import (
 )
 from crawler_config import PROVINCE_IDS, REGION_ORDER, CRAWL_PRESETS
 from crawler_service import list_crawl_logs, get_crawl_log, default_recent_years, get_province_data_overview, has_running_crawl
+from henan_admission_crawler_service import get_henan_admission_summary, cli_command_full, cli_command_trial
 
 
 def render_page(title: str, body: str) -> HTMLResponse:
@@ -49,6 +50,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
         table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 14px; overflow: hidden; }}
         th, td {{ padding: 12px 14px; border-bottom: 1px solid #eef2f7; text-align: left; font-size: 14px; }}
         th {{ background: #f7f9fc; color: #475467; }}
+        td.actions {{ white-space: nowrap; min-width: 200px; }}
         tr:hover td {{ background: #fafcff; }}
         .toolbar {{ display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }}
         input, select {{ height: 40px; border: 1px solid #d0d5dd; border-radius: 10px; padding: 0 12px; min-width: 180px; }}
@@ -74,6 +76,8 @@ def render_page(title: str, body: str) -> HTMLResponse:
       <nav>
         <a href="/admin">首页</a>
         <a href="/admin/import">数据导入</a>
+        <a href="/admin/score-segments">一分一段</a>
+        <a href="/admin/announcements">招生公告</a>
         <a href="/admin/crawler">数据采集</a>
         <a href="/admin/import/logs">导入日志</a>
         <a href="/admin/schools">院校数据</a>
@@ -297,10 +301,29 @@ def admin_home():
 def admin_crawler(message: str = '', crawl_id: int | None = None):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     recent_years = default_recent_years(3)
+    henan_summary = get_henan_admission_summary()
+    henan_year_rows = ''
+    for row in henan_summary.get('year_stats') or []:
+        henan_year_rows += f'''
+          <tr>
+            <td>{row.get("year", "")}</td>
+            <td>{row.get("admission_count", 0)}</td>
+            <td>{row.get("plan_count", 0)}</td>
+            <td>{row.get("school_count", 0)}</td>
+            <td>{row.get("score_count", 0)}</td>
+            <td>{row.get("rank_count", 0)}</td>
+            <td>{row.get("admitted_count", 0)}</td>
+          </tr>
+        '''
+    if not henan_year_rows:
+        henan_year_rows = '<tr><td colspan="7" class="muted">暂无河南录取数据，请点击下方按钮开始采集</td></tr>'
+    running_any = has_running_crawl()
+    henan_running = henan_summary.get('is_running')
+    henan_disabled = 'disabled' if henan_running or running_any else ''
+    henan_totals = henan_summary.get('totals') or {}
     overview = get_province_data_overview()
     configured_count = len(overview)
     ready_count = sum(1 for item in overview if item['admission_count'] > 0)
-    running_any = has_running_crawl()
     province_options = ''.join(
         f'<option value="{escape(name)}">{escape(name)}</option>' for name in PROVINCE_IDS
     )
@@ -400,6 +423,43 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
     body = f'''
       {detail_html}
       <div class="card">
+        <h2>河南录取数据（近三年全量）</h2>
+        <p class="muted">
+          采集全国高校在<strong>河南省</strong>的录取分数、录取位次、录取人数、招生计划、选科要求、学费、学制等志愿填报相关数据。
+          默认覆盖最近 3 个录取年份（{", ".join(str(year) for year in henan_summary.get("years") or recent_years)}）。
+        </p>
+        <div class="grid">
+          <div><div class="muted">录取记录</div><div class="stat">{henan_totals.get("admission_count", 0)}</div></div>
+          <div><div class="muted">招生计划</div><div class="stat">{henan_totals.get("plan_count", 0)}</div></div>
+          <div><div class="muted">含分数</div><div class="stat">{henan_totals.get("score_count", 0)}</div></div>
+          <div><div class="muted">含位次</div><div class="stat">{henan_totals.get("rank_count", 0)}</div></div>
+        </div>
+        <table style="margin-top:16px">
+          <thead>
+            <tr>
+              <th>年份</th><th>录取记录</th><th>招生计划</th><th>院校数</th><th>含分数</th><th>含位次</th><th>含录取人数</th>
+            </tr>
+          </thead>
+          <tbody>{henan_year_rows}</tbody>
+        </table>
+        <div class="toolbar" style="margin-top:16px">
+          <form method="post" action="/admin/crawler/henan" style="display:inline">
+            <input type="hidden" name="mode" value="full" />
+            <button type="submit" {henan_disabled}>河南近三年全量采集</button>
+          </form>
+          <form method="post" action="/admin/crawler/henan" style="display:inline">
+            <input type="hidden" name="mode" value="trial" />
+            <button type="submit" class="btn-muted" {henan_disabled}>河南试跑（20校×3年）</button>
+          </form>
+          <a class="button btn-muted" href="/admin/admissions?province=河南">查看河南录取数据</a>
+        </div>
+        <p class="muted" style="margin-top:12px">
+          命令行全量：<code>cd server && {escape(cli_command_full())}</code><br>
+          命令行试跑：<code>cd server && {escape(cli_command_trial())}</code>
+        </p>
+        <p class="muted">最近采集：{escape(str(henan_summary.get("last_success_at") or henan_summary.get("last_crawl_at") or "—"))}</p>
+      </div>
+      <div class="card">
         <h2>全国省份采集配置</h2>
         {message_html}
         {running_hint}
@@ -456,9 +516,11 @@ def admin_import(message: str = ''):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     body = f'''
       <div class="card">
-        <h2>导入历年录取数据</h2>
+        <h2>导入招生计划 / 录取数据</h2>
         {message_html}
-        <p class="muted">支持 `.xlsx` 和 `.csv`。请使用模板字段：年份、省份、批次、院校代码、院校名称、专业代码、专业名称等。</p>
+        <p class="muted">支持 `.xlsx` 和 `.csv`。可直接上传河南省官方招生计划表（含标题行也可），系统会自动识别表头。</p>
+        <p class="muted">河南格式关键列：年份、省份、批次、科类、院校代码、院校名称、院校专业组代码、专业代码、专业全称/专业名称、选科要求、计划人数、学制、学费、门类、专业类。</p>
+        <p class="muted">若文件仅有招生计划、没有最低分/最低位次，会写入招生计划表；含分数位次列时同时写入录取数据表。</p>
         <form action="/admin/import" method="post" enctype="multipart/form-data">
           <div class="toolbar">
             <input type="file" name="file" accept=".xlsx,.csv" required />
@@ -470,6 +532,225 @@ def admin_import(message: str = ''):
       </div>
     '''
     return render_page('数据导入', body)
+
+
+def admin_score_segments(message: str = ''):
+    from score_segment_service import list_score_rank_tables
+
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    tables = list_score_rank_tables(100)
+    rows_html = ''
+    for row in tables:
+        rows_html += f'''
+          <tr>
+            <td>{row.get('table_id', '')}</td>
+            <td>{escape(str(row.get('province') or ''))}</td>
+            <td>{row.get('year', '')}</td>
+            <td>{escape(str(row.get('batch') or ''))}</td>
+            <td>{escape(str(row.get('subject_type') or '不限'))}</td>
+            <td>{row.get('row_count', 0)}</td>
+            <td>{escape(str(row.get('source_file') or ''))}</td>
+            <td>{escape(str(row.get('updated_at') or row.get('created_at') or ''))}</td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="8" class="muted">暂无一分一段表，请先上传导入</td></tr>'
+
+    body = f'''
+      <div class="card">
+        <h2>导入一分一段表</h2>
+        {message_html}
+        <p class="muted">支持河南省考试院发布的 <strong>PDF / Excel / CSV</strong>。表头需含「分数」和「累计人数」或「位次」；也支持<strong>无表头五列</strong>：<code>分数, 本段人数, 累计人数, 年份, 科类</code>。</p>
+        <p class="muted"><strong>河南新高考</strong>请分别导入 <strong>物理类</strong>、<strong>历史类</strong> 两张表（科类选物理/历史）。批次可填「本科批」或留空。</p>
+        <form action="/admin/score-segments/import" method="post" enctype="multipart/form-data" class="toolbar" style="flex-wrap:wrap;gap:12px">
+          <input name="province" value="河南" placeholder="省份" required />
+          <input name="year" type="number" value="2025" placeholder="年份" required />
+          <input name="batch" value="本科批" placeholder="批次，可留空" />
+          <select name="subject_type" required>
+            <option value="">请选择科类</option>
+            <option value="物理" selected>物理类</option>
+            <option value="历史">历史类</option>
+          </select>
+          <input type="file" name="file" accept=".pdf,.xlsx,.xls,.csv" required />
+          <button type="submit">上传并导入</button>
+        </form>
+        <p class="muted">Excel/CSV 示例列：<code>分数, 本段人数, 累计人数, 2025, 物理类</code>（第三列必须是累计位次，不是本段人数累加）。模板：<code>database/score_segment_import_template.csv</code></p>
+      </div>
+      <div class="card">
+        <h2>已导入的一分一段表</h2>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>省份</th><th>年份</th><th>批次</th><th>科类</th><th>行数</th><th>来源文件</th><th>更新时间</th></tr>
+          </thead>
+          <tbody>{rows_html}</tbody>
+        </table>
+      </div>
+    '''
+    return render_page('一分一段表', body)
+
+
+def admin_announcements(message: str = '', review_status: str = '', keyword: str = ''):
+    from announcement_crawler_service import (
+        get_announcement_stats,
+        list_announcement_logs,
+        search_announcements,
+    )
+
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    stats = get_announcement_stats()
+    logs = list_announcement_logs(10)
+    rows = search_announcements(
+        keyword=keyword,
+        province='河南',
+        review_status=review_status,
+        limit=120,
+    )
+
+    rows_html = ''
+    for row in rows:
+        status = escape(str(row.get('review_status') or ''))
+        rows_html += f'''
+          <tr>
+            <td>{row.get('announcement_id', '')}</td>
+            <td>{escape(str(row.get('school_name') or row.get('source_org') or ''))}</td>
+            <td>{escape(str(row.get('announcement_type') or ''))}</td>
+            <td><a href="{escape(str(row.get('url') or ''))}" target="_blank">{escape(str(row.get('title') or '')[:48])}</a></td>
+            <td>{row.get('year', '')}</td>
+            <td><span class="tag">{status}</span></td>
+            <td>{escape(str(row.get('crawl_status') or ''))}</td>
+            <td class="actions">
+              <form method="post" action="/admin/announcements/{row.get('announcement_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="approved" />
+                <button type="submit" class="btn-sm">通过</button>
+              </form>
+              <form method="post" action="/admin/announcements/{row.get('announcement_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="rejected" />
+                <button type="submit" class="btn-sm btn-muted">驳回</button>
+              </form>
+              <form method="post" action="/admin/announcements/{row.get('announcement_id')}/delete" style="display:inline" onsubmit="return confirm('确定删除该条公告？删除后不可恢复。')">
+                <button type="submit" class="btn-sm btn-danger">删除</button>
+              </form>
+            </td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="8" class="muted">暂无公告。可先「一键生成院校招生官网链接」快速填充。</td></tr>'
+
+    logs_html = ''
+    for log in logs:
+        logs_html += f'''
+          <tr>
+            <td>{log.get('log_id', '')}</td>
+            <td>{escape(str(log.get('job_name') or ''))}</td>
+            <td>{log.get('year', '')}</td>
+            <td>{log.get('source_processed', 0)}/{log.get('source_total', 0)}</td>
+            <td>{log.get('discovered_count', 0)}</td>
+            <td>{log.get('new_count', 0)}</td>
+            <td>{escape(str(log.get('status') or ''))}</td>
+            <td>{escape(str(log.get('created_at') or ''))}</td>
+          </tr>
+        '''
+    if not logs_html:
+        logs_html = '<tr><td colspan="8" class="muted">暂无采集日志</td></tr>'
+
+    body = f'''
+      <div class="card">
+        <h2>招生公告管理</h2>
+        {message_html}
+        <p class="muted">小程序「招生公告」Tab 仅显示 <strong>已审核通过</strong> 的记录。推荐两步走：</p>
+        <ol class="muted">
+          <li><strong>快速上线</strong>：一键为每所院校生成「招生官网」外链（点开自动跳转官网招生栏目）。</li>
+          <li><strong>深度采集</strong>：后台自动爬取省考试院 / 高校官网 PDF、章程链接，审核后展示。</li>
+        </ol>
+        <div class="grid">
+          <div><div class="muted">公告总数</div><div class="stat">{stats.get('total', 0)}</div></div>
+          <div><div class="muted">待审核</div><div class="stat">{stats.get('pending', 0)}</div></div>
+          <div><div class="muted">河南相关</div><div class="stat">{stats.get('henan', 0)}</div></div>
+          <div><div class="muted">2026 年</div><div class="stat">{stats.get('year_2026', 0)}</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>快速填充：院校招生官网链接</h2>
+        <p class="muted">根据院校库 <code>website</code> 字段，为每校生成一条 <code>/zsb/</code> 招生栏目链接，<strong>自动审核通过</strong>，小程序点击后 webview 打开。</p>
+        <form method="post" action="/admin/announcements/seed-portals" class="toolbar">
+          <input name="province" value="河南" placeholder="省份" />
+          <input name="year" type="number" value="2026" />
+          <input name="school_limit" type="number" value="0" placeholder="数量限制，0=不限" />
+          <button type="submit">一键生成招生官网链接</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>自动采集招生公告</h2>
+        <p class="muted">爬取河南省考试院、阳光高考及高校官网招生页，发现 PDF/章程/计划链接。新记录默认<strong>待审核</strong>；系统会按关键词过滤招标、新闻等非招生内容。</p>
+        <form method="post" action="/admin/announcements/crawl" class="toolbar">
+          <input name="province" value="河南" />
+          <input name="year" type="number" value="2026" />
+          <input name="school_limit" type="number" value="200" />
+          <button type="submit">启动后台采集</button>
+        </form>
+        <div class="toolbar" style="margin-top:12px;flex-wrap:wrap;gap:8px">
+          <form method="post" action="/admin/announcements/auto-audit" style="display:inline">
+            <input type="hidden" name="province" value="河南" />
+            <button type="submit">自动审核（智能通过/驳回）</button>
+          </form>
+          <form method="post" action="/admin/announcements/purge-irrelevant" style="display:inline" onsubmit="return confirm('确定删除所有非招生类公告？招生官网链接不会删除。')">
+            <input type="hidden" name="province" value="河南" />
+            <button type="submit" class="btn-muted">一键清理非招生公告</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>手动添加公告链接</h2>
+        <form method="post" action="/admin/announcements/create" class="toolbar" style="flex-wrap:wrap">
+          <input name="title" placeholder="标题" required style="min-width:260px" />
+          <input name="url" placeholder="https://..." required style="min-width:320px" />
+          <input name="school_name" placeholder="院校名称（可选）" />
+          <input name="source_org" placeholder="来源（可选）" />
+          <select name="announcement_type">
+            <option value="招生公告">招生公告</option>
+            <option value="招生章程">招生章程</option>
+            <option value="招生计划">招生计划</option>
+            <option value="招生简章">招生简章</option>
+            <option value="招生官网">招生官网</option>
+          </select>
+          <button type="submit">添加并直接通过</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>公告列表</h2>
+        <form method="get" action="/admin/announcements" class="toolbar">
+          <input name="keyword" value="{escape(keyword)}" placeholder="搜索标题/院校" />
+          <select name="review_status">
+            <option value="" {selected('', review_status)}>全部状态</option>
+            <option value="approved" {selected('approved', review_status)}>已通过</option>
+            <option value="pending" {selected('pending', review_status)}>待审核</option>
+            <option value="rejected" {selected('rejected', review_status)}>已驳回</option>
+          </select>
+          <button type="submit">筛选</button>
+        </form>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>院校</th><th>类型</th><th>标题</th><th>年份</th><th>审核</th><th>来源</th><th>操作</th></tr>
+          </thead>
+          <tbody>{rows_html}</tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>采集日志</h2>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>任务</th><th>年份</th><th>进度</th><th>发现</th><th>新增</th><th>状态</th><th>时间</th></tr>
+          </thead>
+          <tbody>{logs_html}</tbody>
+        </table>
+      </div>
+    '''
+    return render_page('招生公告', body)
 
 
 def admin_logs(log_id: int | None = None, message: str = ''):
@@ -1136,11 +1417,14 @@ def admin_membership_users(keyword: str = '', message: str = ''):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     rows = ''
     for user in users:
+        is_super = int(user.get('is_super_tester') or 0)
+        super_tag = '<span class="tag active">超级测试</span>' if is_super else '<span class="muted">普通</span>'
         rows += f'''
           <tr>
             <td>{user.get('user_id', '')}</td><td>{escape(str(user.get('phone') or ''))}</td><td>{escape(str(user.get('student_name') or user.get('name') or ''))}</td>
             <td>{escape(str(user.get('school_name') or ''))}</td><td>{escape(str(user.get('score') or ''))}</td><td>{escape(str(user.get('rank') or ''))}</td>
             <td><span class="tag">{escape(str(user.get('plan_name') or '免费版'))}</span><br/><span class="muted">{escape(str(user.get('expires_at') or '长期/未开通'))}</span></td>
+            <td><strong>{int(user.get('bean_balance') or 0)}</strong> 豆<br/>{super_tag}</td>
             <td>
               <form method="post" action="/admin/membership/users/grant" class="toolbar" style="margin:0">
                 <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
@@ -1148,6 +1432,23 @@ def admin_membership_users(keyword: str = '', message: str = ''):
                 <input name="days" placeholder="天数，留空按套餐" style="min-width:120px;width:120px" />
                 <input name="remark" placeholder="备注" />
                 <button type="submit">开通/调整</button>
+              </form>
+              <form method="post" action="/admin/membership/users/beans/adjust" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input name="amount" placeholder="+增加/-扣减" style="min-width:100px;width:100px" />
+                <input name="remark" value="测试加豆" style="min-width:100px;width:100px" />
+                <button type="submit">调整星鼎豆</button>
+              </form>
+              <form method="post" action="/admin/membership/users/beans/set" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input name="balance" placeholder="设为余额" style="min-width:100px;width:100px" />
+                <input name="remark" value="测试设余额" style="min-width:100px;width:100px" />
+                <button type="submit">设置余额</button>
+              </form>
+              <form method="post" action="/admin/membership/users/super-tester" class="toolbar" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
+                <input type="hidden" name="enabled" value="{0 if is_super else 1}" />
+                <button type="submit" class="btn-sm">{'取消超级测试' if is_super else '设为超级测试'}</button>
               </form>
               <form method="post" action="/admin/membership/users/revoke" style="display:inline;margin-top:6px" onsubmit="return confirm('确认撤销该用户会员？')">
                 <input type="hidden" name="user_id" value="{user.get('user_id', '')}" />
@@ -1157,7 +1458,7 @@ def admin_membership_users(keyword: str = '', message: str = ''):
           </tr>
         '''
     if not rows:
-        rows = '<tr><td colspan="8" class="muted">暂无用户</td></tr>'
+        rows = '<tr><td colspan="9" class="muted">暂无用户</td></tr>'
     expiring_rows = ''
     for member in expiring:
         expiring_rows += f'''
@@ -1195,11 +1496,15 @@ def admin_membership_users(keyword: str = '', message: str = ''):
         <h2>用户会员管理</h2>
         {message_html}
         <p class="muted">个人主体阶段可用于手动开通/调整权益；企业主体接入微信支付后，也可继续作为客服后台。</p>
+        <div class="warn-box">
+          <strong>超级测试账号：</strong>设为超级测试后，该用户生成 AI 报告<strong>不扣星鼎豆</strong>，会员功能<strong>不限次数</strong>，便于反复测试。
+          仍可通过「调整星鼎豆 / 设置余额」随意充值测试豆。
+        </div>
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="手机号 / 姓名 / 学校" />
           <button type="submit">搜索</button>
         </form>
-        <table><thead><tr><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>分数</th><th>位次</th><th>当前会员</th><th>开通/调整</th></tr></thead><tbody>{rows}</tbody></table>
+        <table><thead><tr><th>用户ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>分数</th><th>位次</th><th>当前会员</th><th>星鼎豆/测试</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table>
       </div>
     '''
     return render_page('用户会员管理', body)

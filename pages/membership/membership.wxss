@@ -3,6 +3,23 @@
   color: #ffffff;
 }
 
+.douyin-redeem-card .sub-text {
+  margin-bottom: 20rpx;
+}
+
+.douyin-redeem-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 84rpx;
+  padding: 0 24rpx;
+  margin-bottom: 20rpx;
+  border: 2rpx solid #d9e3f5;
+  border-radius: 16rpx;
+  background: #f8fbff;
+  font-size: 28rpx;
+  color: #17233d;
+}
+
 .member-hero .sub-text {
   color: rgba(255, 255, 255, 0.86);
 }

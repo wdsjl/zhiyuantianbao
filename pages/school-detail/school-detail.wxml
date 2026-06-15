@@ -11,8 +11,17 @@
     <view wx:if="{{school.website}}" class="sub-text">官网：{{school.website}}</view>
   </view>
 
+  <view class="card" wx:if="{{announcements.length}}">
+    <view class="section-title">招生公告</view>
+    <view wx:for="{{announcements}}" wx:key="announcement_id" class="announcement-item" data-item="{{item}}" bindtap="openSchoolAnnouncement">
+      <view class="announcement-type">{{item.announcement_type}}</view>
+      <view class="announcement-title">{{item.title}}</view>
+      <view class="sub-text">{{item.year}}年 · {{item.published_at || '日期待定'}}</view>
+    </view>
+  </view>
+
   <view class="card">
-    <view class="section-title">招生专业</view>
+    <view class="section-title">招生专业与录取位次</view>
     <view wx:if="{{loading}}" class="sub-text">加载中...</view>
     <view wx:elif="{{!plans.length}}" class="sub-text">暂无招生计划，请稍后在后台导入数据。</view>
     <view wx:for="{{plans}}" wx:key="planKey" class="plan-card">
@@ -23,7 +32,7 @@
       <view class="plan-meta">
         批次：{{item.batch}} · 选科：{{item.subject_requirement || '以简章为准'}} · 学制：{{item.duration || '--'}} · 学费：{{item.tuition || '--'}}元/年
       </view>
-      <view class="score-line" wx:if="{{item.min_rank}}">
+      <view class="score-line" wx:if="{{item.min_rank || item.min_score}}">
         近年参考：最低分 {{item.min_score || '--'}} / 最低位次 {{item.min_rank || '--'}}
       </view>
       <button class="secondary-btn add-btn" data-plan="{{item}}" bindtap="addMajorToPlan">加入志愿</button>

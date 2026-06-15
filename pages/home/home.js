@@ -76,15 +76,30 @@ Page({
   goPersonality() {
     wx.navigateTo({ url: '/pages/personality/personality' });
   },
+  goEligiblePool() {
+    const profile = this.data.profile || {};
+    if (!profile.score || !profile.rank) {
+      wx.showModal({
+        title: '请先完善档案',
+        content: '检索可报院校需要分数和位次。',
+        confirmText: '去完善',
+        success: (res) => {
+          if (res.confirm) this.goProfile();
+        }
+      });
+      return;
+    }
+    wx.navigateTo({ url: '/pages/eligible-pool/eligible-pool' });
+  },
   goVolunteer() {
     const flow = getFlowStatus(this.data.profile);
-    if (!flow.checks.personality) {
+    if (!flow.checks.profile) {
       wx.showModal({
-        title: '请先完成霍兰德测评',
-        content: '按推荐流程，完成测评和个性化报告后再填报志愿，结果会更准确。',
-        confirmText: '继续流程',
+        title: '请先完善档案',
+        content: '智能填报需要分数、位次、选科和批次。',
+        confirmText: '去完善',
         success: (res) => {
-          if (res.confirm) this.continueFlow();
+          if (res.confirm) this.goProfile();
         }
       });
       return;
@@ -100,6 +115,10 @@ Page({
   goMembership() {
     const { goMembershipPage } = require('../../utils/membership');
     goMembershipPage();
+  },
+  goDouyinRedeem() {
+    const { goDouyinRedeemPage } = require('../../utils/membership');
+    goDouyinRedeemPage();
   },
   goStudentReport() {
     wx.navigateTo({ url: '/pages/student-report/student-report' });

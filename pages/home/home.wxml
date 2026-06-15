@@ -7,6 +7,14 @@
     <button class="profile-btn" bindtap="goProfile">完善信息</button>
   </view>
 
+  <view class="card douyin-banner" bindtap="goDouyinRedeem">
+    <view class="pay-banner-main">
+      <view class="pay-banner-title">抖音团购券兑换</view>
+      <view class="sub-text">在抖音/抖店购买会员后，点此输入兑换码开通并到账星鼎豆</view>
+    </view>
+    <button class="primary-btn pay-banner-btn" catchtap="goDouyinRedeem">去兑换</button>
+  </view>
+
   <view class="card pay-banner" bindtap="goMembership">
     <view class="pay-banner-main">
       <view class="pay-banner-title">普通卡 / 金卡 / 白金卡 · 星鼎豆充值</view>
@@ -51,6 +59,7 @@
   </view>
 
   <view wx:if="{{personality.code}}" class="card">
+    <system-generated-label compact />
     <view class="section-title">霍兰德测评结果</view>
     <view class="sub-text">{{personality.code}} · {{personality.primaryType.name}}</view>
     <view class="tag-row personality-tags">
@@ -59,18 +68,23 @@
   </view>
 
   <view class="grid-actions">
-    <view class="action-card highlight-action" bindtap="continueFlow">
+    <view class="action-card highlight-action" bindtap="goEligiblePool">
+      <view class="action-title">可报院校检索</view>
+      <view class="sub-text">输入分数后，查看所有能报考的院校专业</view>
+    </view>
+    <view class="action-card" bindtap="continueFlow">
       <view class="action-title">继续当前流程</view>
       <view class="sub-text">{{flow.currentStep.title}}</view>
     </view>
     <view class="action-card" bindtap="goStudentReport">
-      <ai-generated-label />
+      <ai-generated-label compact />
       <view class="action-title">个性化报告</view>
       <view class="sub-text">分数+性格+需求，AI 专属报告</view>
     </view>
     <view class="action-card" bindtap="goVolunteer">
+      <system-generated-label compact />
       <view class="action-title">智能生成志愿</view>
-      <view class="sub-text">结合报告与位次推荐</view>
+      <view class="sub-text">此方案系系统自动生成（大数据智能匹配）</view>
     </view>
     <view class="action-card" bindtap="goSchools">
       <view class="action-title">院校筛选</view>
@@ -88,6 +102,6 @@
 
   <view class="card">
     <view class="section-title">填报提醒</view>
-    <view class="warn-box">所有推荐结果仅供参考，请以各省教育考试院正式填报系统和高校招生章程为准。</view>
+    <view class="warn-box">志愿推荐、风险检测、位次查询系系统自动生成（大数据智能匹配）；AI 报告与 AI 解读由大模型生成。所有结果仅供参考，请以各省教育考试院正式填报系统和高校招生章程为准。</view>
   </view>
 </view>
