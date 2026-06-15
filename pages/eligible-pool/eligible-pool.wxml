@@ -7,10 +7,10 @@
     </view>
     <view class="summary-row">
       <text>共 {{summary.total || 0}} 条</text>
-      <text>冲 {{summary.冲 || 0}}</text>
-      <text>稳 {{summary.稳 || 0}}</text>
-      <text>保 {{summary.保 || 0}}</text>
-      <text>垫 {{summary.垫 || 0}}</text>
+      <text>冲 {{summary.chong || 0}}</text>
+      <text>稳 {{summary.wen || 0}}</text>
+      <text>保 {{summary.bao || 0}}</text>
+      <text>垫 {{summary.dian || 0}}</text>
     </view>
   </view>
 
@@ -36,7 +36,7 @@
     </view>
   </view>
 
-  <view wx:for="{{items}}" wx:key="school_id-{{major_id}}" class="card item-card" data-school-id="{{item.school_id}}" bindtap="openSchool">
+  <view wx:for="{{items}}" wx:key="id" class="card item-card" data-school-id="{{item.school_id}}" bindtap="openSchool">
     <view class="item-head">
       <text class="gradient gradient-{{item.gradientClass}}">{{item.gradient_type}}</text>
       <text class="school-name">{{item.school_name}}</text>

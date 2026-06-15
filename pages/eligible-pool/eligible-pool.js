@@ -12,11 +12,24 @@ const GRADIENT_TABS = [
   { value: '垫', label: '垫' }
 ];
 
+const EMPTY_SUMMARY = { total: 0, chong: 0, wen: 0, bao: 0, dian: 0 };
+
+function normalizeSummary(summary) {
+  const raw = summary || {};
+  return {
+    total: raw.total || 0,
+    chong: raw.chong != null ? raw.chong : (raw['冲'] || 0),
+    wen: raw.wen != null ? raw.wen : (raw['稳'] || 0),
+    bao: raw.bao != null ? raw.bao : (raw['保'] || 0),
+    dian: raw.dian != null ? raw.dian : (raw['垫'] || 0)
+  };
+}
+
 Page({
   data: {
     profile: {},
     items: [],
-    summary: { total: 0, 冲: 0, 稳: 0, 保: 0, 垫: 0 },
+    summary: EMPTY_SUMMARY,
     strategy: null,
     gradientTabs: GRADIENT_TABS,
     activeGradient: '',
@@ -76,16 +89,18 @@ Page({
     };
     request({ url: '/api/eligible-pool', method: 'POST', data: payload })
       .then((res) => {
-        const mapped = (res.items || []).map((item) => ({
+        const mapped = (res.items || []).map((item, index) => ({
           ...item,
+          id: `${item.school_id}-${item.major_id}-${index}`,
           gradientClass: getGradientClass(item.gradient_type)
         }));
         const items = reset ? mapped : [...this.data.items, ...mapped];
+        const summary = normalizeSummary(res.summary);
         wx.setStorageSync('eligiblePoolSnapshot', buildProfileSnapshot(profile));
-        wx.setStorageSync('eligiblePoolSummary', res.summary || {});
+        wx.setStorageSync('eligiblePoolSummary', summary);
         this.setData({
           items,
-          summary: res.summary || {},
+          summary,
           strategy: res.strategy || null,
           total: res.total || 0,
           userRank: res.user_rank || profile.rank,
