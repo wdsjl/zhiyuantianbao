@@ -47,7 +47,7 @@ from admin_views import (
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
-    admin_referrals, admin_referral_withdrawals, admin_score_segments,
+    admin_referrals, admin_referral_withdrawals, admin_score_segments, admin_announcements,
 )
 from crawler_service import (
     crawl_and_import, crawl_and_import_years, import_schools_only, ensure_crawl_tables,
@@ -375,6 +375,172 @@ async def admin_score_segments_import(
         return admin_score_segments(message)
     except Exception as exc:
         return admin_score_segments(f'导入失败：{exc}')
+
+
+@app.get('/admin/announcements')
+def admin_announcements_page(
+    message: str = '',
+    review_status: str = '',
+    keyword: str = '',
+):
+    return admin_announcements(message, review_status, keyword)
+
+
+@app.post('/admin/announcements/seed-portals')
+def admin_announcements_seed_portals(
+    province: str = Form('河南'),
+    year: int = Form(2026),
+    school_limit: int = Form(0),
+):
+    from announcement_crawler_service import seed_school_recruit_portal_links
+
+    try:
+        limit = None if int(school_limit) <= 0 else int(school_limit)
+        result = seed_school_recruit_portal_links(
+            province=province,
+            year=int(year),
+            school_limit=limit,
+            only_missing=True,
+        )
+        message = (
+            f'招生官网链接：新增 {result["created"]} 条，更新 {result["updated"]} 条，'
+            f'跳过 {result["skipped"]} 条（共扫描 {result["school_total"]} 所院校）'
+        )
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"生成失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/crawl')
+def admin_announcements_crawl(
+    background_tasks: BackgroundTasks,
+    province: str = Form('河南'),
+    year: int = Form(2026),
+    school_limit: int = Form(200),
+):
+    from announcement_crawler_service import has_running_announcement_job, run_announcement_job
+
+    try:
+        if has_running_announcement_job():
+            return RedirectResponse(
+                '/admin/announcements?message=' + quote('已有招生公告采集任务在运行'),
+                status_code=303,
+            )
+        limit = None if int(school_limit) <= 0 else int(school_limit)
+
+        def job() -> None:
+            try:
+                run_announcement_job(
+                    year=int(year),
+                    province=province,
+                    school_limit=limit,
+                )
+            except Exception:
+                pass
+
+        background_tasks.add_task(job)
+        message = f'招生公告采集任务已在后台启动（{province} {year}年，院校上限 {limit or "不限"}）'
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"启动失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/approve-pending')
+def admin_announcements_approve_pending(province: str = Form('河南')):
+    from announcement_crawler_service import bulk_review_announcements
+
+    try:
+        count = bulk_review_announcements('approved', province=province)
+        message = f'已批量通过 {count} 条待审核公告'
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"操作失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/auto-audit')
+def admin_announcements_auto_audit(province: str = Form('河南')):
+    from announcement_crawler_service import auto_audit_announcements
+
+    try:
+        result = auto_audit_announcements(province=province)
+        message = (
+            f'自动审核完成：通过 {result["approved"]} 条，驳回 {result["rejected"]} 条，'
+            f'跳过保护项 {result["skipped"]} 条（共扫描 {result["scanned"]} 条）'
+        )
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"自动审核失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/purge-irrelevant')
+def admin_announcements_purge_irrelevant(province: str = Form('河南')):
+    from announcement_crawler_service import purge_irrelevant_announcements
+
+    try:
+        result = purge_irrelevant_announcements(province=province)
+        message = (
+            f'已删除 {result["deleted"]} 条非招生公告，'
+            f'保留招生官网链接 {result["skipped"]} 条（共扫描 {result["scanned"]} 条）'
+        )
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"清理失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/{announcement_id}/delete')
+def admin_announcements_delete(announcement_id: int):
+    from announcement_crawler_service import delete_announcement
+
+    try:
+        deleted = delete_announcement(announcement_id)
+        message = '公告已删除' if deleted else '公告不存在或已删除'
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"删除失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/create')
+def admin_announcements_create(
+    title: str = Form(...),
+    url: str = Form(...),
+    school_name: str = Form(''),
+    source_org: str = Form(''),
+    announcement_type: str = Form('招生公告'),
+    province: str = Form('河南'),
+    year: int = Form(2026),
+):
+    from announcement_crawler_service import create_manual_announcement
+
+    try:
+        created = create_manual_announcement(
+            title=title,
+            url=url,
+            source_org=source_org,
+            school_name=school_name,
+            province=province,
+            year=int(year),
+            announcement_type=announcement_type,
+            review_status='approved',
+        )
+        message = '公告已添加并审核通过' if created else '公告链接已更新'
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"添加失败：{exc}")}', status_code=303)
+
+
+@app.post('/admin/announcements/{announcement_id}/review')
+def admin_announcements_review(
+    announcement_id: int,
+    review_status: str = Form('approved'),
+):
+    from announcement_crawler_service import review_announcement
+
+    try:
+        review_announcement(announcement_id, review_status)
+        message = '审核状态已更新'
+        return RedirectResponse(f'/admin/announcements?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/announcements?message={quote(f"审核失败：{exc}")}', status_code=303)
 
 
 @app.get('/admin/schools')
