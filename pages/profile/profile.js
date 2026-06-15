@@ -6,6 +6,7 @@ const {
   normalizeSubjectCombination
 } = require('../../utils/profileOptions');
 const { buildProfileSnapshot, clearDerivedArtifacts } = require('../../utils/profileSnapshot');
+const { getBatchMismatchWarning } = require('../../utils/batchHint');
 
 Page({
   data: {
@@ -13,6 +14,8 @@ Page({
     targetBatchOptions: TARGET_BATCHES,
     subjectIndex: -1,
     targetBatchIndex: -1,
+    batchDataSummary: '',
+    batchWarning: '',
     form: {
       role: '学生',
       name: '',
@@ -51,6 +54,7 @@ Page({
       };
       this.setData({ form });
       this.syncPickerIndices(form);
+      this.refreshBatchHints(form);
       return;
     }
     if (loginUser.openid) {
@@ -62,7 +66,42 @@ Page({
   },
   onInput(event) {
     const field = event.currentTarget.dataset.field;
+    const form = { ...this.data.form, [field]: event.detail.value };
     this.setData({ [`form.${field}`]: event.detail.value });
+    if (field === 'province' || field === 'score' || field === 'rank') {
+      this.refreshBatchHints(form);
+    } else if (field === 'targetBatch') {
+      this.updateBatchWarning(form, this.data.availableBatches || []);
+    }
+  },
+  refreshBatchHints(form) {
+    const province = (form && form.province) || '';
+    if (!province.trim()) {
+      this.setData({ batchDataSummary: '', batchWarning: '', availableBatches: [] });
+      return;
+    }
+    request({ url: '/api/admission-data/batches', data: { province } })
+      .then((res) => {
+        const batches = res.batches || [];
+        const summary = batches.length
+          ? batches.slice(0, 4).map((item) => `${item.batch}(${item.school_major_count || item.record_count || 0}条)`).join('、')
+          : '暂无录取数据';
+        this.setData({
+          availableBatches: batches,
+          batchDataSummary: `库内批次：${summary}`,
+          batchWarning: getBatchMismatchWarning(form, batches)
+        });
+      })
+      .catch(() => {
+        this.setData({
+          availableBatches: [],
+          batchDataSummary: '',
+          batchWarning: getBatchMismatchWarning(form, [])
+        });
+      });
+  },
+  updateBatchWarning(form, availableBatches) {
+    this.setData({ batchWarning: getBatchMismatchWarning(form, availableBatches) });
   },
   onSubjectChange(event) {
     const index = Number(event.detail.value);
@@ -73,10 +112,12 @@ Page({
   },
   onTargetBatchChange(event) {
     const index = Number(event.detail.value);
+    const form = { ...this.data.form, targetBatch: TARGET_BATCHES[index] };
     this.setData({
       targetBatchIndex: index,
       'form.targetBatch': TARGET_BATCHES[index]
     });
+    this.updateBatchWarning(form, this.data.availableBatches || []);
   },
   isTempOpenid(openid) {
     return !openid || openid.startsWith('dev_') || openid.startsWith('local_') || openid.startsWith('test_');
@@ -172,6 +213,23 @@ Page({
       return;
     }
 
+    const batchWarning = getBatchMismatchWarning(form, this.data.availableBatches || []);
+    if (batchWarning) {
+      wx.showModal({
+        title: '批次可能不匹配',
+        content: `${batchWarning}\n\n是否仍按当前批次保存？`,
+        confirmText: '继续保存',
+        cancelText: '返回修改',
+        success: (res) => {
+          if (res.confirm) this.submitProfile(form, score, rank);
+        }
+      });
+      return;
+    }
+
+    this.submitProfile(form, score, rank);
+  },
+  submitProfile(form, score, rank) {
     const openid = this.buildLocalOpenid(form);
     request({
       url: '/api/profile',
@@ -219,5 +277,5 @@ Page({
         }
         this.showSaveError(message || '档案保存失败');
       });
-  }
+  },
 });

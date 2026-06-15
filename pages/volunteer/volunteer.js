@@ -54,7 +54,9 @@ function normalizePlan(items) {
     schoolType: item.school_type,
     isAdjustable: item.is_adjustable,
     riskLevel: item.risk_level,
-    riskReason: item.risk_reason
+    riskReason: item.risk_reason,
+    admissionScore2025: item.admission_score_2025,
+    admissionRank2025: item.admission_rank_2025
   }));
 }
 
@@ -74,7 +76,9 @@ function toApiItem(item, index) {
     duration: item.duration,
     is_adjustable: item.isAdjustable,
     risk_level: item.riskLevel,
-    risk_reason: item.riskReason
+    risk_reason: item.riskReason,
+    admission_score_2025: item.admissionScore2025,
+    admission_rank_2025: item.admissionRank2025
   };
 }
 
@@ -97,6 +101,7 @@ Page({
     planStyle: 'balanced',
     planStyleOptions: PLAN_STYLE_OPTIONS,
     strategyMeta: null,
+    provinceRule: null,
     pdfReady: false,
     pdfFileName: '',
     planStale: false
@@ -108,6 +113,7 @@ Page({
       const resolvedProfile = profile || loadActiveProfileSync();
       this.setData({ profile: resolvedProfile });
       this.restorePlanState(resolvedProfile);
+      this.loadProvinceRule(resolvedProfile);
       this.consumePendingPlanAppend();
     });
     let personality = wx.getStorageSync('personalityResult') || null;
@@ -194,8 +200,25 @@ Page({
     savePlanArtifact(plan, this.data.profile);
     wx.removeStorageSync('currentAiExplain');
   },
-  goProfile() {
-    wx.navigateTo({ url: '/pages/profile/profile' });
+  loadProvinceRule(profile) {
+    const current = profile || this.data.profile || {};
+    if (!current.province) {
+      this.setData({ provinceRule: null });
+      return;
+    }
+    request({
+      url: '/api/province-rules/resolve',
+      data: {
+        province: current.province,
+        batch: current.targetBatch || ''
+      }
+    })
+      .then((res) => {
+        this.setData({ provinceRule: res || null });
+      })
+      .catch(() => {
+        this.setData({ provinceRule: null });
+      });
   },
   ensureProfile() {
     const { profile } = this.data;
@@ -216,6 +239,9 @@ Page({
     this.setData({ aiExplain: '' });
     wx.removeStorageSync('currentAiExplain');
   },
+  goProfile() {
+    wx.navigateTo({ url: '/pages/profile/profile' });
+  },
   onPlanStyleChange(event) {
     const planStyle = event.currentTarget.dataset.style;
     this.setData({ planStyle });
@@ -231,11 +257,16 @@ Page({
   doGeneratePlan() {
     const profile = this.data.profile;
     this.setData({ loading: true });
-    const payload = buildRecommendPayload(profile, {
-      personality: this.data.personality,
-      planStyle: this.data.planStyle,
-      hardFilterMajorTypes: false
-    });
+    const payload = {
+      ...buildRecommendPayload(profile, {
+        personality: this.data.personality,
+        planStyle: this.data.planStyle,
+        hardFilterMajorTypes: false
+      }),
+      volunteer_count: 0,
+      student_id: profile.studentId ? Number(profile.studentId) : null,
+      auto_save_draft: true
+    };
     request({
       url: '/api/recommend',
       method: 'POST',
@@ -249,11 +280,49 @@ Page({
         }));
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
-        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta: res.strategy || null, planStale: false });
+        const strategyMeta = res.strategy || null;
+        if (strategyMeta && res.algorithm_version) {
+          strategyMeta.algorithm_version = res.algorithm_version;
+        }
+        if (strategyMeta && strategyMeta.rank_hint) {
+          wx.showModal({
+            title: '位次核对提示',
+            content: strategyMeta.rank_hint,
+            showCancel: false
+          });
+        }
+        const provinceRule = (strategyMeta && strategyMeta.volunteer_rule) || this.data.provinceRule;
+        const targetCount = provinceRule && (provinceRule.total_slots || provinceRule.school_count);
+        const toastTitle = targetCount
+          ? `已生成 ${plan.length}/${targetCount} 个志愿`
+          : `已生成 ${plan.length} 个志愿`;
+        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule, planStale: false });
         savePlanArtifact(plan, profile);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
-        wx.showToast({ title: '已生成志愿方案', icon: 'success' });
+        if (res.draft_id) {
+          wx.setStorageSync('currentDraftId', res.draft_id);
+          wx.setStorageSync('currentDraftName', '智能推荐方案');
+        }
+        if (res.generation && res.generation.candidate_pool < res.generation.target_slots) {
+          const generation = res.generation;
+          const hint = generation.batch_hint
+            || (generation.available_batches && generation.available_batches.length
+              ? `库内现有批次：${generation.available_batches.join('、')}。请核对档案目标批次是否与导入数据一致。`
+              : '建议补充录取数据或检查省份/批次是否与导入数据一致。');
+          wx.showModal({
+            title: '志愿数量提示',
+            content: `已生成 ${generation.generated_count}/${generation.target_slots} 个志愿。数据库中符合条件的院校专业共 ${generation.candidate_pool} 条。\n\n档案批次：${profile.targetBatch || '--'}${generation.effective_batch && generation.effective_batch !== profile.targetBatch ? `（实际查询：${generation.effective_batch}）` : ''}\n\n${hint}`,
+            confirmText: generation.candidate_pool === 0 ? '去改档案' : '知道了',
+            success: (modalRes) => {
+              if (modalRes.confirm && generation.candidate_pool === 0) {
+                wx.navigateTo({ url: '/pages/profile/profile' });
+              }
+            }
+          });
+        } else {
+          wx.showToast({ title: toastTitle, icon: 'success' });
+        }
       })
       .catch(() => {
         wx.showToast({ title: '推荐接口连接失败', icon: 'none' });
@@ -414,18 +483,6 @@ Page({
       .finally(() => {
         this.setData({ aiLoading: false });
       });
-  },
-  copyAiExplain() {
-    if (!this.data.aiExplain) {
-      wx.showToast({ title: '暂无可复制内容', icon: 'none' });
-      return;
-    }
-    wx.setClipboardData({
-      data: this.data.aiExplain,
-      success: () => {
-        wx.showToast({ title: '已复制解读', icon: 'success' });
-      }
-    });
   },
   generatePlanPdf() {
     requirePermission('pdf_export', 'PDF 志愿表导出', { consume: true }).then((allowed) => {

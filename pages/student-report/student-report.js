@@ -56,12 +56,16 @@ function buildVolunteerSummary() {
   const plan = wx.getStorageSync('currentPlan') || [];
   const risk = wx.getStorageSync('currentRiskResult') || null;
   if (!plan.length) return '';
-  const lines = plan.slice(0, 8).map((item, index) => (
+  const limit = Math.min(plan.length, 48);
+  const lines = plan.slice(0, limit).map((item, index) => (
     `${index + 1}. ${item.gradientType || item.gradient_type || ''} ${item.schoolName || item.school_name || ''} - ${item.majorName || item.major_name || ''}`
   ));
   const riskText = risk
-    ? `风险等级：${risk.level || ''}；冲${risk.chong || 0} 稳${risk.wen || 0} 保${risk.bao || 0} 垫${risk.dian || 0}`
-    : '';
+    ? `风险等级：${risk.level || ''}；冲${risk.chong || 0} 稳${risk.wen || 0} 保${risk.bao || 0} 垫${risk.dian || 0}；共 ${plan.length} 个志愿单位`
+    : `共 ${plan.length} 个志愿单位`;
+  if (plan.length > limit) {
+    return `${riskText}\n（摘要展示前 ${limit} 条）\n${lines.join('\n')}`.trim();
+  }
   return `${riskText}\n${lines.join('\n')}`.trim();
 }
 
