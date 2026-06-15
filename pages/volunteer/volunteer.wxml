@@ -1,7 +1,15 @@
 <view class="container">
   <view class="card">
+    <system-generated-label />
     <view class="section-title">智能梯度志愿</view>
-    <view class="sub-text">仅按全省位次 X 划分冲稳保：冲 0.90X~0.95X、稳 0.95X~1.05X、保 1.15X~1.25X。</view>
+    <view class="sub-text">按档案分数+位次双校验，在位次系数区间内划分冲稳保（高分段冲 0.85X~0.95X、保至约 1.18X）。生成前请确认档案准确。</view>
+    <view wx:if="{{profile.province}}" class="sub-text profile-batch-tip">
+      当前档案：{{profile.province}} · {{profile.targetBatch || '未填批次'}} · {{profile.score || '--'}}分 / 位次{{profile.rank || '--'}}
+      <text class="profile-edit-link" bindtap="goProfile">修改</text>
+    </view>
+    <view wx:if="{{provinceRule}}" class="sub-text province-rule-tip">
+      本省规则：{{provinceRule.batch || profile.targetBatch}} · {{provinceRule.volunteer_mode}}，目标足额 {{provinceRule.total_slots || provinceRule.school_count}} 个志愿单位
+    </view>
     <view class="section-title strategy-title">填报策略</view>
     <view class="tag-row strategy-row">
       <text
@@ -13,18 +21,32 @@
       >{{item.label}}（{{item.desc}}）</text>
     </view>
     <view wx:if="{{strategyMeta}}" class="sub-text strategy-meta">
-      位次区间：冲 {{strategyMeta.bands.chong[0]}}~{{strategyMeta.bands.chong[1]}}，
+      冲稳保位次区间：冲 {{strategyMeta.bands.chong[0]}}~{{strategyMeta.bands.chong[1]}}，
       稳 {{strategyMeta.bands.wen[0]}}~{{strategyMeta.bands.wen[1]}}，
       保 {{strategyMeta.bands.bao[0]}}~{{strategyMeta.bands.bao[1]}}
+      <text wx:if="{{strategyMeta.algorithm_version}}"> · 算法 {{strategyMeta.algorithm_version}}</text>
     </view>
     <view class="button-row">
       <button class="primary-btn" bindtap="generatePlan">智能生成</button>
       <button class="secondary-btn" bindtap="inspectRisk">风险排查</button>
-      <button class="secondary-btn" loading="{{aiLoading}}" bindtap="explainPlan">AI 志愿解读</button>
     </view>
   </view>
 
+  <view class="card ai-explain-section">
+    <ai-generated-label />
+    <view class="section-title">AI 志愿方案解读</view>
+    <view class="sub-text">基于当前志愿方案、分数位次与个人报告，由大模型生成解读说明。</view>
+    <button class="secondary-btn ai-explain-btn" loading="{{aiLoading}}" bindtap="explainPlan">{{aiExplain ? '重新生成 AI 解读' : 'AI 志愿解读'}}</button>
+    <view wx:if="{{aiExplain}}" class="ai-explain-result">
+      <ai-generated-label />
+      <view class="ai-explain-text" selectable="false">{{aiExplain}}</view>
+      <view class="sub-text ai-export-tip">解读内容请通过下方「保存草稿 → ① 生成PDF → ② 发送微信」下载保存，不支持复制。</view>
+    </view>
+    <view class="warn-box">AI 解读仅供辅助理解，不能替代各省教育考试院、高校招生章程和正式填报系统。</view>
+  </view>
+
   <view wx:if="{{personality.code}}" class="card personality-match-card">
+    <system-generated-label compact />
     <view class="section-title">性格专业匹配</view>
     <view class="sub-text">测评结果：{{personality.code}} · {{personality.primaryType.name}}</view>
     <view class="tag-row personality-tags">
@@ -33,18 +55,8 @@
     <view class="warn-box">推荐会优先提示与你性格匹配的专业方向，但最终仍需结合位次、选科和招生计划综合判断。</view>
   </view>
 
-  <view wx:if="{{aiExplain}}" class="card ai-explain-card">
-    <ai-generated-label />
-    <view class="section-title">AI 志愿方案解读</view>
-    <view class="ai-explain-text">{{aiExplain}}</view>
-    <view class="ai-action-row">
-      <button class="secondary-btn" loading="{{aiLoading}}" bindtap="explainPlan">重新生成</button>
-      <button class="secondary-btn" bindtap="copyAiExplain">复制解读</button>
-    </view>
-    <view class="warn-box">AI 解读仅供辅助理解，不能替代各省教育考试院、高校招生章程和正式填报系统。</view>
-  </view>
-
   <view wx:if="{{riskResult}}" class="card">
+    <system-generated-label compact />
     <view class="risk-title">综合风险：<text class="{{riskClass}}">{{riskResult.level}}</text></view>
     <view class="gradient-stat">
       <text>冲 {{riskResult.chong}}</text>
@@ -65,6 +77,7 @@
     </view>
     <view class="sub-text">{{item.city}} · {{item.schoolType}} · {{item.duration}} · {{item.tuition}}元/年</view>
     <view class="major-line">专业：{{item.majorName}}（{{item.majorCode}}）</view>
+    <view class="admission-ref">2025年录取参考：{{item.admissionScore2025 || '--'}} 分 / 位次 {{item.admissionRank2025 || '--'}}</view>
     <view wx:if="{{item.admissionProbability}}" class="sub-text">录取概率参考：{{item.admissionProbability}}</view>
     <view wx:if="{{item.personalityMatched}}" class="match-badge">与性格测评推荐专业大类匹配：{{item.majorType}}</view>
     <view class="adjust-row">

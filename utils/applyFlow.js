@@ -2,10 +2,10 @@ const { migrateLegacyResult } = require('./personality');
 
 const STEPS = [
   { key: 'profile', title: '完善档案', desc: '填写分数、位次、选科和批次' },
-  { key: 'personality', title: '霍兰德测评', desc: '完成 30 题职业兴趣测评' },
+  { key: 'personality', title: '霍兰德测评', desc: '完成测评，系统自动生成兴趣报告（大数据智能匹配）' },
   { key: 'preferences', title: '填写需求', desc: '补充意向城市、专业和职业目标' },
   { key: 'report', title: '生成报告', desc: 'AI 生成个性化填报策略报告' },
-  { key: 'volunteer', title: '填报志愿', desc: '智能推荐并生成冲稳保方案' }
+  { key: 'volunteer', title: '填报志愿', desc: '系统自动生成冲稳保志愿方案（大数据智能匹配）' }
 ];
 
 const ROUTES = {

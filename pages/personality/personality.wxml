@@ -1,7 +1,7 @@
 <view class="container">
   <view class="card hero-personality">
     <view class="section-title">霍兰德职业兴趣测评</view>
-    <view class="sub-text">基于 RIASEC 六维模型，通过 30 道题了解你的兴趣特质，生成专业与职业方向报告，并作为 AI 志愿建议的数据基础。</view>
+    <view class="sub-text">基于 RIASEC 六维模型，通过 30 道题了解你的兴趣特质。下方兴趣报告由系统自动生成（大数据智能匹配）；深度填报策略可选 AI 报告。</view>
     <view wx:if="{{!result}}" class="progress-wrap">
       <view class="progress-text">完成度 {{progress}}%</view>
       <view class="progress-bar"><view class="progress-inner" style="width: {{progress}}%;"></view></view>
@@ -22,6 +22,7 @@
 
   <block wx:else>
     <view class="card result-card">
+      <system-generated-label />
       <view class="section-title">你的霍兰德代码：{{result.code}}</view>
       <view class="result-main">{{result.primaryType.name}} · {{result.secondaryType.name}} · {{result.tertiaryType.name}}</view>
       <view class="sub-text">{{result.careerReport.summary}}</view>
@@ -85,7 +86,7 @@
       </view>
     </view>
 
-    <view class="warn-box card">霍兰德职业兴趣测评仅用于辅助专业方向筛选，不能替代分数位次、选科要求、招生计划与家庭实际情况。AI 报告仅供参考，请以官方信息为准。</view>
+    <view class="warn-box card">霍兰德职业兴趣测评仅用于辅助专业方向筛选，不能替代分数位次、选科要求、招生计划与家庭实际情况。上方兴趣报告系系统自动生成（大数据智能匹配），仅供参考。</view>
 
     <view class="bottom-actions personality-actions">
       <button class="secondary-btn" bindtap="retest">重新测评</button>
