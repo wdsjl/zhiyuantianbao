@@ -271,6 +271,44 @@ def estimate_rank_from_score(rows: list[dict[str, Any]], score: int) -> int | No
     return int(round(sum(int(item['min_rank']) for item in sample) / len(sample)))
 
 
+def reconcile_user_rank(
+    *,
+    province: str,
+    batch: str,
+    subject_combination: str,
+    score: int | None,
+    profile_rank: int,
+    year: int | None = None,
+) -> tuple[int, str]:
+    """分数与档案位次不一致时，按一分一段表采用推算位次。"""
+    if not profile_rank or profile_rank <= 0:
+        return profile_rank, ''
+    if not score or score <= 0:
+        return profile_rank, ''
+    try:
+        from score_segment_service import infer_subject_type_from_combination, lookup_rank_by_score
+
+        subject_type = infer_subject_type_from_combination(subject_combination or '')
+        expected_rank = lookup_rank_by_score(
+            province,
+            int(score),
+            year=year,
+            batch=batch or '',
+            subject_type=subject_type,
+        )
+    except Exception:
+        return profile_rank, ''
+    if not expected_rank:
+        return profile_rank, ''
+    threshold = max(3000, int(min(profile_rank, expected_rank) * 0.35))
+    if abs(expected_rank - profile_rank) <= threshold:
+        return profile_rank, ''
+    return expected_rank, (
+        f'档案位次 {profile_rank} 与 {score} 分在一分一段表中约为 {expected_rank}，'
+        f'已按位次 {expected_rank} 生成方案，请核对档案。'
+    )
+
+
 def build_strategy_meta(
     user_rank: int,
     segment: str,

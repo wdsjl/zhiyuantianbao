@@ -66,6 +66,25 @@ class RecommendServiceTests(unittest.TestCase):
         self.assertIn('本科', aliases)
         self.assertIn('本科一批', aliases)
 
+    def test_refresh_draft_item_gradients_drops_far_mismatch_school(self):
+        from recommend_service import refresh_draft_item_gradients
+
+        items = [{
+            'gradient_type': '冲',
+            'school_name': '北华大学',
+            'admission_score_2025': 511,
+            'admission_rank_2025': 116434,
+            'is_adjustable': True,
+        }]
+        refreshed = refresh_draft_item_gradients(
+            items,
+            6178,
+            batch='本科批',
+            segment='mid',
+            user_score=560,
+        )
+        self.assertEqual(refreshed, [])
+
 
 if __name__ == '__main__':
     unittest.main()

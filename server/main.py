@@ -30,6 +30,7 @@ from recommend_service import (
     attach_admission_year_stats,
     ensure_draft_item_admission_columns,
     fetch_recommendation_candidates,
+    refresh_draft_item_gradients,
     save_auto_recommendation_draft,
 )
 from personality_service import (
@@ -39,7 +40,7 @@ from personality_service import (
 from recommend_pool_service import query_eligible_pool
 from services import inspect_plan_risk, get_gradient_type, get_risk_level, get_risk_reason
 from rank_strategy_service import (
-    assemble_recommendation_plan, detect_segment, estimate_rank_from_score, AI_STRATEGY_PROMPT,
+    assemble_recommendation_plan, detect_segment, estimate_rank_from_score, reconcile_user_rank, AI_STRATEGY_PROMPT,
 )
 from import_service import parse_import_file, import_admission_rows
 from admin_views import (
@@ -2244,19 +2245,30 @@ def recommend(request: RecommendRequest):
 
     user_rank = int(request.rank)
     if user_rank <= 0 and request.score:
-        estimated = None
         try:
-            from score_segment_service import lookup_rank_by_score
+            from score_segment_service import infer_subject_type_from_combination, lookup_rank_by_score
+
             estimated = lookup_rank_by_score(
                 request.province,
                 int(request.score),
-                year=2026,
-                batch=request.batch,
+                batch=request.batch or '',
+                subject_type=infer_subject_type_from_combination(request.subject_combination or ''),
             )
         except ImportError:
-            pass
+            estimated = None
         if estimated:
             user_rank = estimated
+
+    user_score = int(request.score) if request.score else None
+    reconciled_rank, strategy_rank_hint = reconcile_user_rank(
+        province=request.province,
+        batch=request.batch or '',
+        subject_combination=request.subject_combination or '',
+        score=user_score,
+        profile_rank=user_rank,
+    )
+    if reconciled_rank != user_rank:
+        user_rank = reconciled_rank
 
     province_list = province_variants(request.province)
     province_placeholders = ','.join(['?'] * len(province_list))
@@ -2291,20 +2303,20 @@ def recommend(request: RecommendRequest):
             user_rank = estimated
             segment = detect_segment(user_rank, province_total_rank, effective_batch)
 
-    user_score = int(request.score) if request.score else None
-    strategy_rank_hint = ''
-    if user_score and user_rank > 0:
+    strategy_rank_hint = strategy_rank_hint or ''
+    if user_score and user_rank > 0 and not strategy_rank_hint:
         try:
-            from score_segment_service import lookup_rank_by_score
+            from score_segment_service import infer_subject_type_from_combination, lookup_rank_by_score
+
             expected_rank = lookup_rank_by_score(
                 request.province,
                 user_score,
-                year=2026,
-                batch=request.batch,
+                batch=request.batch or '',
+                subject_type=infer_subject_type_from_combination(request.subject_combination or ''),
             )
             if expected_rank and abs(expected_rank - user_rank) > max(5000, int(user_rank * 0.5)):
                 strategy_rank_hint = (
-                    f'档案位次 {user_rank} 与一分一段表推算位次 {expected_rank} 差距较大，'
+                    f'档案位次 {request.rank} 与一分一段表推算位次 {expected_rank} 差距较大，'
                     '建议核对档案或重新导入一分一段表。'
                 )
         except ImportError:
@@ -2751,6 +2763,41 @@ def export_draft_pdf(draft_id: int, student_id: int):
             [draft_id]
         ).fetchall())
     items = attach_admission_year_stats(items, draft.get('province') or '', draft.get('batch') or '')
+    from recommend_service import province_variants
+
+    draft_score = draft.get('score')
+    draft_rank = int(draft.get('rank') or 0)
+    subject_combination = str(student.get('subject_combination') or '') if student else ''
+    effective_rank, rank_hint = reconcile_user_rank(
+        province=draft.get('province') or '',
+        batch=draft.get('batch') or '',
+        subject_combination=subject_combination,
+        score=int(draft_score) if draft_score is not None else None,
+        profile_rank=draft_rank,
+    )
+    if effective_rank != draft_rank:
+        draft = {**draft, 'rank': effective_rank}
+    province_list = province_variants(draft.get('province') or '')
+    province_placeholders = ','.join(['?'] * len(province_list))
+    with get_connection() as connection:
+        total_row = connection.execute(
+            f'''
+            SELECT MAX(min_rank) AS total_rank FROM admission_records
+            WHERE province IN ({province_placeholders}) AND batch = ?
+            ''',
+            [*province_list, draft.get('batch') or ''],
+        ).fetchone()
+    province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
+    segment = detect_segment(effective_rank, province_total_rank, draft.get('batch') or '')
+    items = refresh_draft_item_gradients(
+        items,
+        effective_rank,
+        batch=draft.get('batch') or '',
+        segment=segment,
+        user_score=int(draft_score) if draft_score is not None else None,
+    )
+    if rank_hint:
+        draft = {**draft, 'rank_hint': rank_hint}
     pdf = build_draft_pdf(draft, student or {}, items)
     filename = build_student_pdf_filename(student or {}, 'volunteer_draft')
     return _pdf_response(pdf, filename)

@@ -559,10 +559,60 @@ def attach_admission_year_stats(
         if row.get('admission_score_2025') is None and row.get('admission_rank_2025') is None:
             key = (int(row.get('school_id') or 0), int(row.get('major_id') or 0))
             stat = stats.get(key) or {}
-            row['admission_score_2025'] = stat.get('min_score')
-            row['admission_rank_2025'] = stat.get('min_rank')
+            stat_rank = stat.get('min_rank')
+            stat_score = stat.get('min_score')
+            weighted_rank = row.get('weighted_rank') or row.get('min_rank')
+            if stat_rank is not None:
+                from rank_strategy_service import is_plausible_admission_pair
+
+                if is_plausible_admission_pair(stat_rank, stat_score):
+                    if weighted_rank is None or abs(int(stat_rank) - int(weighted_rank)) <= max(5000, int(weighted_rank) * 0.5):
+                        row['admission_score_2025'] = stat_score
+                        row['admission_rank_2025'] = stat_rank
         enriched.append(row)
     return enriched
+
+
+def refresh_draft_item_gradients(
+    items: list[dict[str, Any]],
+    user_rank: int,
+    *,
+    batch: str = '',
+    segment: str = 'mid',
+    user_score: int | None = None,
+) -> list[dict[str, Any]]:
+    from rank_strategy_service import (
+        classify_gradient,
+        detect_segment,
+        is_candidate_match_for_user,
+        is_plausible_admission_pair,
+        resolve_school_rank,
+        resolve_school_score,
+    )
+    from services import get_risk_level, get_risk_reason
+
+    refreshed: list[dict[str, Any]] = []
+    for item in items:
+        row = dict(item)
+        school_rank = resolve_school_rank(row)
+        if school_rank is None and row.get('admission_rank_2025') is not None:
+            school_rank = int(row['admission_rank_2025'])
+        school_score = resolve_school_score(row)
+        if school_score is None and row.get('admission_score_2025') is not None:
+            school_score = int(row['admission_score_2025'])
+        if not is_plausible_admission_pair(school_rank, school_score):
+            continue
+        row['weighted_rank'] = school_rank
+        row['weighted_score'] = school_score
+        if not is_candidate_match_for_user(row, user_rank, user_score, segment, batch):
+            continue
+        gradient = classify_gradient(user_rank, school_rank, segment, batch)
+        is_adjustable = bool(row.get('is_adjustable', row.get('isAdjustable', True)))
+        row['gradient_type'] = gradient
+        row['risk_level'] = get_risk_level(gradient, is_adjustable)
+        row['risk_reason'] = get_risk_reason(gradient, is_adjustable)
+        refreshed.append(row)
+    return refreshed
 
 
 def save_auto_recommendation_draft(

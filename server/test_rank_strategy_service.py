@@ -7,6 +7,7 @@ from rank_strategy_service import (
     get_plan_quotas,
     is_candidate_match_for_user,
     is_plausible_admission_pair,
+    reconcile_user_rank,
     resolve_school_rank,
 )
 
@@ -24,6 +25,20 @@ def _candidate(school_id: int, major_id: int, school_name: str, min_rank: int | 
 class RankStrategyServiceTests(unittest.TestCase):
     def test_null_rank_classified_as_dian_not_wen(self):
         self.assertEqual(classify_gradient(2000, None, 'high', '本科批'), '垫')
+
+    def test_classify_much_easier_school_as_dian(self):
+        self.assertEqual(classify_gradient(6178, 116434, 'mid', '本科批'), '垫')
+
+    def test_reconcile_user_rank_keeps_close_values(self):
+        corrected, hint = reconcile_user_rank(
+            province='河南',
+            batch='本科批',
+            subject_combination='历史+政治+地理',
+            score=600,
+            profile_rank=6200,
+        )
+        self.assertEqual(corrected, 6200)
+        self.assertEqual(hint, '')
 
     def test_high_rank_student_excludes_low_tier_schools(self):
         candidates = [
