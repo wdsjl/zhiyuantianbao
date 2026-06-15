@@ -31,20 +31,46 @@ def ensure_student_report_tables() -> None:
         connection.commit()
 
 
+def build_profile_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'province': profile.get('province') or '',
+        'target_batch': profile.get('targetBatch') or profile.get('target_batch') or '',
+        'subject_combination': profile.get('subjectCombination') or profile.get('subject_combination') or '',
+        'score': profile.get('score'),
+        'rank': profile.get('rank'),
+    }
+
+
+def profile_snapshot_matches_student(snapshot: dict[str, Any] | None, student: dict[str, Any] | None) -> bool:
+    if not snapshot or not student:
+        return False
+    return (
+        str(snapshot.get('province') or '') == str(student.get('province') or '')
+        and str(snapshot.get('target_batch') or '') == str(student.get('target_batch') or '')
+        and str(snapshot.get('subject_combination') or '') == str(student.get('subject_combination') or '')
+        and str(snapshot.get('score') or '') == str(student.get('score') or '')
+        and str(snapshot.get('rank') or '') == str(student.get('rank') or '')
+    )
+
+
 def save_student_report(
     student_id: int | None,
     user_id: int | None,
     preferences: dict[str, Any],
     report_content: str,
+    profile: dict[str, Any] | None = None,
 ) -> int:
     ensure_student_report_tables()
+    payload = dict(preferences or {})
+    if profile:
+        payload['_profile_snapshot'] = build_profile_snapshot(profile)
     with get_connection() as connection:
         cursor = connection.execute(
             '''
             INSERT INTO student_ai_reports (student_id, user_id, preferences_json, report_content)
             VALUES (?, ?, ?, ?)
             ''',
-            [student_id, user_id, json.dumps(preferences, ensure_ascii=False), report_content]
+            [student_id, user_id, json.dumps(payload, ensure_ascii=False), report_content]
         )
         connection.commit()
         return cursor.lastrowid

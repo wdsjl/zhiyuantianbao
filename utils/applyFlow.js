@@ -1,11 +1,13 @@
 const { migrateLegacyResult } = require('./personality');
+const { loadActiveProfileSync } = require('./profileHelper');
+const { loadReportIfCurrent, loadPlanIfCurrent } = require('./profileSnapshot');
 
 const STEPS = [
   { key: 'profile', title: '完善档案', desc: '填写分数、位次、选科和批次' },
-  { key: 'personality', title: '霍兰德测评', desc: '完成 30 题职业兴趣测评' },
-  { key: 'preferences', title: '填写需求', desc: '补充意向城市、专业和职业目标' },
-  { key: 'report', title: '生成报告', desc: 'AI 生成个性化填报策略报告' },
-  { key: 'volunteer', title: '填报志愿', desc: '智能推荐并生成冲稳保方案' }
+  { key: 'personality', title: '霍兰德测评', desc: '完成测评，系统自动生成兴趣报告（大数据智能匹配）' },
+  { key: 'preferences', title: '填写需求', desc: '补充意向城市、专业和职业目标（可选）' },
+  { key: 'report', title: 'AI 报告（可选）', desc: '大模型个性化报告，非必选，可直接填报志愿' },
+  { key: 'volunteer', title: '填报志愿', desc: '系统自动生成冲稳保志愿方案（大数据智能匹配）' }
 ];
 
 const ROUTES = {
@@ -45,12 +47,13 @@ function isPreferencesFilled() {
 }
 
 function isReportGenerated() {
-  return Boolean(wx.getStorageSync('studentAiReport'));
+  const profile = loadActiveProfileSync();
+  return Boolean(loadReportIfCurrent(profile).report);
 }
 
 function isVolunteerGenerated() {
-  const plan = wx.getStorageSync('currentPlan') || [];
-  return plan.length > 0;
+  const profile = loadActiveProfileSync();
+  return (loadPlanIfCurrent(profile).plan || []).length > 0;
 }
 
 function getFlowStatus(profile) {

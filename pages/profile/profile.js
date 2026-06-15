@@ -5,6 +5,7 @@ const {
   findOptionIndex,
   normalizeSubjectCombination
 } = require('../../utils/profileOptions');
+const { buildProfileSnapshot, clearDerivedArtifacts } = require('../../utils/profileSnapshot');
 
 Page({
   data: {
@@ -98,19 +99,35 @@ Page({
   finishSave(saved) {
     const { form } = this.data;
     const loginUser = wx.getStorageSync('loginUser') || {};
+    const previousProfile = wx.getStorageSync('studentProfile') || {};
+    const profileChanged = Boolean(
+      previousProfile.score
+      && previousProfile.rank
+      && buildProfileSnapshot(previousProfile) !== buildProfileSnapshot(saved)
+    );
+    if (profileChanged) {
+      clearDerivedArtifacts();
+    }
     wx.setStorageSync('loginUser', { ...loginUser, openid: saved.openid, user_id: saved.userId, has_profile: true });
     wx.setStorageSync('studentProfile', saved);
     wx.setStorageSync('currentRole', form.role);
     const finish = () => {
       wx.showToast({ title: '保存成功', icon: 'success' });
       setTimeout(() => {
+        const nextHint = profileChanged
+          ? '分数或位次已更新，之前的志愿方案和 AI 报告已清空。请重新「智能生成」志愿；AI 报告为可选项，也可直接填报志愿。'
+          : '下一步建议完成霍兰德职业兴趣测评，系统才能生成更准确的个性化报告。';
         wx.showModal({
-          title: '档案已保存',
-          content: '下一步建议完成霍兰德职业兴趣测评，系统才能生成更准确的个性化报告。',
-          confirmText: '去测评',
+          title: profileChanged ? '档案已更新' : '档案已保存',
+          content: nextHint,
+          confirmText: profileChanged ? '去填报志愿' : '去测评',
           cancelText: '回首页',
           success: (modalRes) => {
             if (modalRes.confirm) {
+              if (profileChanged) {
+                wx.switchTab({ url: '/pages/volunteer/volunteer' });
+                return;
+              }
               wx.navigateTo({ url: '/pages/personality/personality' });
               return;
             }

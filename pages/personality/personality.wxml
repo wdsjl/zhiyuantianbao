@@ -69,7 +69,7 @@
     <view class="card ai-report-card">
       <ai-generated-label />
       <view class="section-title">AI 深度职业报告</view>
-      <view class="sub-text">结合你的霍兰德结果、分数位次与批次，生成更具体的填报策略建议。该报告会同步作为志愿方案 AI 解读的数据基础。</view>
+      <view class="sub-text">结合你的霍兰德结果、分数位次与批次，生成更具体的填报策略建议（可选）。智能志愿生成不依赖此报告。</view>
       <button class="primary-btn" bindtap="generateAiReport" loading="{{aiLoading}}">{{aiCareerReport ? '重新生成深度报告' : '生成 AI 深度报告'}}</button>
       <view class="sub-text">每次生成扣除 500 星鼎豆；普通卡充 2000 豆、金卡 12000 豆、白金卡 24000 豆。星鼎豆充值后不退，已消费不退还。</view>
       <view wx:if="{{aiCareerReport}}" class="ai-report-box">
@@ -89,7 +89,8 @@
 
     <view class="bottom-actions personality-actions">
       <button class="secondary-btn" bindtap="retest">重新测评</button>
-      <button class="primary-btn" bindtap="goStudentReport">下一步：生成个性化报告</button>
+      <button class="primary-btn" bindtap="goStudentReport">下一步：填写需求（可选 AI 报告）</button>
+      <button class="secondary-btn" bindtap="goVolunteer">跳过，直接去填报志愿</button>
     </view>
   </block>
 </view>

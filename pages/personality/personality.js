@@ -291,22 +291,6 @@ Page({
       wx.showToast({ title: '请先完成测评', icon: 'none' });
       return;
     }
-    if (!wx.getStorageSync('studentAiReport')) {
-      wx.showModal({
-        title: '建议先生成个性化报告',
-        content: '按推荐流程，先生成 AI 个性化报告再填报志愿，策略会更完整。',
-        confirmText: '去生成报告',
-        cancelText: '直接去志愿',
-        success: (res) => {
-          if (res.confirm) {
-            wx.navigateTo({ url: '/pages/student-report/student-report' });
-            return;
-          }
-          wx.switchTab({ url: '/pages/volunteer/volunteer' });
-        }
-      });
-      return;
-    }
     wx.switchTab({ url: '/pages/volunteer/volunteer' });
   }
 });
