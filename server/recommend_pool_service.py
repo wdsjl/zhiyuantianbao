@@ -18,6 +18,89 @@ from schemas import RecommendRequest
 from services import get_gradient_type, get_risk_level, get_risk_reason, matches_subject_requirement
 
 
+def _infer_stream_type(subject_combination: str) -> str:
+    from score_segment_service import infer_subject_type_from_combination
+
+    return infer_subject_type_from_combination(subject_combination or '')
+
+
+def get_admission_stream_stats(province: str, batch: str) -> dict[str, int]:
+    sql = """
+    SELECT
+      COUNT(*) AS total_cnt,
+      SUM(
+        CASE
+          WHEN COALESCE(ep.subject_requirement, '') LIKE '%历史%' THEN 1
+          ELSE 0
+        END
+      ) AS history_cnt,
+      SUM(
+        CASE
+          WHEN COALESCE(ep.subject_requirement, '') LIKE '%物理%'
+           AND COALESCE(ep.subject_requirement, '') NOT LIKE '%历史%' THEN 1
+          ELSE 0
+        END
+      ) AS physics_cnt,
+      SUM(
+        CASE
+          WHEN COALESCE(ep.subject_requirement, '') = ''
+            OR COALESCE(ep.subject_requirement, '') IN ('不限', '无要求', '无', '-', '—') THEN 1
+          ELSE 0
+        END
+      ) AS open_cnt
+    FROM admission_records ar
+    LEFT JOIN enrollment_plans ep ON ep.school_id = ar.school_id
+      AND ep.major_id = ar.major_id
+      AND ep.province = ar.province
+      AND ep.batch = ar.batch
+    WHERE ar.province = ? AND ar.batch = ?
+    """
+    with get_connection() as connection:
+        row = connection.execute(sql, [province, batch]).fetchone()
+    if not row:
+        return {'total_cnt': 0, 'history_cnt': 0, 'physics_cnt': 0, 'open_cnt': 0}
+    return {
+        'total_cnt': int(row['total_cnt'] or 0),
+        'history_cnt': int(row['history_cnt'] or 0),
+        'physics_cnt': int(row['physics_cnt'] or 0),
+        'open_cnt': int(row['open_cnt'] or 0),
+    }
+
+
+def build_empty_pool_hint(request: RecommendRequest, stream_stats: dict[str, int]) -> str:
+    stream = _infer_stream_type(request.subject_combination or '')
+    stream_label = f'{stream}类' if stream else '当前选科'
+    province = request.province or ''
+    batch = request.batch or ''
+
+    if stream_stats['total_cnt'] <= 0:
+        return f'库内暂无 {province} {batch} 的录取数据，请先在后台导入招生计划/录取分数。'
+
+    if stream == '历史':
+        if stream_stats['history_cnt'] <= 0 and stream_stats['physics_cnt'] > 0:
+            return (
+                f'库内已有物理类录取数据（约 {stream_stats["physics_cnt"]} 条），'
+                f'但缺少历史类数据。河南新高考请分别导入「历史类」{batch} 招生计划/录取表（Excel 科类列填历史）。'
+            )
+        return (
+            f'未检索到与 {stream_label}（{request.subject_combination or ""}）匹配的院校专业。'
+            f'请确认已导入历史类录取数据，且选科要求与档案一致。'
+        )
+
+    if stream == '物理':
+        if stream_stats['physics_cnt'] <= 0 and stream_stats['history_cnt'] > 0:
+            return (
+                f'库内已有历史类录取数据（约 {stream_stats["history_cnt"]} 条），'
+                f'但缺少物理类数据。请在后台导入「物理类」{batch} 数据。'
+            )
+        return (
+            f'未检索到与 {stream_label}（{request.subject_combination or ""}）匹配的院校专业。'
+            f'请确认已导入物理类录取数据。'
+        )
+
+    return '暂无可报院校专业。请检查档案批次、选科组合是否与导入的录取数据一致。'
+
+
 def _parse_preferences(preferences: dict[str, Any] | None) -> dict[str, Any]:
     prefs = preferences or {}
     return {
@@ -382,6 +465,8 @@ def query_eligible_pool(
     page_size = max(1, min(200, int(page_size or 50)))
     start = (page - 1) * page_size
     page_rows = pool[start:start + page_size]
+    stream_stats = get_admission_stream_stats(request.province, request.batch)
+    empty_hint = build_empty_pool_hint(request, stream_stats) if total <= 0 and page <= 1 else ''
     items = [
         pool_item_to_response(
             row,
@@ -406,6 +491,9 @@ def query_eligible_pool(
             max(1, int(request.volunteer_count or 9)),
         ),
         'user_rank': context['user_rank'],
+        'stream_type': _infer_stream_type(request.subject_combination or ''),
+        'stream_stats': stream_stats,
+        'empty_hint': empty_hint,
     }
 
 

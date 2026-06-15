@@ -5,6 +5,9 @@
     <view class="sub-text" wx:if="{{profile.score}}">
       当前档案：{{profile.province}} · {{profile.targetBatch}} · {{profile.score}}分 / 位次{{profile.rank}}
     </view>
+    <view wx:if="{{profile.subjectCombination}}" class="sub-text">
+      选科：{{profile.subjectCombination}}{{streamType ? '（' + streamType + '类）' : ''}}
+    </view>
     <view class="summary-row">
       <text>共 {{summary.total || 0}} 条</text>
       <text>冲 {{summary.chong || 0}}</text>
@@ -47,7 +50,7 @@
   </view>
 
   <view wx:if="{{!loading && !items.length}}" class="card muted-card">
-    <view class="sub-text">暂无可报院校专业。请检查档案批次是否与导入的录取数据一致。</view>
+    <view class="sub-text">{{emptyHint || '暂无可报院校专业。请检查档案批次是否与导入的录取数据一致。'}}</view>
   </view>
 
   <view wx:if="{{hasMore}}" class="load-more">

@@ -39,7 +39,8 @@ Page({
     total: 0,
     loading: false,
     hasMore: false,
-    userRank: ''
+    emptyHint: '',
+    streamType: '',
   },
   onShow() {
     refreshActiveProfile().then((profile) => {
@@ -104,6 +105,8 @@ Page({
           strategy: res.strategy || null,
           total: res.total || 0,
           userRank: res.user_rank || profile.rank,
+          emptyHint: res.empty_hint || '',
+          streamType: res.stream_type || '',
           hasMore: items.length < (res.total || 0),
           page: page + 1
         });
