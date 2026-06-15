@@ -7,7 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import (
-    RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
+    RecommendRequest, EligiblePoolRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
     ReferralAgentRegisterRequest, ReferralBindRequest, ReferralWithdrawRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
@@ -15,12 +15,14 @@ from schemas import (
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
+    profile_snapshot_matches_student,
 )
 from personality_service import (
     ensure_personality_tables, save_assessment, get_latest_assessment, save_ai_career_report,
     build_personality_ai_context, build_career_report_prompt,
 )
-from services import get_gradient_type, get_risk_level, get_risk_reason, inspect_plan_risk, matches_subject_requirement
+from recommend_pool_service import build_final_recommendation, query_eligible_pool
+from services import inspect_plan_risk
 from rank_strategy_service import (
     assemble_recommendation_plan, detect_segment, estimate_rank_from_score, AI_STRATEGY_PROMPT,
 )
@@ -1566,130 +1568,26 @@ def list_province_rules(province: str = '', year: int | None = None, batch: str 
     return {'list': rows_to_dicts(rows)}
 
 
+@app.post('/api/eligible-pool')
+def eligible_pool(request: EligiblePoolRequest):
+    try:
+        return query_eligible_pool(
+            request,
+            gradient=request.gradient or '',
+            keyword=request.keyword or '',
+            page=request.page,
+            page_size=request.page_size,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
-    sql = """
-    SELECT ar.*, s.school_name, s.city, s.school_type, s.is_public, s.is_double_first_class,
-           m.major_name, m.major_type, ep.tuition, ep.duration, ep.subject_requirement
-    FROM admission_records ar
-    JOIN schools s ON s.school_id = ar.school_id
-    JOIN majors m ON m.major_id = ar.major_id
-    LEFT JOIN enrollment_plans ep ON ep.school_id = ar.school_id
-      AND ep.major_id = ar.major_id
-      AND ep.province = ar.province
-      AND ep.batch = ar.batch
-    WHERE ar.province = ? AND ar.batch = ?
-    """
-    params = [request.province, request.batch]
-
-    if request.cities:
-        sql += f" AND s.city IN ({','.join(['?'] * len(request.cities))})"
-        params.extend(request.cities)
-    if request.school_types:
-        sql += f" AND s.school_type IN ({','.join(['?'] * len(request.school_types))})"
-        params.extend(request.school_types)
-    if request.major_types:
-        sql += f" AND m.major_type IN ({','.join(['?'] * len(request.major_types))})"
-        params.extend(request.major_types)
-    if request.only_public is not None:
-        sql += ' AND s.is_public = ?'
-        params.append(1 if request.only_public else 0)
-
-    sql += ' ORDER BY ar.year DESC, ar.min_rank ASC'
-
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
-
-    rows = [
-        row for row in rows
-        if matches_subject_requirement(request.subject_combination, row.get('subject_requirement'))
-    ]
-
-    grouped = {}
-    for row in rows:
-        key = (row['school_id'], row['major_id'])
-        grouped.setdefault(key, []).append(row)
-
-    weighted_items = []
-    year_weights = [0.5, 0.3, 0.2]
-    for records in grouped.values():
-        sorted_records = sorted(records, key=lambda item: item['year'], reverse=True)[:3]
-        weight_sum = 0
-        rank_sum = 0
-        score_sum = 0
-        latest = sorted_records[0]
-        for index, record in enumerate(sorted_records):
-            weight = year_weights[index] if index < len(year_weights) else 0
-            if record.get('min_rank') is not None:
-                rank_sum += record['min_rank'] * weight
-                weight_sum += weight
-            if record.get('min_score') is not None:
-                score_sum += record['min_score'] * weight
-        weighted_rank = round(rank_sum / weight_sum) if weight_sum else latest.get('min_rank')
-        weighted_score = round(score_sum / weight_sum) if weight_sum else latest.get('min_score')
-        weighted_items.append({**latest, 'weighted_rank': weighted_rank, 'weighted_score': weighted_score, 'years_used': [item['year'] for item in sorted_records]})
-
-    user_rank = int(request.rank)
-    if user_rank <= 0 and request.score:
-        estimated = estimate_rank_from_score(rows, int(request.score))
-        if estimated:
-            user_rank = estimated
-
-    with get_connection() as connection:
-        total_row = connection.execute(
-            'SELECT MAX(min_rank) AS total_rank FROM admission_records WHERE province = ? AND batch = ?',
-            [request.province, request.batch]
-        ).fetchone()
-    province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
-    segment = detect_segment(user_rank, province_total_rank, request.batch)
-
-    selected_rows, strategy_meta = assemble_recommendation_plan(
-        weighted_items,
-        user_rank=user_rank,
-        plan_style=request.plan_style or 'balanced',
-        batch=request.batch,
-        segment=segment,
-        total_slots=max(1, int(request.volunteer_count or 9)),
-    )
-
-    items = []
-    for index, row in enumerate(selected_rows, start=1):
-        gradient_type = row.get('gradient_type') or get_gradient_type(
-            user_rank, row.get('weighted_rank'), segment, request.batch
-        )
-        is_adjustable = request.accept_adjustment
-        risk_level = get_risk_level(gradient_type, is_adjustable)
-        items.append({
-            'sort_order': index,
-            'gradient_type': gradient_type,
-            'school_id': row['school_id'],
-            'school_name': row['school_name'],
-            'school_code': row['school_code'],
-            'major_id': row['major_id'],
-            'major_name': row['major_name'],
-            'major_code': row['major_code'],
-            'major_type': row.get('major_type'),
-            'city': row['city'],
-            'school_type': row['school_type'],
-            'tuition': row.get('tuition'),
-            'duration': row.get('duration'),
-            'min_score': row.get('min_score'),
-            'min_rank': row.get('min_rank'),
-            'weighted_score': row.get('weighted_score'),
-            'weighted_rank': row.get('weighted_rank'),
-            'years_used': row.get('years_used'),
-            'admission_probability': row.get('admission_probability'),
-            'is_adjustable': is_adjustable,
-            'risk_level': risk_level,
-            'risk_reason': get_risk_reason(gradient_type, is_adjustable)
-        })
-
-    return {
-        'items': items,
-        'risk': inspect_plan_risk(items),
-        'strategy': strategy_meta,
-        'algorithm': strategy_meta.get('algorithm'),
-    }
+    try:
+        return build_final_recommendation(request)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post('/api/ai/plan-explain')
@@ -1725,6 +1623,7 @@ def ai_plan_explain(request: PlanExplainRequest):
 省份：{profile.get('province', '')}
 批次：{profile.get('targetBatch', profile.get('batch', ''))}
 选科：{profile.get('subjectCombination', '')}
+高考分数：{profile.get('score', '')}
 全省位次 X：{profile.get('rank', '')}
 
 霍兰德职业兴趣测评（供专业适配参考）：
@@ -1806,6 +1705,7 @@ def ai_student_report(request: StudentReportRequest):
             request.user_id,
             request.preferences or {},
             content,
+            profile=request.profile,
         )
         return {'report': content, 'report_id': report_id}
     except Exception as exc:
@@ -1816,8 +1716,15 @@ def ai_student_report(request: StudentReportRequest):
 def get_student_report(student_id: int):
     report = get_latest_student_report(student_id)
     if not report:
-        return {'report': None}
-    return {'report': report}
+        return {'report': None, 'stale': False}
+    student = None
+    try:
+        student = _load_student_or_404(student_id)
+    except HTTPException:
+        student = None
+    snapshot = (report.get('preferences') or {}).get('_profile_snapshot')
+    stale = not profile_snapshot_matches_student(snapshot, student) if student else False
+    return {'report': report, 'stale': stale}
 
 
 def _load_student_or_404(student_id: int) -> dict:

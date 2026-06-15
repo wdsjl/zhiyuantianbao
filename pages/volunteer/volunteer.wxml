@@ -1,7 +1,12 @@
 <view class="container">
   <view class="card">
     <view class="section-title">智能梯度志愿</view>
-    <view class="sub-text">仅按全省位次 X 划分冲稳保：冲 0.90X~0.95X、稳 0.95X~1.05X、保 1.15X~1.25X。</view>
+    <view class="sub-text">按档案分数+位次从全库检索候选池，结合霍兰德测评与个人需求智能生成最终冲稳保方案。</view>
+    <view wx:if="{{profile.province}}" class="sub-text">
+      当前档案：{{profile.province}} · {{profile.targetBatch || '未填批次'}} · {{profile.score || '--'}}分 / 位次{{profile.rank || '--'}}
+      <text bindtap="goProfile" style="color:#1677ff;margin-left:12rpx">修改</text>
+    </view>
+    <view wx:if="{{planStale}}" class="warn-box">分数或位次已变更，请重新点击「智能生成」。</view>
     <view class="section-title strategy-title">填报策略</view>
     <view class="tag-row strategy-row">
       <text
@@ -20,8 +25,14 @@
     <view class="button-row">
       <button class="primary-btn" bindtap="generatePlan">智能生成</button>
       <button class="secondary-btn" bindtap="inspectRisk">风险排查</button>
-      <button class="secondary-btn" loading="{{aiLoading}}" bindtap="explainPlan">AI 志愿解读</button>
     </view>
+  </view>
+
+  <view class="card">
+    <ai-generated-label />
+    <view class="section-title">AI 志愿解读（可选）</view>
+    <view class="sub-text">基于<strong>当前</strong>志愿方案与档案分数位次生成文字说明；修改分数/位次后需先重新「智能生成」再解读。</view>
+    <button class="secondary-btn" loading="{{aiLoading}}" bindtap="explainPlan">{{aiExplain ? '重新生成 AI 解读' : 'AI 志愿解读'}}</button>
   </view>
 
   <view wx:if="{{personality.code}}" class="card personality-match-card">

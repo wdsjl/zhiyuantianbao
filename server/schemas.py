@@ -68,6 +68,15 @@ class RecommendRequest(BaseModel):
     accept_adjustment: bool = True
     plan_style: str = 'balanced'
     volunteer_count: int = 9
+    preferences: Optional[dict] = None
+    personality_major_types: list[str] = Field(default_factory=list)
+
+
+class EligiblePoolRequest(RecommendRequest):
+    gradient: str = ''
+    keyword: str = ''
+    page: int = 1
+    page_size: int = 50
 
 
 class RiskInspectRequest(BaseModel):

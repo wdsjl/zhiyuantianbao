@@ -59,7 +59,11 @@
   </view>
 
   <view class="grid-actions">
-    <view class="action-card highlight-action" bindtap="continueFlow">
+    <view class="action-card highlight-action" bindtap="goEligiblePool">
+      <view class="action-title">可报院校检索</view>
+      <view class="sub-text">输入分数后，查看所有能报考的院校专业</view>
+    </view>
+    <view class="action-card" bindtap="continueFlow">
       <view class="action-title">继续当前流程</view>
       <view class="sub-text">{{flow.currentStep.title}}</view>
     </view>
