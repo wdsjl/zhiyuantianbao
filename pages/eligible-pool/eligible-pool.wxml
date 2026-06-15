@@ -1,0 +1,66 @@
+<view class="container">
+  <view class="card">
+    <view class="section-title">可报院校专业检索</view>
+    <view class="sub-text">根据你的分数、位次、选科和批次，从录取数据库中检索所有符合条件的院校专业，并按冲稳保分类。</view>
+    <view class="sub-text" wx:if="{{profile.score}}">
+      当前档案：{{profile.province}} · {{profile.targetBatch}} · {{profile.score}}分 / 位次{{profile.rank}}
+    </view>
+    <view class="summary-row">
+      <text>共 {{summary.total || 0}} 条</text>
+      <text>冲 {{summary.冲 || 0}}</text>
+      <text>稳 {{summary.稳 || 0}}</text>
+      <text>保 {{summary.保 || 0}}</text>
+      <text>垫 {{summary.垫 || 0}}</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <input class="input" placeholder="搜索院校/专业/城市" value="{{keyword}}" bindinput="onKeywordInput" bindconfirm="onSearch" />
+    <view class="tag-row">
+      <text
+        wx:for="{{gradientTabs}}"
+        wx:key="value"
+        class="tag {{activeGradient === item.value ? 'active' : ''}}"
+        data-value="{{item.value}}"
+        bindtap="onGradientChange"
+      >{{item.label}}</text>
+    </view>
+    <button class="secondary-btn" bindtap="onSearch">搜索</button>
+  </view>
+
+  <view wx:if="{{strategy}}" class="card">
+    <view class="sub-text">
+      位次区间：冲 {{strategy.bands.chong[0]}}~{{strategy.bands.chong[1]}}，
+      稳 {{strategy.bands.wen[0]}}~{{strategy.bands.wen[1]}}，
+      保 {{strategy.bands.bao[0]}}~{{strategy.bands.bao[1]}}
+    </view>
+  </view>
+
+  <view wx:for="{{items}}" wx:key="school_id-{{major_id}}" class="card item-card" data-school-id="{{item.school_id}}" bindtap="openSchool">
+    <view class="item-head">
+      <text class="gradient gradient-{{item.gradientClass}}">{{item.gradient_type}}</text>
+      <text class="school-name">{{item.school_name}}</text>
+    </view>
+    <view class="major-line">{{item.major_name}}（{{item.major_type || '专业'}}）</view>
+    <view class="sub-text">{{item.city}} · 参考位次 {{item.weighted_rank || item.min_rank || '--'}} · 参考分数 {{item.weighted_score || item.min_score || '--'}}</view>
+    <view class="sub-text" wx:if="{{item.admission_probability}}">录取概率参考：{{item.admission_probability}}</view>
+  </view>
+
+  <view wx:if="{{!loading && !items.length}}" class="card muted-card">
+    <view class="sub-text">暂无可报院校专业。请检查档案批次是否与导入的录取数据一致。</view>
+  </view>
+
+  <view wx:if="{{hasMore}}" class="load-more">
+    <button class="secondary-btn" loading="{{loading}}" bindtap="loadMore">加载更多（已显示 {{items.length}}/{{total}}）</button>
+  </view>
+
+  <view class="card flow-card">
+    <view class="section-title">下一步</view>
+    <view class="sub-text">1. 完成霍兰德测评，明确专业方向；2. 填写个性化需求；3. 智能生成最终志愿方案。</view>
+    <view class="button-row">
+      <button class="secondary-btn" bindtap="goPersonality">去做测评</button>
+      <button class="secondary-btn" bindtap="goPreferences">填写需求</button>
+      <button class="primary-btn" bindtap="goVolunteer">智能填报志愿</button>
+    </view>
+  </view>
+</view>

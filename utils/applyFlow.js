@@ -1,15 +1,19 @@
 const { migrateLegacyResult } = require('./personality');
+const { loadActiveProfileSync } = require('./profileHelper');
+const { loadReportIfCurrent, loadPlanIfCurrent, buildProfileSnapshot } = require('./profileSnapshot');
 
 const STEPS = [
   { key: 'profile', title: '完善档案', desc: '填写分数、位次、选科和批次' },
-  { key: 'personality', title: '霍兰德测评', desc: '完成 30 题职业兴趣测评' },
-  { key: 'preferences', title: '填写需求', desc: '补充意向城市、专业和职业目标' },
-  { key: 'report', title: '生成报告', desc: 'AI 生成个性化填报策略报告' },
-  { key: 'volunteer', title: '填报志愿', desc: '智能推荐并生成冲稳保方案' }
+  { key: 'eligible', title: '可报院校', desc: '检索所有符合分数位次的院校专业' },
+  { key: 'personality', title: '霍兰德测评', desc: '明确兴趣方向，辅助专业筛选' },
+  { key: 'preferences', title: '填写需求', desc: '意向城市、专业、职业目标等' },
+  { key: 'report', title: '志愿报告（可选）', desc: 'AI 生成最终填报策略报告' },
+  { key: 'volunteer', title: '智能填报', desc: '结合测评与需求生成最终志愿方案' }
 ];
 
 const ROUTES = {
   profile: '/pages/profile/profile',
+  eligible: '/pages/eligible-pool/eligible-pool',
   personality: '/pages/personality/personality',
   preferences: '/pages/student-report/student-report',
   report: '/pages/student-report/student-report',
@@ -45,17 +49,26 @@ function isPreferencesFilled() {
 }
 
 function isReportGenerated() {
-  return Boolean(wx.getStorageSync('studentAiReport'));
+  const profile = loadActiveProfileSync();
+  return Boolean(loadReportIfCurrent(profile).report);
 }
 
 function isVolunteerGenerated() {
-  const plan = wx.getStorageSync('currentPlan') || [];
-  return plan.length > 0;
+  const profile = loadActiveProfileSync();
+  return (loadPlanIfCurrent(profile).plan || []).length > 0;
+}
+
+function isEligiblePoolReady() {
+  const profile = loadActiveProfileSync();
+  const snapshot = wx.getStorageSync('eligiblePoolSnapshot') || '';
+  const summary = wx.getStorageSync('eligiblePoolSummary') || {};
+  return Boolean(snapshot && snapshot === buildProfileSnapshot(profile) && (summary.total || 0) > 0);
 }
 
 function getFlowStatus(profile) {
   const checks = {
     profile: isProfileComplete(profile),
+    eligible: isEligiblePoolReady(),
     personality: isPersonalityComplete(),
     preferences: isPreferencesFilled(),
     report: isReportGenerated(),
@@ -101,6 +114,7 @@ module.exports = {
   navigateToStep,
   goNextStep,
   isProfileComplete,
+  isEligiblePoolReady,
   isPersonalityComplete,
   isPreferencesFilled,
   isReportGenerated,

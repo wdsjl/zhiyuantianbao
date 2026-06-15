@@ -5,6 +5,13 @@ const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
 const { formatAiContent } = require('../../utils/reportFormat');
+const { buildRecommendPayload } = require('../../utils/recommendPayload');
+const {
+  loadPlanIfCurrent,
+  savePlanArtifact,
+  invalidatePlanArtifacts,
+  buildProfileSnapshot
+} = require('../../utils/profileSnapshot');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -47,7 +54,9 @@ function normalizePlan(items) {
     schoolType: item.school_type,
     isAdjustable: item.is_adjustable,
     riskLevel: item.risk_level,
-    riskReason: item.risk_reason
+    riskReason: item.risk_reason,
+    admissionScore2025: item.admission_score_2025,
+    admissionRank2025: item.admission_rank_2025
   }));
 }
 
@@ -67,7 +76,9 @@ function toApiItem(item, index) {
     duration: item.duration,
     is_adjustable: item.isAdjustable,
     risk_level: item.riskLevel,
-    risk_reason: item.riskReason
+    risk_reason: item.riskReason,
+    admission_score_2025: item.admissionScore2025,
+    admission_rank_2025: item.admissionRank2025
   };
 }
 
@@ -90,48 +101,76 @@ Page({
     planStyle: 'balanced',
     planStyleOptions: PLAN_STYLE_OPTIONS,
     strategyMeta: null,
+    provinceRule: null,
     pdfReady: false,
-    pdfFileName: ''
+    pdfFileName: '',
+    planStale: false
   },
   onShow() {
     const savedStyle = wx.getStorageSync('volunteerPlanStyle') || 'balanced';
     this.setData({ planStyle: savedStyle });
     refreshActiveProfile().then((profile) => {
-      this.setData({ profile: profile || loadActiveProfileSync() });
+      const resolvedProfile = profile || loadActiveProfileSync();
+      this.setData({ profile: resolvedProfile });
+      this.restorePlanState(resolvedProfile);
+      this.loadProvinceRule(resolvedProfile);
       this.consumePendingPlanAppend();
     });
     let personality = wx.getStorageSync('personalityResult') || null;
     if (personality) {
       const { migrateLegacyResult } = require('../../utils/personality');
       personality = migrateLegacyResult(personality);
-      const studentAiReport = wx.getStorageSync('studentAiReport') || '';
-      const aiCareerReport = studentAiReport || wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
+      const aiCareerReport = wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
       if (aiCareerReport) personality = { ...personality, aiCareerReport };
     }
     if (!personality) {
       const profile = this.data.profile || loadActiveProfileSync();
-      const flow = getFlowStatus(profile);
       wx.showModal({
-        title: '请先完成前置流程',
-        content: `当前进度 ${flow.completedCount}/${flow.totalCount}。建议先完成：${flow.currentStep.title}，再生成志愿方案。`,
-        confirmText: '继续流程',
+        title: '建议先完成测评',
+        content: '完成霍兰德测评并填写个人需求后，智能填报会更贴合你的兴趣方向。也可先直接生成基础方案。',
+        confirmText: '去做测评',
         cancelText: '知道了',
         success: (res) => {
-          if (res.confirm) goNextStep(profile);
+          if (res.confirm) wx.navigateTo({ url: '/pages/personality/personality' });
         }
+      });
+    } else {
+      this.setData({ personality });
+    }
+    fetchEntitlements();
+  },
+  restorePlanState(profile) {
+    const { plan, aiExplain, stale } = loadPlanIfCurrent(profile);
+    if (stale) {
+      invalidatePlanArtifacts();
+      this.setData({ plan: [], aiExplain: '', riskResult: null, planStale: true });
+      wx.showModal({
+        title: '档案已变更',
+        content: '分数或位次与当前志愿方案不一致，旧方案已清空。请重新点击「智能生成」。',
+        showCancel: false
       });
       return;
     }
-    this.setData({ personality });
-    const currentPlan = wx.getStorageSync('currentPlan') || [];
-    if (currentPlan.length) {
-      const plan = currentPlan.map((item) => ({
+    if (!plan.length) {
+      this.setData({ planStale: false });
+      return;
+    }
+    const riskResult = wx.getStorageSync('currentRiskResult') || null;
+    const riskClass = riskResult && riskResult.level === '高'
+      ? 'risk-high'
+      : riskResult && riskResult.level === '中'
+        ? 'risk-mid'
+        : 'risk-low';
+    this.setData({
+      plan: plan.map((item) => ({
         ...item,
         gradientClass: item.gradientClass || getGradientClass(item.gradientType)
-      }));
-      this.setData({ plan, aiExplain: formatAiContent(wx.getStorageSync('currentAiExplain') || '') });
-    }
-    fetchEntitlements();
+      })),
+      aiExplain: formatAiContent(aiExplain || ''),
+      riskResult,
+      riskClass,
+      planStale: false
+    });
   },
   consumePendingPlanAppend() {
     const pending = wx.getStorageSync('pendingPlanAppend');
@@ -149,7 +188,7 @@ Page({
       personalityMatched: false
     });
     this.setData({ plan, riskResult: null, aiExplain: '' });
-    wx.setStorageSync('currentPlan', plan);
+    savePlanArtifact(plan, this.data.profile);
     wx.removeStorageSync('currentAiExplain');
     wx.showToast({ title: '已加入志愿方案', icon: 'success' });
   },
@@ -158,8 +197,28 @@ Page({
     const plan = [...this.data.plan];
     plan.splice(index, 1);
     this.setData({ plan, riskResult: null, aiExplain: '' });
-    wx.setStorageSync('currentPlan', plan);
+    savePlanArtifact(plan, this.data.profile);
     wx.removeStorageSync('currentAiExplain');
+  },
+  loadProvinceRule(profile) {
+    const current = profile || this.data.profile || {};
+    if (!current.province) {
+      this.setData({ provinceRule: null });
+      return;
+    }
+    request({
+      url: '/api/province-rules/resolve',
+      data: {
+        province: current.province,
+        batch: current.targetBatch || ''
+      }
+    })
+      .then((res) => {
+        this.setData({ provinceRule: res || null });
+      })
+      .catch(() => {
+        this.setData({ provinceRule: null });
+      });
   },
   ensureProfile() {
     const { profile } = this.data;
@@ -180,6 +239,9 @@ Page({
     this.setData({ aiExplain: '' });
     wx.removeStorageSync('currentAiExplain');
   },
+  goProfile() {
+    wx.navigateTo({ url: '/pages/profile/profile' });
+  },
   onPlanStyleChange(event) {
     const planStyle = event.currentTarget.dataset.style;
     this.setData({ planStyle });
@@ -195,36 +257,72 @@ Page({
   doGeneratePlan() {
     const profile = this.data.profile;
     this.setData({ loading: true });
+    const payload = {
+      ...buildRecommendPayload(profile, {
+        personality: this.data.personality,
+        planStyle: this.data.planStyle,
+        hardFilterMajorTypes: false
+      }),
+      volunteer_count: 0,
+      student_id: profile.studentId ? Number(profile.studentId) : null,
+      auto_save_draft: true
+    };
     request({
       url: '/api/recommend',
       method: 'POST',
-      data: {
-        province: profile.province,
-        batch: profile.targetBatch,
-        score: Number(profile.score),
-        rank: Number(profile.rank),
-        subject_combination: profile.subjectCombination,
-        major_types: (this.data.personality && this.data.personality.majorTypes) || [],
-        accept_adjustment: true,
-        plan_style: this.data.planStyle || 'balanced',
-        volunteer_count: 9
-      }
+      data: payload
     })
       .then((res) => {
-        const personality = this.data.personality || {};
-        const preferredTypes = personality.majorTypes || [];
         const plan = normalizePlan(res.items || []).map((item) => ({
           ...item,
-          personalityMatched: preferredTypes.includes(item.majorType),
+          personalityMatched: item.personality_matched || item.personalityMatched || false,
           admissionProbability: item.admission_probability || ''
         }));
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
-        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta: res.strategy || null });
-        wx.setStorageSync('currentPlan', plan);
+        const strategyMeta = res.strategy || null;
+        if (strategyMeta && res.algorithm_version) {
+          strategyMeta.algorithm_version = res.algorithm_version;
+        }
+        if (strategyMeta && strategyMeta.rank_hint) {
+          wx.showModal({
+            title: '位次核对提示',
+            content: strategyMeta.rank_hint,
+            showCancel: false
+          });
+        }
+        const provinceRule = (strategyMeta && strategyMeta.volunteer_rule) || this.data.provinceRule;
+        const targetCount = provinceRule && (provinceRule.total_slots || provinceRule.school_count);
+        const toastTitle = targetCount
+          ? `已生成 ${plan.length}/${targetCount} 个志愿`
+          : `已生成 ${plan.length} 个志愿`;
+        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule, planStale: false });
+        savePlanArtifact(plan, profile);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
-        wx.showToast({ title: '已生成志愿方案', icon: 'success' });
+        if (res.draft_id) {
+          wx.setStorageSync('currentDraftId', res.draft_id);
+          wx.setStorageSync('currentDraftName', '智能推荐方案');
+        }
+        if (res.generation && res.generation.candidate_pool < res.generation.target_slots) {
+          const generation = res.generation;
+          const hint = generation.batch_hint
+            || (generation.available_batches && generation.available_batches.length
+              ? `库内现有批次：${generation.available_batches.join('、')}。请核对档案目标批次是否与导入数据一致。`
+              : '建议补充录取数据或检查省份/批次是否与导入数据一致。');
+          wx.showModal({
+            title: '志愿数量提示',
+            content: `已生成 ${generation.generated_count}/${generation.target_slots} 个志愿。数据库中符合条件的院校专业共 ${generation.candidate_pool} 条。\n\n档案批次：${profile.targetBatch || '--'}${generation.effective_batch && generation.effective_batch !== profile.targetBatch ? `（实际查询：${generation.effective_batch}）` : ''}\n\n${hint}`,
+            confirmText: generation.candidate_pool === 0 ? '去改档案' : '知道了',
+            success: (modalRes) => {
+              if (modalRes.confirm && generation.candidate_pool === 0) {
+                wx.navigateTo({ url: '/pages/profile/profile' });
+              }
+            }
+          });
+        } else {
+          wx.showToast({ title: toastTitle, icon: 'success' });
+        }
       })
       .catch(() => {
         wx.showToast({ title: '推荐接口连接失败', icon: 'none' });
@@ -278,7 +376,7 @@ Page({
     plan[index].riskLevel = getLocalRiskLevel(plan[index].gradientType, checked);
     plan[index].riskReason = getLocalRiskReason(plan[index].gradientType, checked);
     this.setData({ plan, riskResult: null, aiExplain: '' });
-    wx.setStorageSync('currentPlan', plan);
+    savePlanArtifact(plan, this.data.profile);
     wx.removeStorageSync('currentAiExplain');
   },
   saveDraft() {
@@ -352,6 +450,16 @@ Page({
       wx.showToast({ title: '请先生成志愿方案', icon: 'none' });
       return;
     }
+    const profile = this.data.profile || loadActiveProfileSync();
+    const planSnapshot = wx.getStorageSync('currentPlanSnapshot') || '';
+    if (planSnapshot && planSnapshot !== buildProfileSnapshot(profile)) {
+      wx.showModal({
+        title: '请先重新生成志愿',
+        content: '当前志愿方案与档案分数/位次不一致，AI 解读将基于错误数据。请先点击「智能生成」。',
+        showCancel: false
+      });
+      return;
+    }
     this.setData({ aiLoading: true });
     request({
       url: '/api/ai/plan-explain',
@@ -375,18 +483,6 @@ Page({
       .finally(() => {
         this.setData({ aiLoading: false });
       });
-  },
-  copyAiExplain() {
-    if (!this.data.aiExplain) {
-      wx.showToast({ title: '暂无可复制内容', icon: 'none' });
-      return;
-    }
-    wx.setClipboardData({
-      data: this.data.aiExplain,
-      success: () => {
-        wx.showToast({ title: '已复制解读', icon: 'success' });
-      }
-    });
   },
   generatePlanPdf() {
     requirePermission('pdf_export', 'PDF 志愿表导出', { consume: true }).then((allowed) => {
