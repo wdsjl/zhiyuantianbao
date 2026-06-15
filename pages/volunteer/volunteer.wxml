@@ -41,7 +41,7 @@
     <view wx:if="{{aiExplain}}" class="ai-explain-result">
       <ai-generated-label />
       <view class="ai-explain-text" selectable="false">{{aiExplain}}</view>
-      <view class="sub-text ai-export-tip">解读内容请通过下方「保存草稿 → ① 生成PDF → ② 发送微信」下载保存。</view>
+      <view class="sub-text ai-export-tip">解读内容请通过下方「① 生成PDF → ② 发送微信」下载保存；生成 PDF 前会自动同步当前解读到草稿。</view>
     </view>
     <view class="warn-box">AI 解读仅供辅助理解，不能替代各省教育考试院、高校招生章程和正式填报系统。</view>
   </view>

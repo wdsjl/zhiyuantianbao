@@ -519,7 +519,8 @@ def admin_import(message: str = ''):
         <h2>导入招生计划 / 录取数据</h2>
         {message_html}
         <p class="muted">支持 `.xlsx` 和 `.csv`。可直接上传河南省官方招生计划表（含标题行也可），系统会自动识别表头。</p>
-        <p class="muted">河南格式关键列：年份、省份、批次、科类、院校代码、院校名称、院校专业组代码、专业代码、专业全称/专业名称、选科要求、计划人数、学制、学费、门类、专业类。</p>
+        <p class="muted">河南格式关键列：年份、省份、批次、<strong>科类（物理/历史，必填）</strong>、院校代码、院校名称、院校专业组代码、专业代码、专业全称/专业名称、选科要求、计划人数、学制、学费、门类、专业类。</p>
+        <p class="warn-box"><strong>可报院校必读：</strong>物理类与历史类须<strong>分别导入</strong>两份文件（科类列填物理或历史）。仅导入一分一段表<strong>不会</strong>出现可报院校。</p>
         <p class="muted">若文件仅有招生计划、没有最低分/最低位次，会写入招生计划表；含分数位次列时同时写入录取数据表。</p>
         <form action="/admin/import" method="post" enctype="multipart/form-data">
           <div class="toolbar">
@@ -562,6 +563,7 @@ def admin_score_segments(message: str = ''):
         {message_html}
         <p class="muted">支持河南省考试院发布的 <strong>PDF / Excel / CSV</strong>。表头需含「分数」和「累计人数」或「位次」；也支持<strong>无表头五列</strong>：<code>分数, 本段人数, 累计人数, 年份, 科类</code>。</p>
         <p class="muted"><strong>河南新高考</strong>请分别导入 <strong>物理类</strong>、<strong>历史类</strong> 两张表（科类选物理/历史）。批次可填「本科批」或留空。</p>
+        <p class="warn-box"><strong>说明：</strong>本页仅用于<strong>分数↔位次</strong>查询，<strong>不能</strong>替代「数据导入」中的招生计划/录取数据。可报院校、智能志愿需在 <a href="/admin/import">数据导入</a> 上传含<strong>科类</strong>列的 Excel。</p>
         <form action="/admin/score-segments/import" method="post" enctype="multipart/form-data" class="toolbar" style="flex-wrap:wrap;gap:12px">
           <input name="province" value="河南" placeholder="省份" required />
           <input name="year" type="number" value="2025" placeholder="年份" required />
