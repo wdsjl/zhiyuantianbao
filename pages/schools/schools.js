@@ -344,7 +344,10 @@ Page({
         this.setData({ queryResult: res });
       })
       .catch((err) => {
-        const msg = (err && err.message) || '未找到一分一段表，请先在后台导入';
+        let msg = (err && err.message) || '未找到一分一段表，请先在后台导入';
+        if (msg === 'Not Found') {
+          msg = '位次接口未部署，请更新服务器后端后重启';
+        }
         wx.showToast({ title: msg, icon: 'none', duration: 3000 });
       })
       .finally(() => {
