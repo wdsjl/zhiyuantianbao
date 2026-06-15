@@ -113,14 +113,13 @@ function requirePermission(permissionCode, title, options = {}) {
       return request({ url, method: options.consume ? 'POST' : 'GET' })
         .then((res) => {
           if (res.allowed) {
-            return fetchEntitlements().then(() => {
-              if (res.remaining >= 0 && options.consume) {
-                wx.showToast({ title: `剩余${res.remaining}次`, icon: 'none' });
-              }
-              return true;
-            });
+            if (res.remaining >= 0 && options.consume) {
+              wx.showToast({ title: `剩余${res.remaining}次`, icon: 'none' });
+            }
+            fetchEntitlements().catch(() => null);
+            return true;
           }
-          return fetchEntitlements().then((latest) => {
+          return fetchEntitlements().catch(() => null).then((latest) => {
             const planName = latest && latest.plan ? latest.plan.plan_name : '免费版';
             const hint = getMembershipStatusMessage(latest)
               || res.message

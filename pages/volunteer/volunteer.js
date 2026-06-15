@@ -3,7 +3,7 @@ const { fetchEntitlements, requirePermission } = require('../../utils/membership
 const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
 const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
-const { getGradientClass } = require('../../utils/volunteer');
+const { getGradientClass, inspectPlanRisk } = require('../../utils/volunteer');
 const { formatAiContent } = require('../../utils/reportFormat');
 const { buildRecommendPayload } = require('../../utils/recommendPayload');
 const {
@@ -278,7 +278,8 @@ Page({
           personalityMatched: item.personality_matched || item.personalityMatched || false,
           admissionProbability: item.admission_probability || ''
         }));
-        const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
+        const riskPayload = res.risk || inspectPlanRisk(plan);
+        const riskResult = normalizeRisk(riskPayload);
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
         const strategyMeta = res.strategy || null;
         if (strategyMeta && res.algorithm_version) {
@@ -322,6 +323,11 @@ Page({
           });
         } else {
           wx.showToast({ title: toastTitle, icon: 'success' });
+          if (riskResult) {
+            setTimeout(() => {
+              wx.pageScrollTo({ selector: '.risk-result-card', duration: 280 });
+            }, 400);
+          }
         }
       })
       .catch(() => {
@@ -332,23 +338,38 @@ Page({
       });
   },
   inspectRisk() {
-    requirePermission('risk_inspect', '志愿风险检测', { consume: true }).then((allowed) => {
-      if (!allowed) return;
-      this.doInspectRisk();
-    });
+    if (!this.data.plan.length) {
+      wx.showToast({ title: '请先生成志愿方案', icon: 'none' });
+      return;
+    }
+    requirePermission('risk_inspect', '志愿风险检测', { consume: true })
+      .then((allowed) => {
+        if (!allowed) return;
+        this.doInspectRisk();
+      })
+      .catch(() => {
+        wx.showToast({ title: '权限校验失败，请稍后重试', icon: 'none' });
+      });
+  },
+  applyRiskResult(risk, options = {}) {
+    const riskResult = normalizeRisk(risk);
+    const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
+    this.setData({ riskResult, riskClass, aiExplain: '' });
+    wx.setStorageSync('currentRiskResult', riskResult);
+    wx.removeStorageSync('currentAiExplain');
+    if (options.toast) {
+      wx.showToast({ title: options.toast, icon: 'success' });
+    }
+    wx.pageScrollTo({ selector: '.risk-result-card', duration: 280 });
   },
   doInspectRisk() {
     const items = this.data.plan.map(toApiItem);
     request({ url: '/api/risk-inspect', method: 'POST', data: { items } })
       .then((res) => {
-        const riskResult = normalizeRisk(res);
-        const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
-        this.setData({ riskResult, riskClass, aiExplain: '' });
-        wx.setStorageSync('currentRiskResult', riskResult);
-        wx.removeStorageSync('currentAiExplain');
+        this.applyRiskResult(res, { toast: '风险排查完成' });
       })
       .catch(() => {
-        wx.showToast({ title: '风险排查接口连接失败', icon: 'none' });
+        this.applyRiskResult(inspectPlanRisk(this.data.plan), { toast: '风险排查完成（本地）' });
       });
   },
   toggleAdjust(event) {

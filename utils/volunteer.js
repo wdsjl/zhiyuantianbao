@@ -84,7 +84,8 @@ function generateVolunteerPlan(profile, preferences = {}) {
 function inspectPlanRisk(plan) {
   const count = { 冲: 0, 稳: 0, 保: 0, 垫: 0 };
   plan.forEach((item) => {
-    count[item.gradientType] += 1;
+    const gradientType = item.gradientType || item.gradient_type || '稳';
+    count[gradientType] = (count[gradientType] || 0) + 1;
   });
 
   const highRiskItems = plan.filter((item) => item.riskLevel === '高');

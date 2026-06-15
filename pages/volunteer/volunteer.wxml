@@ -56,7 +56,7 @@
     <view class="warn-box">推荐会优先提示与你性格匹配的专业方向，但最终仍需结合位次、选科和招生计划综合判断。</view>
   </view>
 
-  <view wx:if="{{riskResult}}" class="card">
+  <view wx:if="{{riskResult}}" class="card risk-result-card">
     <system-generated-label compact />
     <view class="risk-title">综合风险：<text class="{{riskClass}}">{{riskResult.level}}</text></view>
     <view class="gradient-stat">
