@@ -1,6 +1,6 @@
 const { BASE_URL } = require('./request');
 
-const TYPE_OPTIONS = ['', '招生公告', '招生章程', '招生计划', '招生简章', '录取信息'];
+const TYPE_OPTIONS = ['', '招生公告', '招生章程', '招生计划', '招生简章', '招生官网', '录取信息'];
 
 function getAnnouncementFileUrl(announcementId) {
   return `${BASE_URL}/api/announcements/${announcementId}/file`;

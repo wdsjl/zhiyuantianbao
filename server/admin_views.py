@@ -76,6 +76,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
         <a href="/admin">首页</a>
         <a href="/admin/import">数据导入</a>
         <a href="/admin/score-segments">一分一段</a>
+        <a href="/admin/announcements">招生公告</a>
         <a href="/admin/crawler">数据采集</a>
         <a href="/admin/import/logs">导入日志</a>
         <a href="/admin/schools">院校数据</a>
@@ -585,6 +586,160 @@ def admin_score_segments(message: str = ''):
       </div>
     '''
     return render_page('一分一段表', body)
+
+
+def admin_announcements(message: str = '', review_status: str = '', keyword: str = ''):
+    from announcement_crawler_service import (
+        get_announcement_stats,
+        list_announcement_logs,
+        search_announcements,
+    )
+
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    stats = get_announcement_stats()
+    logs = list_announcement_logs(10)
+    rows = search_announcements(
+        keyword=keyword,
+        province='河南',
+        review_status=review_status,
+        limit=120,
+    )
+
+    rows_html = ''
+    for row in rows:
+        status = escape(str(row.get('review_status') or ''))
+        rows_html += f'''
+          <tr>
+            <td>{row.get('announcement_id', '')}</td>
+            <td>{escape(str(row.get('school_name') or row.get('source_org') or ''))}</td>
+            <td>{escape(str(row.get('announcement_type') or ''))}</td>
+            <td><a href="{escape(str(row.get('url') or ''))}" target="_blank">{escape(str(row.get('title') or '')[:48])}</a></td>
+            <td>{row.get('year', '')}</td>
+            <td><span class="tag">{status}</span></td>
+            <td>{escape(str(row.get('crawl_status') or ''))}</td>
+            <td>
+              <form method="post" action="/admin/announcements/{row.get('announcement_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="approved" />
+                <button type="submit" class="btn-sm">通过</button>
+              </form>
+              <form method="post" action="/admin/announcements/{row.get('announcement_id')}/review" style="display:inline">
+                <input type="hidden" name="review_status" value="rejected" />
+                <button type="submit" class="btn-sm btn-muted">驳回</button>
+              </form>
+            </td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="8" class="muted">暂无公告。可先「一键生成院校招生官网链接」快速填充。</td></tr>'
+
+    logs_html = ''
+    for log in logs:
+        logs_html += f'''
+          <tr>
+            <td>{log.get('log_id', '')}</td>
+            <td>{escape(str(log.get('job_name') or ''))}</td>
+            <td>{log.get('year', '')}</td>
+            <td>{log.get('source_processed', 0)}/{log.get('source_total', 0)}</td>
+            <td>{log.get('discovered_count', 0)}</td>
+            <td>{log.get('new_count', 0)}</td>
+            <td>{escape(str(log.get('status') or ''))}</td>
+            <td>{escape(str(log.get('created_at') or ''))}</td>
+          </tr>
+        '''
+    if not logs_html:
+        logs_html = '<tr><td colspan="8" class="muted">暂无采集日志</td></tr>'
+
+    body = f'''
+      <div class="card">
+        <h2>招生公告管理</h2>
+        {message_html}
+        <p class="muted">小程序「招生公告」Tab 仅显示 <strong>已审核通过</strong> 的记录。推荐两步走：</p>
+        <ol class="muted">
+          <li><strong>快速上线</strong>：一键为每所院校生成「招生官网」外链（点开自动跳转官网招生栏目）。</li>
+          <li><strong>深度采集</strong>：后台自动爬取省考试院 / 高校官网 PDF、章程链接，审核后展示。</li>
+        </ol>
+        <div class="grid">
+          <div><div class="muted">公告总数</div><div class="stat">{stats.get('total', 0)}</div></div>
+          <div><div class="muted">待审核</div><div class="stat">{stats.get('pending', 0)}</div></div>
+          <div><div class="muted">河南相关</div><div class="stat">{stats.get('henan', 0)}</div></div>
+          <div><div class="muted">2026 年</div><div class="stat">{stats.get('year_2026', 0)}</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>快速填充：院校招生官网链接</h2>
+        <p class="muted">根据院校库 <code>website</code> 字段，为每校生成一条 <code>/zsb/</code> 招生栏目链接，<strong>自动审核通过</strong>，小程序点击后 webview 打开。</p>
+        <form method="post" action="/admin/announcements/seed-portals" class="toolbar">
+          <input name="province" value="河南" placeholder="省份" />
+          <input name="year" type="number" value="2026" />
+          <input name="school_limit" type="number" value="0" placeholder="数量限制，0=不限" />
+          <button type="submit">一键生成招生官网链接</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>自动采集招生公告</h2>
+        <p class="muted">爬取河南省考试院、阳光高考及高校官网招生页，发现 PDF/章程/计划链接。新记录默认<strong>待审核</strong>。</p>
+        <form method="post" action="/admin/announcements/crawl" class="toolbar">
+          <input name="province" value="河南" />
+          <input name="year" type="number" value="2026" />
+          <input name="school_limit" type="number" value="200" />
+          <button type="submit">启动后台采集</button>
+        </form>
+        <form method="post" action="/admin/announcements/approve-pending" class="toolbar" style="margin-top:12px">
+          <button type="submit">批量通过待审核公告</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>手动添加公告链接</h2>
+        <form method="post" action="/admin/announcements/create" class="toolbar" style="flex-wrap:wrap">
+          <input name="title" placeholder="标题" required style="min-width:260px" />
+          <input name="url" placeholder="https://..." required style="min-width:320px" />
+          <input name="school_name" placeholder="院校名称（可选）" />
+          <input name="source_org" placeholder="来源（可选）" />
+          <select name="announcement_type">
+            <option value="招生公告">招生公告</option>
+            <option value="招生章程">招生章程</option>
+            <option value="招生计划">招生计划</option>
+            <option value="招生简章">招生简章</option>
+            <option value="招生官网">招生官网</option>
+          </select>
+          <button type="submit">添加并直接通过</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>公告列表</h2>
+        <form method="get" action="/admin/announcements" class="toolbar">
+          <input name="keyword" value="{escape(keyword)}" placeholder="搜索标题/院校" />
+          <select name="review_status">
+            <option value="" {selected('', review_status)}>全部状态</option>
+            <option value="approved" {selected('approved', review_status)}>已通过</option>
+            <option value="pending" {selected('pending', review_status)}>待审核</option>
+            <option value="rejected" {selected('rejected', review_status)}>已驳回</option>
+          </select>
+          <button type="submit">筛选</button>
+        </form>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>院校</th><th>类型</th><th>标题</th><th>年份</th><th>审核</th><th>来源</th><th>操作</th></tr>
+          </thead>
+          <tbody>{rows_html}</tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>采集日志</h2>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>任务</th><th>年份</th><th>进度</th><th>发现</th><th>新增</th><th>状态</th><th>时间</th></tr>
+          </thead>
+          <tbody>{logs_html}</tbody>
+        </table>
+      </div>
+    '''
+    return render_page('招生公告', body)
 
 
 def admin_logs(log_id: int | None = None, message: str = ''):

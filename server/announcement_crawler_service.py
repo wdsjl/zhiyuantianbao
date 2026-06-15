@@ -682,6 +682,165 @@ def review_announcement(announcement_id: int, review_status: str) -> None:
         connection.commit()
 
 
+def build_school_recruit_portal_url(website: str) -> str:
+    website = normalize_school_website(website)
+    parsed = urllib.parse.urlparse(website)
+    base = f'{parsed.scheme}://{parsed.netloc}'
+    return urllib.parse.urljoin(base + '/', 'zsb/')
+
+
+def school_has_portal_link(school_id: int, year: int = ANNOUNCEMENT_YEAR_DEFAULT) -> bool:
+    ensure_announcement_tables()
+    with get_connection() as connection:
+        row = connection.execute(
+            '''
+            SELECT announcement_id FROM enrollment_announcements
+            WHERE school_id = ? AND year = ? AND announcement_type = '招生官网'
+            LIMIT 1
+            ''',
+            [int(school_id), int(year)],
+        ).fetchone()
+        return bool(row)
+
+
+def seed_school_recruit_portal_links(
+    *,
+    province: str = '河南',
+    year: int = ANNOUNCEMENT_YEAR_DEFAULT,
+    school_limit: int | None = None,
+    only_missing: bool = True,
+) -> dict[str, Any]:
+    """为每所院校生成一条「招生官网」外链，小程序点击后 webview 跳转。"""
+    schools = list_schools_for_announcement_crawl(
+        province=province,
+        henan_priority=False,
+        school_limit=school_limit,
+    )
+    created = 0
+    updated = 0
+    skipped = 0
+    for school in schools:
+        school_id = school.get('school_id')
+        website = normalize_school_website(school.get('website') or '')
+        if not school_id or not website:
+            skipped += 1
+            continue
+        if only_missing and school_has_portal_link(int(school_id), year):
+            skipped += 1
+            continue
+        portal_url = build_school_recruit_portal_url(website)
+        payload = {
+            'source_org': school.get('school_name') or '高校官网',
+            'source_type': 'university_portal',
+            'school_id': school_id,
+            'school_code': school.get('school_code'),
+            'school_name': school.get('school_name'),
+            'province': school.get('province') or '',
+            'target_province': province or '河南',
+            'year': year,
+            'title': f'{school.get("school_name")} 招生信息网',
+            'announcement_type': '招生官网',
+            'url': portal_url,
+            'matched_keywords': ['招生', '官网'],
+            'mentions_henan': 1 if (school.get('province') or '') == '河南' else 0,
+            'crawl_status': 'portal_link',
+            'review_status': 'approved',
+        }
+        if upsert_announcement(payload):
+            created += 1
+        else:
+            with get_connection() as connection:
+                connection.execute(
+                    '''
+                    UPDATE enrollment_announcements
+                    SET review_status = 'approved',
+                        title = ?,
+                        school_name = ?,
+                        school_id = ?,
+                        announcement_type = '招生官网',
+                        crawl_status = 'portal_link',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE url_hash = ?
+                    ''',
+                    [
+                        payload['title'],
+                        payload['school_name'],
+                        school_id,
+                        url_hash(portal_url),
+                    ],
+                )
+                connection.commit()
+            updated += 1
+    return {
+        'school_total': len(schools),
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'province': province,
+        'year': year,
+    }
+
+
+def create_manual_announcement(
+    *,
+    title: str,
+    url: str,
+    source_org: str = '',
+    school_name: str = '',
+    school_id: int | None = None,
+    province: str = '河南',
+    year: int = ANNOUNCEMENT_YEAR_DEFAULT,
+    announcement_type: str = '招生公告',
+    review_status: str = 'approved',
+) -> bool:
+    title = (title or '').strip()
+    url = (url or '').strip()
+    if not title or not url:
+        raise ValueError('标题和链接不能为空')
+    if not url.startswith(('http://', 'https://')):
+        url = f'https://{url}'
+    return upsert_announcement({
+        'source_org': source_org or school_name or '手动添加',
+        'source_type': 'manual',
+        'school_id': school_id,
+        'school_name': school_name or None,
+        'province': province,
+        'target_province': province,
+        'year': year,
+        'title': title,
+        'announcement_type': announcement_type,
+        'url': url,
+        'matched_keywords': ['招生'],
+        'mentions_henan': 1 if province == '河南' else 0,
+        'crawl_status': 'manual',
+        'review_status': review_status,
+    })
+
+
+def bulk_review_announcements(
+    review_status: str,
+    *,
+    from_status: str = 'pending',
+    announcement_type: str = '',
+    province: str = '',
+) -> int:
+    if review_status not in ('approved', 'rejected', 'pending'):
+        raise ValueError('无效的审核状态')
+    ensure_announcement_tables()
+    sql = 'UPDATE enrollment_announcements SET review_status = ?, updated_at = CURRENT_TIMESTAMP WHERE review_status = ?'
+    params: list[Any] = [review_status, from_status]
+    if announcement_type:
+        sql += ' AND announcement_type = ?'
+        params.append(announcement_type)
+    if province:
+        sql += ' AND (target_province = ? OR province = ? OR mentions_henan = 1)'
+        params.extend([province, province])
+    with get_connection() as connection:
+        cursor = connection.execute(sql, params)
+        connection.commit()
+        return int(cursor.rowcount or 0)
+
+
 if __name__ == '__main__':
     import argparse
     import json

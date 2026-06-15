@@ -147,8 +147,8 @@
     <view class="result-summary">公告 {{announcements.length}} 条</view>
 
     <view wx:if="{{announcementLoading}}" class="sub-text loading-tip">加载中...</view>
-    <view wx:elif="{{!announcements.length}}" class="card empty-card">
-      <view class="sub-text">暂无已审核公告。后台采集并审核通过后会显示在这里。</view>
+      <view wx:elif="{{!announcements.length}}" class="card empty-card">
+      <view class="sub-text">暂无招生公告。管理员可在后台「招生公告」一键生成院校招生官网链接，或采集后审核发布。</view>
     </view>
 
     <view wx:for="{{announcements}}" wx:key="announcement_id" class="card announcement-card" data-item="{{item}}" bindtap="openAnnouncement">
