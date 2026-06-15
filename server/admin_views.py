@@ -50,6 +50,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
         table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 14px; overflow: hidden; }}
         th, td {{ padding: 12px 14px; border-bottom: 1px solid #eef2f7; text-align: left; font-size: 14px; }}
         th {{ background: #f7f9fc; color: #475467; }}
+        td.actions {{ white-space: nowrap; min-width: 200px; }}
         tr:hover td {{ background: #fafcff; }}
         .toolbar {{ display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }}
         input, select {{ height: 40px; border: 1px solid #d0d5dd; border-radius: 10px; padding: 0 12px; min-width: 180px; }}
@@ -617,7 +618,7 @@ def admin_announcements(message: str = '', review_status: str = '', keyword: str
             <td>{row.get('year', '')}</td>
             <td><span class="tag">{status}</span></td>
             <td>{escape(str(row.get('crawl_status') or ''))}</td>
-            <td>
+            <td class="actions">
               <form method="post" action="/admin/announcements/{row.get('announcement_id')}/review" style="display:inline">
                 <input type="hidden" name="review_status" value="approved" />
                 <button type="submit" class="btn-sm">通过</button>
@@ -626,8 +627,8 @@ def admin_announcements(message: str = '', review_status: str = '', keyword: str
                 <input type="hidden" name="review_status" value="rejected" />
                 <button type="submit" class="btn-sm btn-muted">驳回</button>
               </form>
-              <form method="post" action="/admin/announcements/{row.get('announcement_id')}/delete" style="display:inline" onsubmit="return confirm('确定删除该条公告？')">
-                <button type="submit" class="btn-sm btn-muted">删除</button>
+              <form method="post" action="/admin/announcements/{row.get('announcement_id')}/delete" style="display:inline" onsubmit="return confirm('确定删除该条公告？删除后不可恢复。')">
+                <button type="submit" class="btn-sm btn-danger">删除</button>
               </form>
             </td>
           </tr>
