@@ -6,7 +6,6 @@
 param(
     [string]$Branch = 'cursor/report-authority-labels-0c75'
 )
-)
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
