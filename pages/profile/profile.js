@@ -1,26 +1,33 @@
 const { request, formatRequestError } = require('../../utils/request');
 const {
+  PROVINCE_NAME,
+  PROVINCE_DISPLAY,
+  HENAN_CITIES,
   SUBJECT_COMBINATIONS,
   TARGET_BATCHES,
   findOptionIndex,
-  normalizeSubjectCombination
+  normalizeSubjectCombination,
+  normalizeHenanCity
 } = require('../../utils/profileOptions');
 const { buildProfileSnapshot, clearDerivedArtifacts } = require('../../utils/profileSnapshot');
 const { getBatchMismatchWarning } = require('../../utils/batchHint');
 
 Page({
   data: {
+    provinceDisplay: PROVINCE_DISPLAY,
+    cityOptions: HENAN_CITIES,
     subjectOptions: SUBJECT_COMBINATIONS,
     targetBatchOptions: TARGET_BATCHES,
     subjectIndex: -1,
     targetBatchIndex: -1,
+    cityIndex: -1,
     batchDataSummary: '',
     batchWarning: '',
     form: {
       role: '学生',
       name: '',
       phone: '',
-      province: '',
+      province: PROVINCE_NAME,
       city: '',
       subjectCombination: '',
       score: '',
@@ -35,10 +42,13 @@ Page({
   syncPickerIndices(form) {
     const subjectIndex = findOptionIndex(SUBJECT_COMBINATIONS, form.subjectCombination);
     const targetBatchIndex = findOptionIndex(TARGET_BATCHES, form.targetBatch);
+    const cityIndex = findOptionIndex(HENAN_CITIES, form.city);
     this.setData({
       subjectIndex: subjectIndex >= 0 ? subjectIndex : 0,
       targetBatchIndex: targetBatchIndex >= 0 ? targetBatchIndex : 0,
-      'form.subjectCombination': subjectIndex >= 0 ? SUBJECT_COMBINATIONS[subjectIndex] : form.subjectCombination
+      cityIndex: cityIndex >= 0 ? cityIndex : 0,
+      'form.subjectCombination': subjectIndex >= 0 ? SUBJECT_COMBINATIONS[subjectIndex] : form.subjectCombination,
+      'form.province': PROVINCE_NAME
     });
   },
   onLoad() {
@@ -48,6 +58,8 @@ Page({
       const form = {
         ...this.data.form,
         ...stored,
+        province: PROVINCE_NAME,
+        city: normalizeHenanCity(stored.city),
         subjectCombination: normalizeSubjectCombination(stored.subjectCombination) || stored.subjectCombination || '',
         openid: stored.openid || loginUser.openid,
         userId: stored.userId || loginUser.user_id
@@ -60,6 +72,8 @@ Page({
     if (loginUser.openid) {
       this.setData({ 'form.openid': loginUser.openid, 'form.userId': loginUser.user_id });
     }
+    this.setData({ 'form.province': PROVINCE_NAME });
+    this.refreshBatchHints({ ...this.data.form, province: PROVINCE_NAME });
   },
   selectRole(event) {
     this.setData({ 'form.role': event.currentTarget.dataset.role });
@@ -68,7 +82,7 @@ Page({
     const field = event.currentTarget.dataset.field;
     const form = { ...this.data.form, [field]: event.detail.value };
     this.setData({ [`form.${field}`]: event.detail.value });
-    if (field === 'province' || field === 'score' || field === 'rank') {
+    if (field === 'score' || field === 'rank') {
       this.refreshBatchHints(form);
     } else if (field === 'targetBatch') {
       this.updateBatchWarning(form, this.data.availableBatches || []);
@@ -102,6 +116,13 @@ Page({
   },
   updateBatchWarning(form, availableBatches) {
     this.setData({ batchWarning: getBatchMismatchWarning(form, availableBatches) });
+  },
+  onCityChange(event) {
+    const index = Number(event.detail.value);
+    this.setData({
+      cityIndex: index,
+      'form.city': HENAN_CITIES[index]
+    });
   },
   onSubjectChange(event) {
     const index = Number(event.detail.value);
@@ -196,10 +217,10 @@ Page({
   },
   saveProfile() {
     const { form } = this.data;
-    const required = ['role', 'province', 'subjectCombination', 'score', 'rank', 'targetBatch'];
+    const required = ['role', 'city', 'subjectCombination', 'score', 'rank', 'targetBatch'];
     const missing = required.some((field) => !form[field]);
     if (missing) {
-      wx.showToast({ title: '请完善必填信息', icon: 'none' });
+      wx.showToast({ title: '请完善必填信息（含地市）', icon: 'none' });
       return;
     }
     if (form.role === '家长' && !form.bindCode) {
@@ -239,7 +260,7 @@ Page({
         phone: form.phone,
         role: form.role,
         name: form.name,
-        province: form.province,
+        province: PROVINCE_NAME,
         city: form.city,
         exam_year: new Date().getFullYear(),
         exam_type: '普通类',
@@ -252,6 +273,7 @@ Page({
       .then((res) => {
         this.finishSave({
           ...form,
+          province: PROVINCE_NAME,
           openid: res.openid || openid,
           userId: res.user_id,
           studentId: res.student_id

@@ -1,3 +1,27 @@
+const PROVINCE_NAME = '河南';
+const PROVINCE_DISPLAY = '河南省';
+
+const HENAN_CITIES = [
+  '郑州市',
+  '开封市',
+  '洛阳市',
+  '平顶山市',
+  '安阳市',
+  '鹤壁市',
+  '新乡市',
+  '焦作市',
+  '濮阳市',
+  '许昌市',
+  '漯河市',
+  '三门峡市',
+  '南阳市',
+  '商丘市',
+  '信阳市',
+  '周口市',
+  '驻马店市',
+  '济源市'
+];
+
 const SUBJECT_COMBINATIONS = [
   '物理+化学+生物',
   '物理+化学+地理',
@@ -44,6 +68,14 @@ function normalizeSubjectCombination(value) {
   return text.replace(/\s/g, '').replace(/、/g, '+');
 }
 
+function normalizeHenanCity(value) {
+  if (!value) return '';
+  const text = String(value).trim().replace(/\s/g, '');
+  if (!text) return '';
+  const matched = HENAN_CITIES.find((city) => city === text || city.replace(/市$/, '') === text.replace(/市$/, ''));
+  return matched || text;
+}
+
 function findOptionIndex(options, value) {
   if (!value) return -1;
   const normalized = normalizeSubjectCombination(value);
@@ -53,8 +85,12 @@ function findOptionIndex(options, value) {
 }
 
 module.exports = {
+  PROVINCE_NAME,
+  PROVINCE_DISPLAY,
+  HENAN_CITIES,
   SUBJECT_COMBINATIONS,
   TARGET_BATCHES,
   findOptionIndex,
-  normalizeSubjectCombination
+  normalizeSubjectCombination,
+  normalizeHenanCity
 };
