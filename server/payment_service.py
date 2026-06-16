@@ -110,13 +110,6 @@ def fulfill_wechat_order(
             f'{"虚拟支付" if method == "virtual_pay" else "微信支付"}订单 {order_no}',
             source=source,
         )
-        from bean_service import grant_plan_beans
-        grant_plan_beans(
-            int(order['user_id']),
-            order['plan_code'],
-            order_no=order_no,
-            remark=f'{"虚拟支付" if method == "virtual_pay" else "微信支付"}充值到账',
-        )
         connection.execute(
             '''
             UPDATE payment_orders
@@ -145,9 +138,6 @@ def create_manual_order(data: dict[str, Any]) -> int:
     order_type = data.get('order_type') or 'manual'
     order_no = data.get('order_no') or make_order_no(user_id)
     membership_id = grant_membership(user_id, plan_code, days, remark, source='manual_payment') if data.get('auto_open', True) else None
-    if data.get('auto_open', True):
-        from bean_service import grant_plan_beans
-        grant_plan_beans(user_id, plan_code, order_no=order_no, remark='后台手动开通充值到账')
     with get_connection() as connection:
         cursor = connection.execute(
             '''

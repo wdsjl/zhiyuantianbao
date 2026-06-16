@@ -3,12 +3,16 @@ from typing import Any
 
 from db import get_connection, row_to_dict, rows_to_dicts
 
+SEASON_EXPIRE_LABEL = '报考季有效，统一截止当年9月30日'
+
 DEFAULT_PLANS = [
     ('free', '免费版', 0, 0, 1, '基础永久免费，引流体验'),
-    ('trial', '普通卡', 19.9, 30, 2, '一次充值 ¥19.9，到账 2000 星鼎豆'),
-    ('standard', '金卡', 99, 365, 3, '起充 ¥99，到账 12000 星鼎豆'),
-    ('premium', '白金卡', 168, 365, 4, '起充 ¥168，到账 24000 星鼎豆'),
+    ('trial', '普通卡', 19.9, 1, 2, f'引流体验卡 · {SEASON_EXPIRE_LABEL}；不含智能推荐、AI 报告与 PDF 导出'),
+    ('standard', '金卡', 99, 1, 3, '已下架，存量会员仍可使用至到期'),
+    ('premium', '白金卡', 168, 1, 4, f'报考季全功能畅享 · {SEASON_EXPIRE_LABEL}'),
 ]
+
+PAID_PLAN_CODES = frozenset({'trial', 'premium', 'standard'})
 
 DEFAULT_PERMISSIONS = [
     ('personality_basic', '基础性格测评报告', '测评'), ('personality_deep', '深度测评报告', '测评'),
@@ -23,12 +27,28 @@ DEFAULT_PERMISSIONS = [
     ('recruit_notice', '招生计划/征集志愿提醒', '提醒'),
 ]
 
+_PREMIUM_PERMISSIONS = {code: -1 for code, _, _ in DEFAULT_PERMISSIONS}
+
 DEFAULT_PLAN_PERMISSIONS = {
     'free': {'personality_basic': -1, 'school_basic': -1, 'score_recent_2y': -1, 'manual_simulation': -1},
-    'trial': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': 10, 'smart_recommend': 3, 'risk_inspect': 3, 'ai_plan_explain': 3, 'draft_save': 3, 'pdf_export': 1},
-    'standard': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': -1, 'smart_recommend': -1, 'risk_inspect': -1, 'ai_plan_explain': 5, 'draft_save': -1, 'pdf_export': -1, 'major_deep_guide': -1, 'volunteer_template': -1},
-    'premium': {'personality_basic': -1, 'personality_deep': -1, 'school_basic': -1, 'score_recent_2y': -1, 'score_full_history': -1, 'manual_simulation': -1, 'school_compare': -1, 'smart_recommend': -1, 'risk_inspect': -1, 'ai_plan_explain': 20, 'draft_save': -1, 'pdf_export': -1, 'major_deep_guide': -1, 'same_rank_reference': -1, 'premium_school_detail': -1, 'region_career_plan': -1, 'volunteer_template': -1, 'question_channel': -1, 'recruit_notice': -1},
+    'trial': {
+        'personality_basic': -1,
+        'school_basic': -1,
+        'score_recent_2y': -1,
+        'manual_simulation': -1,
+    },
+    'standard': dict(_PREMIUM_PERMISSIONS),
+    'premium': dict(_PREMIUM_PERMISSIONS),
 }
+
+
+def get_season_expires_at(reference: datetime | None = None) -> str:
+    """报考季会员统一截止当年9月30日23:59:59；若已过则顺延至次年9月30日。"""
+    now = reference or datetime.now()
+    season_end = datetime(now.year, 9, 30, 23, 59, 59)
+    if now > season_end:
+        season_end = datetime(now.year + 1, 9, 30, 23, 59, 59)
+    return season_end.strftime('%Y-%m-%d %H:%M:%S')
 
 
 def ensure_membership_tables() -> None:
@@ -62,7 +82,35 @@ def seed_membership_defaults() -> None:
         for plan_code, permissions in DEFAULT_PLAN_PERMISSIONS.items():
             for permission_code, limit_value in permissions.items():
                 c.execute('INSERT OR IGNORE INTO membership_plan_permissions (plan_code, permission_code, is_enabled, limit_value) VALUES (?, ?, ?, ?)', [plan_code, permission_code, 1, limit_value])
+        sync_default_plan_permission_limits(c)
+        c.execute("UPDATE membership_plans SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE plan_code = 'standard'")
         c.commit()
+
+
+def sync_default_plan_permission_limits(connection) -> None:
+    """将代码中的默认权限同步到数据库。"""
+    for plan_code, permissions in DEFAULT_PLAN_PERMISSIONS.items():
+        for permission_code, limit_value in permissions.items():
+            connection.execute(
+                '''
+                UPDATE membership_plan_permissions
+                SET limit_value = ?, is_enabled = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE plan_code = ? AND permission_code = ?
+                ''',
+                [limit_value, plan_code, permission_code],
+            )
+    for plan_code in ('trial',):
+        enabled_codes = set(DEFAULT_PLAN_PERMISSIONS.get(plan_code, {}))
+        for code, _, _ in DEFAULT_PERMISSIONS:
+            if code not in enabled_codes:
+                connection.execute(
+                    '''
+                    UPDATE membership_plan_permissions
+                    SET is_enabled = 0, limit_value = 0, updated_at = CURRENT_TIMESTAMP
+                    WHERE plan_code = ? AND permission_code = ?
+                    ''',
+                    [plan_code, code],
+                )
 
 
 def list_plans() -> list[dict[str, Any]]:
@@ -122,21 +170,13 @@ def grant_membership(user_id: int, plan_code: str, days: int | None = None, rema
             raise ValueError('套餐不存在')
         duration_days = int(days if days is not None else plan.get('duration_days') or 0)
         now = datetime.now()
-        active = row_to_dict(c.execute(
-            '''SELECT * FROM user_memberships WHERE user_id = ? AND status = 'active' ORDER BY datetime(COALESCE(expires_at, '2999-12-31')) DESC, user_membership_id DESC LIMIT 1''',
-            [user_id]
-        ).fetchone())
         starts_at = now
-        base_at = now
-        if active and active.get('plan_code') == plan_code and active.get('expires_at'):
-            try:
-                current_expires_at = datetime.strptime(active['expires_at'], '%Y-%m-%d %H:%M:%S')
-                if current_expires_at > now:
-                    base_at = current_expires_at
-                    starts_at = current_expires_at
-            except ValueError:
-                base_at = now
-        expires_at = None if duration_days <= 0 else (base_at + timedelta(days=duration_days)).strftime('%Y-%m-%d %H:%M:%S')
+        if plan_code == 'free' or duration_days <= 0:
+            expires_at = None
+        elif plan_code in PAID_PLAN_CODES and days is None:
+            expires_at = get_season_expires_at(now)
+        else:
+            expires_at = (now + timedelta(days=duration_days)).strftime('%Y-%m-%d %H:%M:%S')
         c.execute('UPDATE user_memberships SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND status = ?', ['disabled', user_id, 'active'])
         cursor = c.execute('INSERT INTO user_memberships (user_id, plan_code, status, starts_at, expires_at, source, remark) VALUES (?, ?, ?, ?, ?, ?, ?)', [user_id, plan_code, 'active', starts_at.strftime('%Y-%m-%d %H:%M:%S'), expires_at, source, remark])
         c.commit()
@@ -197,8 +237,6 @@ def get_user_entitlements(user_id: int | None = None) -> dict[str, Any]:
 
 
 def get_usage_period_key(plan_code: str, permission_code: str, membership: dict[str, Any] | None) -> str:
-    if permission_code == 'ai_plan_explain' and plan_code in ['standard', 'premium']:
-        return f'day:{datetime.now().strftime("%Y-%m-%d")}'
     if membership:
         return f'membership:{membership.get("user_membership_id")}'
     return 'free'

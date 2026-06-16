@@ -1,23 +1,12 @@
-const PLAN_BEAN_GRANT = {
-  trial: 2000,
-  standard: 12000,
-  premium: 24000
-};
-
 const PLAN_CATALOG = {
   trial: {
     plan_name: '普通卡',
-    description: '一次充值 ¥19.9，到账 2000 星鼎豆',
+    description: '引流体验卡，含基础查询与测评；不含智能推荐、AI 报告与 PDF 导出',
     price: 19.9
-  },
-  standard: {
-    plan_name: '金卡',
-    description: '起充 ¥99，到账 12000 星鼎豆',
-    price: 99
   },
   premium: {
     plan_name: '白金卡',
-    description: '起充 ¥168，到账 24000 星鼎豆',
+    description: '报考季全功能畅享，智能推荐、AI 报告、PDF 导出不限次',
     price: 168
   }
 };
@@ -29,17 +18,18 @@ const PLAN_DISPLAY_NAMES = {
   premium: '白金卡'
 };
 
+const SEASON_EXPIRE_LABEL = '报考季有效至当年9月30日';
+
 function enrichPlan(plan) {
   if (!plan || !plan.plan_code) return plan || {};
   const meta = PLAN_CATALOG[plan.plan_code] || {};
-  const beanGrant = PLAN_BEAN_GRANT[plan.plan_code] || 0;
   const price = Number(meta.price != null ? meta.price : plan.price) || 0;
   return {
     ...plan,
     plan_name: meta.plan_name || plan.plan_name,
     description: meta.description || plan.description,
     price,
-    beanGrant
+    seasonExpireLabel: SEASON_EXPIRE_LABEL
   };
 }
 
@@ -48,9 +38,9 @@ function getPlanDisplayName(planCode, fallbackName) {
 }
 
 module.exports = {
-  PLAN_BEAN_GRANT,
   PLAN_CATALOG,
   PLAN_DISPLAY_NAMES,
+  SEASON_EXPIRE_LABEL,
   enrichPlan,
   getPlanDisplayName
 };

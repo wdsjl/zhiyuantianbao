@@ -9,8 +9,8 @@
 
   <view class="card pay-banner" bindtap="goMembership">
     <view class="pay-banner-main">
-      <view class="pay-banner-title">普通卡 / 金卡 / 白金卡 · 星鼎豆充值</view>
-      <view class="sub-text">智能志愿推荐、AI 解读、风险检测、PDF 导出一键解锁</view>
+      <view class="pay-banner-title">普通卡 / 白金卡 · 报考季会员</view>
+      <view class="sub-text">白金卡畅享智能推荐、AI 报告、PDF 导出；统一有效至当年9月30日</view>
     </view>
     <button class="primary-btn pay-banner-btn" catchtap="goMembership">立即开通</button>
   </view>
