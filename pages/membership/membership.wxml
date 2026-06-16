@@ -54,7 +54,7 @@
   <view class="card">
     <view class="section-title">套餐说明</view>
     <view class="warn-box">普通卡（¥19.9）：引流体验，含基础查询与测评，不含智能推荐、AI 报告与 PDF 导出。</view>
-    <view class="warn-box">白金卡（¥168）：报考季全功能畅享，智能推荐、AI 解读、AI 报告、PDF 导出不限次。</view>
+    <view class="warn-box">白金卡（¥298）：报考季全功能畅享，智能推荐、AI 解读、AI 报告、PDF 导出不限次。</view>
     <view class="warn-box">所有付费卡统一{{seasonExpireLabel}}，到期后自动失效，需重新购买。</view>
     <view class="warn-box">所有推荐、风险检测系系统自动生成（大数据智能匹配）；AI 解读与 AI 报告由大模型生成。以上内容仅供参考，不构成录取承诺，最终以官方招生政策和正式填报系统为准。</view>
   </view>

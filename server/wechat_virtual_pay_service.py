@@ -18,7 +18,7 @@ WECHAT_API_HOST = 'https://api.weixin.qq.com'
 # 套餐虚拟道具配置：goodsPrice 为分
 PLAN_VIRTUAL_PRODUCTS: dict[str, dict[str, Any]] = {
     'trial': {'product_id': 'trial', 'goods_price_fen': 1990},
-    'premium': {'product_id': 'premium', 'goods_price_fen': 16800},
+    'premium': {'product_id': 'premium', 'goods_price_fen': 29800},
 }
 
 PAID_ORDER_STATUSES = {2, 3, 4}

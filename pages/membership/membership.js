@@ -76,7 +76,7 @@ Page({
           : this.mapPlans([
             { plan_code: 'free', plan_name: '免费版', price: 0, duration_days: 0, description: '基础永久免费，引流体验' },
             { plan_code: 'trial', plan_name: '普通卡', price: 19.9, duration_days: 1, description: '引流体验卡' },
-            { plan_code: 'premium', plan_name: '白金卡', price: 168, duration_days: 1, description: '报考季全功能畅享' }
+            { plan_code: 'premium', plan_name: '白金卡', price: 298, duration_days: 1, description: '报考季全功能畅享' }
           ]);
 
         const currentPlanCode = entitlements.plan ? entitlements.plan.plan_code : 'free';
@@ -112,7 +112,7 @@ Page({
           loadError: `${message}。请确认接口地址为 ${BASE_URL}`,
           plans: this.mapPlans([
             { plan_code: 'trial', plan_name: '普通卡', price: 19.9, duration_days: 1, description: '引流体验卡' },
-            { plan_code: 'premium', plan_name: '白金卡', price: 168, duration_days: 1, description: '报考季全功能畅享' }
+            { plan_code: 'premium', plan_name: '白金卡', price: 298, duration_days: 1, description: '报考季全功能畅享' }
           ]),
           entitlements: { plan: { plan_name: '免费版', plan_code: 'free' }, membership: null, permissions: {} }
         });

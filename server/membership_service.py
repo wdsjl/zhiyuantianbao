@@ -9,7 +9,7 @@ DEFAULT_PLANS = [
     ('free', '免费版', 0, 0, 1, '基础永久免费，引流体验'),
     ('trial', '普通卡', 19.9, 1, 2, f'引流体验卡 · {SEASON_EXPIRE_LABEL}；不含智能推荐、AI 报告与 PDF 导出'),
     ('standard', '金卡', 99, 1, 3, '已下架，存量会员仍可使用至到期'),
-    ('premium', '白金卡', 168, 1, 4, f'报考季全功能畅享 · {SEASON_EXPIRE_LABEL}'),
+    ('premium', '白金卡', 298, 1, 4, f'报考季全功能畅享 · {SEASON_EXPIRE_LABEL}'),
 ]
 
 PAID_PLAN_CODES = frozenset({'trial', 'premium', 'standard'})

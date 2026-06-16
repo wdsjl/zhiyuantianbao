@@ -7,7 +7,7 @@ const PLAN_CATALOG = {
   premium: {
     plan_name: '白金卡',
     description: '报考季全功能畅享，智能推荐、AI 报告、PDF 导出不限次',
-    price: 168
+    price: 298
   }
 };
 
