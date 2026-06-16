@@ -19,7 +19,6 @@ Page({
   },
   onLoad(options) {
     cleanupInvalidInviteCode();
-    captureInviteFromLaunch({ query: options || {}, scene: options && options.scene });
     this.tryBindInvite();
   },
   tryBindInvite() {
@@ -92,8 +91,13 @@ Page({
   goProfile() {
     wx.navigateTo({
       url: '/pages/profile/profile',
-      fail: () => {
-        wx.showToast({ title: '无法打开档案页，请重新编译小程序', icon: 'none' });
+      fail: (err) => {
+        console.error('goProfile fail', err);
+        wx.showModal({
+          title: '无法打开档案页',
+          content: '请确认 app.json 已包含 pages/profile/profile，并重新编译。也可从底部「我的」→「编辑」进入。',
+          showCancel: false
+        });
       }
     });
   },
