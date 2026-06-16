@@ -28,7 +28,7 @@ function request(options) {
       url: `${BASE_URL}${options.url}`,
       method: options.method || 'GET',
       data: options.data || {},
-      header: {
+      timeout: options.timeout || 30000,
         'content-type': 'application/json',
         ...(options.header || {})
       },

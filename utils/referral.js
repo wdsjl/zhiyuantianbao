@@ -31,6 +31,7 @@ function clearPendingInviteCode() {
 
 module.exports = {
   normalizeInviteCode,
+  isLikelyInviteCode,
   captureInviteFromLaunch,
   getPendingInviteCode,
   clearPendingInviteCode

@@ -1,6 +1,6 @@
 const { refreshActiveProfile } = require('../../utils/profileHelper');
 const { getFlowStatus, goNextStep, navigateToStep } = require('../../utils/applyFlow');
-const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode } = require('../../utils/referral');
+const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode, isLikelyInviteCode } = require('../../utils/referral');
 const { request } = require('../../utils/request');
 const { getCurrentUserId } = require('../../utils/membership');
 
