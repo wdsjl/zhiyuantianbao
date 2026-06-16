@@ -1,5 +1,5 @@
-# 一键同步小程序关键修复文件（本机 E:\zhiyuantianbao 执行）
-# 用法: .\scripts\sync-miniprogram-fix.ps1
+# Sync key miniprogram files from GitHub
+# Usage: .\scripts\sync-miniprogram-fix.ps1
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -19,12 +19,14 @@ $files = @(
   'pages/home/home.wxss',
   'pages/home/home.js',
   'pages/mine/mine.wxml',
+  'pages/mine/mine.wxss',
   'pages/profile/profile.js',
   'pages/profile/profile.wxml',
-  'pages/profile/profile.wxss'
+  'pages/profile/profile.wxss',
+  'pages/profile/profile.json'
 )
 
-Write-Host "==> 从 GitHub 同步关键文件 ..." -ForegroundColor Cyan
+Write-Host '==> Sync files from GitHub ...' -ForegroundColor Cyan
 foreach ($rel in $files) {
   $dest = Join-Path $Root $rel
   $dir = Split-Path -Parent $dest
@@ -34,5 +36,5 @@ foreach ($rel in $files) {
   Invoke-WebRequest -Uri $url -OutFile $dest
 }
 
-Write-Host "`nOK: 同步完成。请关闭微信开发者工具 -> 清缓存 -> 重新编译。" -ForegroundColor Green
-Write-Host "若仍点不动，在 Console 执行: wx.getStorageSync('pendingInviteCode')" -ForegroundColor Yellow
+Write-Host ''
+Write-Host 'OK: done. Close WeChat DevTools, clear cache, recompile.' -ForegroundColor Green
