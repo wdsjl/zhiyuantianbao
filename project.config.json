@@ -7,8 +7,27 @@
     "urlCheck": false,
     "es6": true,
     "postcss": true,
-    "minified": true
+    "minified": true,
+    "ignoreDevUnusedFiles": true,
+    "ignoreUploadUnusedFiles": true
   },
   "compileType": "miniprogram",
-  "libVersion": "3.4.0"
+  "libVersion": "3.4.0",
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "server" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "folder", "value": "dist" },
+      { "type": "folder", "value": "database" },
+      { "type": "folder", "value": ".git" },
+      { "type": "folder", "value": "donutAuthorize__" },
+      { "type": "suffix", "value": ".py" },
+      { "type": "suffix", "value": ".pyc" },
+      { "type": "suffix", "value": ".ps1" },
+      { "type": "suffix", "value": ".sql" },
+      { "type": "suffix", "value": ".md" },
+      { "type": "prefix", "value": "server.bak" },
+      { "type": "glob", "value": "**/__pycache__/**" }
+    ]
+  }
 }
