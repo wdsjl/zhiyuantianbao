@@ -13,6 +13,9 @@
 
 .edit-btn {
   width: 140rpx;
+  text-align: center;
+  text-decoration: none;
+  box-sizing: border-box;
 }
 
 .vip-card {
@@ -44,6 +47,7 @@
   padding: 28rpx 0;
   border-bottom: 1rpx solid #f2f4f7;
   color: #101828;
+  text-decoration: none;
 }
 
 .menu-item:last-child {

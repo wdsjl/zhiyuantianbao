@@ -1,10 +1,14 @@
 import unittest
 
 from pdf_service import (
+    PORTRAIT_LINE_WIDTH,
     build_draft_pdf,
+    build_text_report_pdf,
     display_width,
     format_admission_2025_display,
+    format_markdown_for_pdf,
     format_volunteer_item_block,
+    lines_from_paragraphs,
     pad_column,
     truncate_display_text,
 )
@@ -72,6 +76,38 @@ class PdfServiceTests(unittest.TestCase):
     def test_truncate_display_text(self):
         text = truncate_display_text('一二三四五六七八九十', 8)
         self.assertLessEqual(display_width(text), 8)
+
+    def test_format_markdown_for_pdf_strips_syntax(self):
+        text = format_markdown_for_pdf('## 一、兴趣画像\n\n- **设计学类**：适合创意\n1. **建筑学**')
+        self.assertNotIn('**', text)
+        self.assertNotIn('##', text)
+        self.assertIn('一、兴趣画像', text)
+        self.assertIn('· 设计学类', text)
+
+    def test_lines_from_paragraphs_respects_display_width(self):
+        body = '本报告旨在帮助您理清志愿填报思路，结合霍兰德兴趣测评与成绩定位，给出院校与专业方向建议。' * 3
+        lines = lines_from_paragraphs(body, PORTRAIT_LINE_WIDTH)
+        self.assertTrue(lines)
+        for line in lines:
+            if line.strip():
+                self.assertLessEqual(display_width(line), PORTRAIT_LINE_WIDTH)
+
+    def test_build_text_report_pdf_returns_portrait_bytes(self):
+        pdf = build_text_report_pdf(
+            '智愿填报 · 霍兰德职业兴趣深度报告',
+            {
+                'name': '测试同学',
+                'province': '河南',
+                'subject_combination': '历史+政治+地理',
+                'score': 600,
+                'rank': 11060,
+                'target_batch': '本科批',
+            },
+            '## 一、兴趣画像\n\n**现实型（R）**与**研究型（I）**组合突出，适合需要动手与分析并重的专业方向。',
+        )
+        self.assertTrue(pdf.startswith(b'%PDF'))
+        self.assertIn(b'/MediaBox [0 0 595 842]', pdf)
+        self.assertGreater(len(pdf), 1000)
 
     def test_build_draft_pdf_returns_landscape_bytes(self):
         pdf = build_draft_pdf(

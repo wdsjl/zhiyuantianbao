@@ -1,0 +1,55 @@
+{
+  "miniprogramRoot": "./",
+  "projectname": "zhiyuantianbao",
+  "description": "高考志愿填报微信小程序",
+  "appid": "wx58ed9703d22d85c2",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "ignoreDevUnusedFiles": true,
+    "ignoreUploadUnusedFiles": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "enhance": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.16.1",
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "server" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "folder", "value": "dist" },
+      { "type": "folder", "value": "database" },
+      { "type": "folder", "value": ".git" },
+      { "type": "folder", "value": "donutAuthorize__" },
+      { "type": "suffix", "value": ".py" },
+      { "type": "suffix", "value": ".pyc" },
+      { "type": "suffix", "value": ".ps1" },
+      { "type": "suffix", "value": ".sql" },
+      { "type": "suffix", "value": ".md" },
+      { "type": "prefix", "value": "server.bak" },
+      { "type": "glob", "value": "**/__pycache__/**" }
+    ],
+    "include": []
+  },
+  "editorSetting": {}
+}

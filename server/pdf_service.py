@@ -179,50 +179,99 @@ def wrap_display_text(value: Any, max_width: int) -> list[str]:
     return lines or ['']
 
 
-def wrap_text(value: Any, max_chars: int) -> list[str]:
-    text = pdf_text(value)
-    if not text:
-        return ['']
-    return [text[index:index + max_chars] for index in range(0, len(text), max_chars)]
+PORTRAIT_LINE_WIDTH = 46
+LANDSCAPE_LINE_WIDTH = 100
 
 
-def lines_from_paragraphs(text: str, max_chars: int = 52) -> list[str]:
+def format_markdown_for_pdf(text: str) -> str:
+    """将 AI 报告中的 Markdown 转为 PDF 可排版的纯文本。"""
+    output: list[str] = []
+    for raw_line in str(text or '').splitlines():
+        line = raw_line.strip()
+        if not line:
+            output.append('')
+            continue
+        line = re.sub(r'\*\*(.+?)\*\*', r'\1', line)
+        line = re.sub(r'\*(.+?)\*', r'\1', line)
+        if line.startswith('### '):
+            line = line[4:].strip()
+            output.extend(['', line])
+            continue
+        if line.startswith('## '):
+            line = line[3:].strip()
+            output.extend(['', line])
+            continue
+        if line.startswith('# '):
+            line = line[2:].strip()
+            output.extend(['', line])
+            continue
+        if line.startswith('- '):
+            line = f'· {line[2:].strip()}'
+        output.append(line)
+    return '\n'.join(output).strip()
+
+
+def lines_from_paragraphs(text: str, max_width: int = PORTRAIT_LINE_WIDTH) -> list[str]:
     lines: list[str] = []
-    for paragraph in str(text or '').splitlines():
+    for paragraph in format_markdown_for_pdf(text).splitlines():
         stripped = paragraph.strip()
         if not stripped:
             lines.append('')
             continue
-        lines.extend(wrap_text(stripped, max_chars))
+        lines.extend(wrap_display_text(stripped, max_width))
     return lines
 
 
+def append_wrapped_line(lines: list[str], text: str, max_width: int = PORTRAIT_LINE_WIDTH) -> None:
+    parts = wrap_display_text(text, max_width)
+    if not parts:
+        lines.append('')
+        return
+    lines.extend(parts)
+
+
+def wrap_text(value: Any, max_chars: int) -> list[str]:
+    """按显示宽度换行（兼容旧调用）。"""
+    return wrap_display_text(value, max_chars)
+
+
 def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
-    lines: list[str] = [
-        title,
-        f'导出时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+    lines: list[str] = []
+    append_wrapped_line(lines, title)
+    append_wrapped_line(lines, f'导出时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+    append_wrapped_line(
+        lines,
         (
             f'姓名：{student.get("name", "")}    省份：{student.get("province", "")}    '
             f'选科：{student.get("subject_combination", "")}'
         ),
+    )
+    append_wrapped_line(
+        lines,
         (
             f'分数：{student.get("score", "")}    位次：{student.get("rank", "")}    '
             f'批次：{student.get("target_batch", "")}'
         ),
+    )
+    append_wrapped_line(
+        lines,
         '提示：本报告由 AI 生成，仅供策略参考；正式冲稳保院校名单以「填报志愿」页导出的志愿 PDF 为准。',
-        '',
-        '—— 报告正文 ——',
-    ]
-    lines.extend(lines_from_paragraphs(append_ai_generated_notice(ensure_report_greeting(body, student)), 52))
-    lines.extend([
-        '',
-        '—— 免责声明 ——',
+    )
+    lines.append('')
+    lines.append('—— 报告正文 ——')
+    lines.extend(
+        lines_from_paragraphs(
+            append_ai_generated_notice(ensure_report_greeting(body, student)),
+            PORTRAIT_LINE_WIDTH,
+        )
+    )
+    lines.append('')
+    lines.append('—— 免责声明 ——')
+    append_wrapped_line(
+        lines,
         '本系统基于历史数据、测评结果与用户输入进行辅助分析。请考生和家长以各省教育考试院、高校招生章程和正式填报系统为准；院校名单以填报志愿 PDF 为准。',
-    ])
+    )
     return build_pdf(lines)
-
-
-LANDSCAPE_LINE_WIDTH = 100
 
 
 def format_pdf_value(value: Any, fallback: str = '暂无') -> str:
@@ -400,7 +449,7 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
     if draft.get('ai_explain'):
         lines.extend(['', '四、AI 志愿方案解读'])
         for paragraph in append_ai_generated_notice(str(draft.get('ai_explain') or '')).splitlines():
-            lines.extend(wrap_text(paragraph, 52))
+            lines.extend(wrap_display_text(paragraph, PORTRAIT_LINE_WIDTH))
         disclaimer_title = '五、免责声明'
     else:
         disclaimer_title = '四、免责声明'

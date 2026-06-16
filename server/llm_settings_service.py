@@ -91,7 +91,17 @@ def resolve_base_url(settings: dict) -> str:
     return PROVIDER_DEFAULT_BASE_URL.get(provider, '').rstrip('/')
 
 
-def chat_completion(messages: list[dict], max_tokens: int = 256) -> str:
+def resolve_chat_timeout(max_tokens: int, timeout: int | None = None) -> int:
+    if timeout is not None:
+        return max(10, int(timeout))
+    if max_tokens >= 1500:
+        return 120
+    if max_tokens >= 800:
+        return 90
+    return 45
+
+
+def chat_completion(messages: list[dict], max_tokens: int = 256, timeout: int | None = None) -> str:
     settings = get_llm_settings()
     if not settings or not settings.get('is_enabled'):
         raise ValueError('大模型未启用')
@@ -120,9 +130,16 @@ def chat_completion(messages: list[dict], max_tokens: int = 256) -> str:
         method='POST'
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        request_timeout = resolve_chat_timeout(max_tokens, timeout)
+        with urllib.request.urlopen(request, timeout=request_timeout) as response:
             data = json.loads(response.read().decode('utf-8'))
     except Exception as exc:
+        detail = str(exc)
+        if 'timed out' in detail.lower():
+            raise ValueError(
+                f'大模型响应超时（已等待 {resolve_chat_timeout(max_tokens, timeout)} 秒）。'
+                '请稍后重试，或在后台检查 API 地址、Key 与服务器出网是否正常。'
+            ) from exc
         raise ValueError(f'大模型连接失败：{exc}') from exc
 
     choices = data.get('choices') or []

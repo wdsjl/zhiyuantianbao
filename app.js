@@ -1,5 +1,5 @@
 const { login } = require('./utils/auth');
-const { captureInviteFromLaunch } = require('./utils/referral');
+const { captureInviteFromLaunch, cleanupInvalidInviteCode } = require('./utils/referral');
 
 App({
   globalData: {
@@ -9,6 +9,7 @@ App({
     loginUser: null
   },
   onLaunch(options) {
+    cleanupInvalidInviteCode();
     captureInviteFromLaunch(options);
     if (!wx.getStorageSync('deviceId')) {
       wx.setStorageSync('deviceId', `d_${Date.now()}_${Math.floor(Math.random() * 100000)}`);
