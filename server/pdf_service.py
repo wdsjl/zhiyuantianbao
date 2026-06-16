@@ -209,7 +209,7 @@ def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
             f'分数：{student.get("score", "")}    位次：{student.get("rank", "")}    '
             f'批次：{student.get("target_batch", "")}'
         ),
-        '提示：本报告由 AI 基于用户填写数据生成，仅供参考，不构成录取承诺。',
+        '提示：本报告由 AI 生成，仅供策略参考；正式冲稳保院校名单以「填报志愿」页导出的志愿 PDF 为准。',
         '',
         '—— 报告正文 ——',
     ]
@@ -217,7 +217,7 @@ def build_text_report_pdf(title: str, student: dict, body: str) -> bytes:
     lines.extend([
         '',
         '—— 免责声明 ——',
-        '本系统基于历史数据、测评结果与用户输入进行辅助分析。请考生和家长以各省教育考试院、高校招生章程和正式填报系统为准。',
+        '本系统基于历史数据、测评结果与用户输入进行辅助分析。请考生和家长以各省教育考试院、高校招生章程和正式填报系统为准；院校名单以填报志愿 PDF 为准。',
     ])
     return build_pdf(lines)
 
@@ -373,9 +373,9 @@ def build_pdf(lines: list[str], *, landscape: bool = False) -> bytes:
 def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
     lines: list[str] = []
     lines.extend([
-        '智愿填报志愿方案',
+        '智愿填报志愿方案（正式志愿表）',
         f'导出时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
-        f'提示：{SYSTEM_GENERATED_NOTICE}。本方案仅供参考，最终以各省教育考试院和高校官方公布及正式填报系统为准。',
+        f'提示：{SYSTEM_GENERATED_NOTICE}。本 PDF 为系统算法生成的正式冲稳保志愿方案，院校名单以此为准；AI 测评/个性化报告仅供辅助参考。',
         '',
         build_report_greeting(student),
         '',

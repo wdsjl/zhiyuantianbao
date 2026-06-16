@@ -256,7 +256,7 @@ def build_admission_data_context(province: str, batch: str, rank: int | None = N
         f'数据年份范围：{stats.get("min_year")} - {stats.get("max_year")}',
     ]
     if rank:
-        lines.append(f'学生位次：{rank}（以下展示数据库中与该位次接近的样例院校专业，供报告引用）')
+        lines.append(f'学生位次：{rank}（以下仅为数据库统计样例，不得在报告中作为冲稳保院校推荐引用）')
     if samples:
         lines.append('位次邻近样例：')
         lines.extend(
@@ -338,6 +338,10 @@ def merge_report_inputs_from_db(
     }
 
 
+def volunteer_summary_available(volunteer_summary: str | None) -> bool:
+    return bool((volunteer_summary or '').strip())
+
+
 def build_student_report_prompt(
     profile: dict[str, Any],
     personality: dict[str, Any],
@@ -347,7 +351,7 @@ def build_student_report_prompt(
     admission_data_context: str | None = None,
 ) -> str:
     personality_block = build_personality_ai_context(personality)
-    volunteer_block = volunteer_summary or '尚未生成志愿方案，请主要依据分数位次与兴趣测评给出策略。'
+    volunteer_block = (volunteer_summary or '').strip()
     student_name = (profile.get('name') or profile.get('studentName') or '同学').strip() or '同学'
     greeting = (
         f'{student_name}同学、{student_name}同学家长，您好：'
@@ -366,11 +370,14 @@ def build_student_report_prompt(
    ## 一、学生画像与成绩定位
    ## 二、霍兰德兴趣与专业适配分析
    ## 三、结合个人需求的院校与专业方向建议
-   ## 四、冲稳保志愿策略建议
+   ## 四、当前志愿方案解读与冲稳保策略说明
    ## 五、需要重点关注的风险与误区
    ## 六、接下来 7 天的行动建议
 4. 语言面向学生和家长，清晰、务实，总字数 900～1200 字。
-5. 必须强调：最终以各省教育考试院、高校招生章程和正式填报系统为准。
+5. 必须强调：本报告仅供策略解读；正式冲稳保院校名单以用户在「填报志愿」页导出的志愿 PDF 为准。
+6. 【第四节硬性约束】只能解读下方「当前志愿方案概况」中已列出的院校与专业，按冲/稳/保/垫分组说明取舍理由与注意事项。
+7. 【禁止编造】不得写出方案中未出现的具体院校名、专业名、院校代码；不得根据数据库样例或常识另行推荐冲稳保名单。
+8. 第三节仅从城市、专业大类、兴趣匹配等方向给出原则性建议，不列出具体院校名单（具体名单只在第四节引用方案原文）。
 
 【学生档案】
 {build_student_profile_block(profile)}
@@ -381,12 +388,12 @@ def build_student_report_prompt(
 【学生个人需求与偏好】
 {build_preferences_block(preferences)}
 
-【当前志愿方案概况】
+【当前志愿方案概况（第四节唯一可引用的院校来源）】
 {volunteer_block}
 
 【本省志愿填报规则（系统数据库）】
 {province_rule_context or '未匹配到省份规则，请结合学生档案中的省份与批次判断。'}
 
-【本省历年录取数据库摘要（系统数据库）】
+【本省历年录取数据库摘要（仅供位次背景参考，不得据此推荐具体院校）】
 {admission_data_context or '暂无数据库录取记录摘要。'}
 '''
