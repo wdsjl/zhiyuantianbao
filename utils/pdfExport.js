@@ -140,18 +140,48 @@ function openDocument(filePath) {
   });
 }
 
+function formatShareError(errMsg) {
+  const text = String(errMsg || '');
+  if (text.includes('not supported') || text.includes('开发者工具')) {
+    return '当前环境不支持直接发送文件，已改为打开预览，请点右上角菜单转发';
+  }
+  if (text.includes('TAP gesture')) {
+    return '请直接点击「发送到微信」按钮，不要连续快速点击';
+  }
+  return text || '发送失败，请重试';
+}
+
 function sharePdfToWeChat(filePath, fileName) {
   return new Promise((resolve, reject) => {
+    const displayName = ensurePdfExtension(fileName);
+    const fallbackPreview = () => openDocument(filePath)
+      .then(() => resolve({
+        filePath,
+        fileName: displayName,
+        action: 'preview_fallback'
+      }))
+      .catch(reject);
+
     if (!wx.shareFileMessage) {
-      reject(new Error('微信版本过低，请升级后使用「发送到微信」'));
+      fallbackPreview();
       return;
     }
-    const displayName = ensurePdfExtension(fileName);
     wx.shareFileMessage({
       filePath,
       fileName: displayName,
       success: () => resolve({ filePath, fileName: displayName, action: 'share' }),
-      fail: (error) => reject(new Error(error.errMsg || '发送失败，请重试'))
+      fail: (error) => {
+        const errMsg = error.errMsg || '';
+        if (
+          errMsg.includes('not supported')
+          || errMsg.includes('开发者工具')
+          || errMsg === 'shareFileMessage:fail'
+        ) {
+          fallbackPreview();
+          return;
+        }
+        reject(new Error(formatShareError(errMsg)));
+      }
     });
   });
 }
@@ -227,12 +257,21 @@ function openPdfFromUrl(path, options) {
   });
 }
 
+function notifyPdfShareResult(result) {
+  if (result && result.action === 'preview_fallback') {
+    wx.showToast({ title: '已打开预览，请点右上角转发', icon: 'none', duration: 3000 });
+    return;
+  }
+  wx.showToast({ title: '请选择文件传输助手', icon: 'none' });
+}
+
 module.exports = {
   openPdfFromUrl,
   openPdfFromPost,
   preparePdfFromPost,
   preparePdfFromUrl,
   sharePdfToWeChat,
+  notifyPdfShareResult,
   openDocument,
   buildStudentPdfFileName
 };

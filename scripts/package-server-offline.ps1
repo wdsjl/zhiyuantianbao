@@ -1,21 +1,28 @@
 # 在本机 E:\zhiyuantianbao 执行 — 打包 server 目录供服务器离线部署
 # 用法: .\scripts\package-server-offline.ps1
+#       .\scripts\package-server-offline.ps1 -Branch cursor/report-authority-labels-0c75
 # 将生成的 zip 通过远程桌面复制到服务器后，运行 scripts\apply-server-offline.ps1
+
+param(
+    [string]$Branch = 'cursor/report-authority-labels-0c75'
+)
+)
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
-$Branch = 'cursor/merge-all-features-0c75'
-Write-Host "==> 当前目录: $Root" -ForegroundColor Cyan
-
 $branchName = (git rev-parse --abbrev-ref HEAD).Trim()
 if ($branchName -ne $Branch) {
     Write-Host "切换到 $Branch ..." -ForegroundColor Yellow
-    git fetch origin $Branch
-    git checkout $Branch
-    git pull origin $Branch
+    git fetch origin $Branch 2>$null
+    git checkout $Branch 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        git pull origin $Branch 2>$null
+    }
 }
+
+Write-Host "==> 当前目录: $Root (分支 $Branch)" -ForegroundColor Cyan
 
 $commit = (git rev-parse --short HEAD).Trim()
 $outDir = Join-Path $Root 'dist'

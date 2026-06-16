@@ -1,7 +1,7 @@
 const { request } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
 const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
-const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require('../../utils/pdfExport');
+const { preparePdfFromUrl, sharePdfToWeChat, notifyPdfShareResult, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass, inspectPlanRisk } = require('../../utils/volunteer');
 const { formatAiContent } = require('../../utils/reportFormat');
@@ -593,7 +593,7 @@ Page({
       return;
     }
     sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
-      .then(() => wx.showToast({ title: '请选择文件传输助手', icon: 'none' }))
+      .then((result) => notifyPdfShareResult(result))
       .catch((error) => wx.showToast({ title: error.message || '发送失败', icon: 'none' }));
   },
   goCompare() {
