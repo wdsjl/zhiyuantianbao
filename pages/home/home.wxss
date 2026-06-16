@@ -27,6 +27,9 @@
 }
 
 .profile-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #ffffff;
   color: #1677ff;
   border-radius: 999rpx;
@@ -40,10 +43,11 @@
   position: relative;
   z-index: 2;
   box-shadow: 0 8rpx 20rpx rgba(16, 24, 40, 0.12);
+  text-decoration: none;
 }
 
-.profile-btn::after {
-  border: none;
+.profile-btn text {
+  color: #1677ff;
 }
 
 .profile-btn-hover {

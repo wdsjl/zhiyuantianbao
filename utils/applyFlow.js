@@ -100,7 +100,17 @@ function navigateToStep(stepKey) {
     wx.switchTab({ url: route });
     return;
   }
-  wx.navigateTo({ url: route });
+  wx.navigateTo({
+    url: route,
+    fail: (err) => {
+      console.error('navigateToStep fail', stepKey, err);
+      wx.showModal({
+        title: '页面打不开',
+        content: `无法进入「${(STEPS.find((s) => s.key === stepKey) || {}).title || stepKey}」。请确认 app.json 已注册 ${route}，并检查 utils/request.js 是否完整。`,
+        showCancel: false
+      });
+    }
+  });
 }
 
 function goNextStep(profile) {

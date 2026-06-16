@@ -1,7 +1,6 @@
 const { refreshActiveProfile } = require('../../utils/profileHelper');
 const { getFlowStatus, goNextStep, navigateToStep } = require('../../utils/applyFlow');
 const { getPendingInviteCode, clearPendingInviteCode, isLikelyInviteCode, cleanupInvalidInviteCode } = require('../../utils/referral');
-const { request } = require('../../utils/request');
 const { getCurrentUserId } = require('../../utils/membership');
 
 Page({
@@ -33,6 +32,7 @@ Page({
     if (wx.getStorageSync(triedKey)) return;
 
     const deviceId = wx.getStorageSync('deviceId') || '';
+    const { request } = require('../../utils/request');
     request({
       url: '/api/referral/bind',
       method: 'POST',
