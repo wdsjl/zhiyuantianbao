@@ -5,6 +5,7 @@ const {
   openPdfFromPost,
   preparePdfFromPost,
   sharePdfToWeChat,
+  notifyPdfShareResult,
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
 const { formatReportContent } = require('../../utils/reportFormat');
@@ -233,7 +234,7 @@ Page({
       return;
     }
     sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
-      .then(() => wx.showToast({ title: '请选择文件传输助手', icon: 'none' }))
+      .then((result) => notifyPdfShareResult(result))
       .catch((error) => wx.showToast({ title: error.message || '发送失败', icon: 'none' }));
   },
   previewAiReportPdf() {

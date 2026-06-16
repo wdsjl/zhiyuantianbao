@@ -1,8 +1,9 @@
 <view class="container">
   <view class="card hero-card">
     <ai-generated-label />
-    <view class="section-title">最终志愿报告（可选）</view>
-    <view class="sub-text">建议流程：可报院校检索 → 霍兰德测评 → 填写需求 → 智能生成志愿 → 再生成此报告。报告会结合你的志愿方案给出策略说明。</view>
+    <view class="section-title">个性化填报报告（可选）</view>
+    <view class="authority-banner">仅供参考 · 正式冲稳保院校名单以「填报志愿」页导出的志愿 PDF 为准</view>
+    <view class="sub-text">建议流程：可报院校检索 → 霍兰德测评 → 智能生成志愿 → 填写需求 → 再生成此报告。报告仅解读你已生成的志愿方案，不会另行编造院校名单。</view>
   </view>
 
   <view wx:if="{{reportStale}}" class="card">
@@ -60,7 +61,7 @@
     <ai-generated-label />
     <button class="primary-btn" bindtap="generateReport" loading="{{loading}}">生成个性化报告</button>
     <view class="sub-text">每次生成扣除 500 星鼎豆；普通卡充 2000 豆、金卡 12000 豆、白金卡 24000 豆。星鼎豆充值后不退，已消费不退还。</view>
-    <view class="warn-box">报告由大模型基于你填写的数据生成，仅供参考，不构成录取承诺。</view>
+    <view class="warn-box">报告由大模型基于你的志愿方案与个人需求生成，仅供策略解读，不构成录取承诺。院校名单以填报志愿 PDF 为准。</view>
   </view>
 
   <view wx:if="{{report}}" class="card report-card">

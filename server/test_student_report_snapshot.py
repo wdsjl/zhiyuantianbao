@@ -1,6 +1,10 @@
 import unittest
 
-from student_report_service import build_profile_snapshot, profile_snapshot_matches_student
+from student_report_service import (
+    build_profile_snapshot,
+    profile_snapshot_matches_student,
+    volunteer_summary_available,
+)
 
 
 class StudentReportSnapshotTests(unittest.TestCase):
@@ -38,6 +42,13 @@ class StudentReportSnapshotTests(unittest.TestCase):
             'rank': 8000,
         }
         self.assertFalse(profile_snapshot_matches_student(snapshot, student))
+
+
+    def test_volunteer_summary_available(self):
+        self.assertFalse(volunteer_summary_available(None))
+        self.assertFalse(volunteer_summary_available(''))
+        self.assertFalse(volunteer_summary_available('   '))
+        self.assertTrue(volunteer_summary_available('1. 冲 某某大学 - 软件工程'))
 
 
 if __name__ == '__main__':

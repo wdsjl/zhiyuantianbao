@@ -104,6 +104,28 @@ page {
   line-height: 1.6;
 }
 
+.authority-banner {
+  background: #eff8ff;
+  color: #175cd3;
+  border: 1rpx solid #b2ddff;
+  border-radius: 16rpx;
+  padding: 16rpx 20rpx;
+  line-height: 1.6;
+  font-size: 26rpx;
+  margin: 12rpx 0;
+}
+
+.authority-banner.official {
+  background: #ecfdf3;
+  color: #067647;
+  border-color: #abefc6;
+  font-weight: 600;
+}
+
+.authority-banner-card {
+  margin-top: 16rpx;
+}
+
 .risk-low {
   color: #12b76a;
 }

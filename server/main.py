@@ -21,7 +21,7 @@ from schemas import (
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
     profile_snapshot_matches_student,
-    merge_report_inputs_from_db,
+    merge_report_inputs_from_db, volunteer_summary_available,
 )
 from province_rules_service import (
     ensure_province_rules_seeded, normalize_volunteer_override, resolve_volunteer_slots, summarize_province_rules,
@@ -2523,7 +2523,7 @@ def ai_career_report(request: CareerReportRequest):
     )
     try:
         content = append_ai_generated_notice(chat_completion([
-            {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将霍兰德职业兴趣测评与全省位次冲稳保策略结合分析。所有建议必须提示以官方信息为准。'},
+            {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将霍兰德职业兴趣测评与全省位次策略结合分析。禁止列出具体冲稳保院校名单；正式志愿以填报志愿 PDF 为准。'},
             {'role': 'user', 'content': prompt}
         ], max_tokens=1200))
         assessment_id = request.assessment_id
@@ -2554,6 +2554,11 @@ def ai_student_report(request: StudentReportRequest):
         raise HTTPException(status_code=400, detail='请先完善学生档案')
     if not personality:
         raise HTTPException(status_code=400, detail='请先完成霍兰德职业兴趣测评')
+    if not volunteer_summary_available(volunteer_summary):
+        raise HTTPException(
+            status_code=400,
+            detail='请先在「填报志愿」页智能生成志愿方案（或保存草稿）后再生成个性化报告',
+        )
     prompt = build_student_report_prompt(
         profile,
         personality,
@@ -2564,7 +2569,7 @@ def ai_student_report(request: StudentReportRequest):
     )
     try:
         content = append_ai_generated_notice(chat_completion([
-            {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将分数位次、兴趣测评与个人需求融合为个性化报告。'},
+            {'role': 'system', 'content': '你是专业、谨慎的高考志愿填报顾问，擅长将分数位次、兴趣测评与个人需求融合为个性化报告。第四节只能解读用户已有志愿方案中的院校，禁止编造校名。'},
             {'role': 'user', 'content': prompt}
         ], max_tokens=1800))
         report_id = save_student_report(

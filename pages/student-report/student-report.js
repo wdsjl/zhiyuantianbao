@@ -4,6 +4,7 @@ const {
   openPdfFromPost,
   preparePdfFromPost,
   sharePdfToWeChat,
+  notifyPdfShareResult,
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
 const { formatReportContent } = require('../../utils/reportFormat');
@@ -50,6 +51,30 @@ function buildPreferencesPayload(form) {
     acceptAdjustment: form.acceptAdjustment || '',
     otherNotes: form.otherNotes || ''
   };
+}
+
+function hasLocalVolunteerPlan() {
+  const plan = wx.getStorageSync('currentPlan') || [];
+  return Array.isArray(plan) && plan.length > 0;
+}
+
+function fetchServerVolunteerDraft(studentId) {
+  if (!studentId) return Promise.resolve(false);
+  return request({ url: '/api/drafts', data: { student_id: studentId } })
+    .then((res) => {
+      const drafts = res.list || [];
+      return drafts.some((draft) => Array.isArray(draft.items) && draft.items.length > 0);
+    })
+    .catch(() => false);
+}
+
+function promptGoVolunteer(message) {
+  wx.showModal({
+    title: '请先生成志愿方案',
+    content: message || '个性化报告需基于已生成的冲稳保志愿方案，请先在「填报志愿」页点击「智能生成」。',
+    confirmText: '去填报志愿',
+    success: (res) => { if (res.confirm) wx.switchTab({ url: '/pages/volunteer/volunteer' }); }
+  });
 }
 
 function buildVolunteerSummary() {
@@ -173,17 +198,28 @@ Page({
   },
   generateReport() {
     if (!this.validateBeforeGenerate()) return;
-    confirmReportBeanDeduction('个性化填报报告').then((confirmed) => {
-      if (!confirmed) return;
-      consumeReportBeans('个性化填报报告')
-        .then(() => requirePermission('personality_deep', '个性化填报报告', { consume: false }))
-        .then((allowed) => {
-          if (!allowed) return;
-          this.doGenerateReport();
-        })
-        .catch((error) => {
-          wx.showToast({ title: error.message || '星鼎豆扣除失败', icon: 'none' });
-        });
+    const profile = this.data.profile;
+    const studentId = resolveStudentId(profile);
+    const ensurePlan = hasLocalVolunteerPlan()
+      ? Promise.resolve(true)
+      : fetchServerVolunteerDraft(studentId);
+    ensurePlan.then((hasPlan) => {
+      if (!hasPlan) {
+        promptGoVolunteer();
+        return;
+      }
+      confirmReportBeanDeduction('个性化填报报告').then((confirmed) => {
+        if (!confirmed) return;
+        consumeReportBeans('个性化填报报告')
+          .then(() => requirePermission('personality_deep', '个性化填报报告', { consume: false }))
+          .then((allowed) => {
+            if (!allowed) return;
+            this.doGenerateReport();
+          })
+          .catch((error) => {
+            wx.showToast({ title: error.message || '星鼎豆扣除失败', icon: 'none' });
+          });
+      });
     });
   },
   doGenerateReport() {
@@ -209,17 +245,6 @@ Page({
         this._pdfFilePath = '';
         this._pdfFileName = '';
         wx.showToast({ title: '报告已生成', icon: 'success' });
-        setTimeout(() => {
-          wx.showModal({
-            title: '报告已生成',
-            content: '下一步可进入志愿填报页，结合报告结果智能生成冲稳保方案。',
-            confirmText: '去填报志愿',
-            cancelText: '稍后',
-            success: (modalRes) => {
-              if (modalRes.confirm) wx.switchTab({ url: '/pages/volunteer/volunteer' });
-            }
-          });
-        }, 600);
       })
       .catch((error) => {
         wx.showToast({ title: error.message || '生成失败', icon: 'none' });
@@ -274,7 +299,7 @@ Page({
       return;
     }
     sharePdfToWeChat(this._pdfFilePath, this._pdfFileName)
-      .then(() => wx.showToast({ title: '请选择文件传输助手', icon: 'none' }))
+      .then((result) => notifyPdfShareResult(result))
       .catch((error) => wx.showToast({ title: error.message || '发送失败', icon: 'none' }));
   },
   previewReportPdf() {

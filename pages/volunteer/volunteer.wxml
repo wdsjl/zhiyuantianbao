@@ -92,6 +92,10 @@
     <button class="danger-btn remove-btn" data-index="{{index}}" bindtap="removePlanItem">移除该志愿</button>
   </view>
 
+  <view wx:if="{{plan.length}}" class="authority-banner-card card">
+    <view class="authority-banner official">正式志愿方案 · 冲稳保院校名单以此 PDF 为准</view>
+    <view class="sub-text">下方导出的 PDF 为系统算法生成的正式志愿表；霍兰德测评报告与个性化报告仅供辅助参考。</view>
+  </view>
   <view wx:if="{{pdfFileName}}" class="sub-text" style="padding:0 24rpx 12rpx">PDF 文件名：{{pdfFileName}}</view>
   <view wx:if="{{plan.length}}" class="bottom-actions">
     <button class="secondary-btn" bindtap="goCompare">方案对比</button>
