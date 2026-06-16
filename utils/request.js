@@ -29,6 +29,7 @@ function request(options) {
       method: options.method || 'GET',
       data: options.data || {},
       timeout: options.timeout || 30000,
+      header: {
         'content-type': 'application/json',
         ...(options.header || {})
       },
