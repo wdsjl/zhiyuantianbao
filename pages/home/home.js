@@ -1,6 +1,6 @@
 const { refreshActiveProfile } = require('../../utils/profileHelper');
 const { getFlowStatus, goNextStep, navigateToStep } = require('../../utils/applyFlow');
-const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode, isLikelyInviteCode } = require('../../utils/referral');
+const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode, isLikelyInviteCode, cleanupInvalidInviteCode } = require('../../utils/referral');
 const { request } = require('../../utils/request');
 const { getCurrentUserId } = require('../../utils/membership');
 
@@ -25,6 +25,13 @@ Page({
     const inviteCode = getPendingInviteCode();
     const userId = getCurrentUserId();
     if (!inviteCode || !userId) return;
+    if (!isLikelyInviteCode(inviteCode)) {
+      clearPendingInviteCode();
+      return;
+    }
+    const triedKey = `referralBindTried:${userId}:${inviteCode}`;
+    if (wx.getStorageSync(triedKey)) return;
+
     const deviceId = wx.getStorageSync('deviceId') || '';
     request({
       url: '/api/referral/bind',
@@ -35,6 +42,7 @@ Page({
         device_id: deviceId
       }
     }).then((res) => {
+      wx.setStorageSync(triedKey, true);
       clearPendingInviteCode();
       if (res && res.message) {
         wx.showModal({
@@ -44,8 +52,17 @@ Page({
         });
       }
     }).catch((error) => {
-      if (error && error.message && error.message.indexOf('已绑定其他渠道') >= 0) {
-        wx.showModal({ title: '无法更换渠道', content: error.message, showCancel: false });
+      wx.setStorageSync(triedKey, true);
+      const message = (error && error.message) || '';
+      if (message.indexOf('已绑定其他渠道') >= 0) {
+        wx.showModal({ title: '无法更换渠道', content: message, showCancel: false });
+      }
+      if (
+        message.indexOf('推广码无效') >= 0
+        || message.indexOf('缺少达人推广码') >= 0
+        || message.indexOf('已停用') >= 0
+        || message.indexOf('已过期') >= 0
+      ) {
         clearPendingInviteCode();
       }
     });
