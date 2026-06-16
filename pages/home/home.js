@@ -71,7 +71,12 @@ Page({
     navigateToStep(key);
   },
   goProfile() {
-    wx.navigateTo({ url: '/pages/profile/profile' });
+    wx.navigateTo({
+      url: '/pages/profile/profile',
+      fail: () => {
+        wx.showToast({ title: '无法打开档案页，请重新编译小程序', icon: 'none' });
+      }
+    });
   },
   goPersonality() {
     wx.navigateTo({ url: '/pages/personality/personality' });

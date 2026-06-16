@@ -26,6 +26,9 @@
   border-radius: 999rpx;
   font-size: 26rpx;
   margin: 0;
+  padding: 14rpx 28rpx;
+  flex-shrink: 0;
+  line-height: 1.4;
 }
 
 .score-card {
