@@ -75,7 +75,12 @@ function cleanupInvalidInviteCode() {
 }
 
 function getPendingInviteCode() {
-  return normalizeInviteCode(wx.getStorageSync('pendingInviteCode') || '');
+  const code = normalizeInviteCode(wx.getStorageSync('pendingInviteCode') || '');
+  if (code && !isLikelyInviteCode(code)) {
+    clearPendingInviteCode();
+    return '';
+  }
+  return code;
 }
 
 function clearPendingInviteCode() {
