@@ -1,0 +1,20 @@
+{
+  "description": "本地/打包忽略规则。微信开发者工具可能清空 project.config.json 的 packOptions，此项优先生效。",
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "server" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "folder", "value": "dist" },
+      { "type": "folder", "value": "database" },
+      { "type": "folder", "value": ".git" },
+      { "type": "folder", "value": "donutAuthorize__" },
+      { "type": "suffix", "value": ".py" },
+      { "type": "suffix", "value": ".pyc" },
+      { "type": "suffix", "value": ".ps1" },
+      { "type": "suffix", "value": ".sql" },
+      { "type": "suffix", "value": ".md" },
+      { "type": "prefix", "value": "server.bak" },
+      { "type": "glob", "value": "**/__pycache__/**" }
+    ]
+  }
+}
