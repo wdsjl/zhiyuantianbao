@@ -227,6 +227,52 @@ def query_virtual_order(order_no: str, openid: str | None = None) -> dict[str, A
     })
 
 
+def notify_provide_goods(order_no: str, wx_order_id: str = '') -> dict[str, Any]:
+    """通知微信虚拟支付：已发货完成（用于回调失败时手动补发）。"""
+    config = get_virtual_pay_config()
+    body: dict[str, Any] = {'env': config['env']}
+    if wx_order_id:
+        body['wx_order_id'] = wx_order_id
+    else:
+        body['order_id'] = order_no
+    return _request_xpay_api('/xpay/notify_provide_goods', body)
+
+
+def repair_virtual_order(order_no: str, user_id: int | None = None) -> dict[str, Any]:
+    """查询微信订单 → 本地开通会员 → 通知微信已发货。"""
+    order = get_order_by_order_no(order_no)
+    if not order:
+        raise ValueError('订单不存在')
+    if user_id is not None and int(order['user_id']) != int(user_id):
+        raise ValueError('无权操作该订单')
+    if str(order.get('pay_method') or '') != 'virtual_pay':
+        raise ValueError('仅虚拟支付订单支持补发货')
+
+    if not is_virtual_pay_ready():
+        raise ValueError('虚拟支付未配置完成')
+
+    remote = query_virtual_order(order_no)
+    remote_order = remote.get('order') or {}
+    status = int(remote_order.get('status') or 0)
+    if status not in PAID_ORDER_STATUSES:
+        raise ValueError('微信侧订单尚未支付成功，无法发货')
+
+    wx_order_id = str(remote_order.get('wxpay_order_id') or remote_order.get('wx_order_id') or '')
+    fulfilled = False
+    if order.get('pay_status') != 'paid':
+        fulfill_wechat_order(order_no, wx_order_id, _compact_json(remote_order), pay_method='virtual_pay')
+        fulfilled = True
+
+    notify_provide_goods(order_no, wx_order_id)
+    order = get_order_by_order_no(order_no)
+    return {
+        'order': order,
+        'fulfilled': fulfilled,
+        'notified': True,
+        'message': '已同步开通会员并通知微信发货完成',
+    }
+
+
 def sync_virtual_order_status(order_no: str, user_id: int | None = None) -> dict[str, Any]:
     order = get_order_by_order_no(order_no)
     if not order:
@@ -247,8 +293,12 @@ def sync_virtual_order_status(order_no: str, user_id: int | None = None) -> dict
     remote_order = remote.get('order') or {}
     status = int(remote_order.get('status') or 0)
     if status in PAID_ORDER_STATUSES:
-        transaction_id = remote_order.get('wxpay_order_id') or remote_order.get('wx_order_id') or ''
-        fulfill_wechat_order(order_no, transaction_id, _compact_json(remote_order), pay_method='virtual_pay')
+        wx_order_id = str(remote_order.get('wxpay_order_id') or remote_order.get('wx_order_id') or '')
+        fulfill_wechat_order(order_no, wx_order_id, _compact_json(remote_order), pay_method='virtual_pay')
+        try:
+            notify_provide_goods(order_no, wx_order_id)
+        except ValueError:
+            pass
         order = get_order_by_order_no(order_no)
         return {'order': order, 'synced': True}
     return {'order': order, 'synced': False}

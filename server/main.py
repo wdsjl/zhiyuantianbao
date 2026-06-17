@@ -641,6 +641,21 @@ def admin_payment_request_cancel(request_id: int = Form(...)):
     return RedirectResponse('/admin/payments?message=开通申请已取消', status_code=303)
 
 
+@app.post('/admin/payments/{order_id}/repair-deliver')
+def admin_payment_repair_deliver(order_id: int):
+    from db import get_connection, row_to_dict
+    from wechat_virtual_pay_service import repair_virtual_order
+    try:
+        with get_connection() as connection:
+            order = row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_id = ?', [order_id]).fetchone())
+        if not order:
+            raise ValueError('订单不存在')
+        repair_virtual_order(str(order['order_no']))
+        return RedirectResponse('/admin/payments?message=补发货成功，会员已同步开通', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/payments?message=补发货失败：{exc}', status_code=303)
+
+
 @app.post('/admin/payments/{order_id}/refund')
 def admin_payment_refund(order_id: int, remark: str = Form('')):
     try:
