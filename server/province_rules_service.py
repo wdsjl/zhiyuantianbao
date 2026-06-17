@@ -240,6 +240,60 @@ def list_rules_for_province(province: str, year: int = RULE_YEAR) -> list[dict[s
     return rows
 
 
+def _find_rule_in_catalog(province: str, batch: str) -> dict[str, Any] | None:
+    """数据库无记录时，回退到内置省份规则表。"""
+    normalized = _normalize_province(province)
+    candidates = [
+        item for item in PROVINCE_RULES_2025
+        if item['province'] == normalized or item['province'] == (province or '').strip()
+    ]
+    if not candidates:
+        return None
+
+    batch = (batch or '').strip()
+    if batch:
+        scored = sorted(
+            ((item, _score_rule_match(batch, item.get('batch') or '')) for item in candidates),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        best_item, best_score = scored[0]
+        if best_score >= 60:
+            return {
+                'province': best_item['province'],
+                'year': RULE_YEAR,
+                'batch': best_item['batch'],
+                'volunteer_mode': best_item['volunteer_mode'],
+                'school_count': int(best_item['school_count']),
+                'major_count_per_school': int(best_item.get('major_count_per_school') or 1),
+                'matched': True,
+                'match_score': best_score,
+                'requested_batch': batch,
+                'rule_description': best_item.get('rule_description') or '',
+                'source': 'catalog',
+            }
+
+    preferred = None
+    for item in candidates:
+        if item.get('batch') in ('本科批', '普通类一段'):
+            preferred = item
+            break
+    chosen = preferred or candidates[0]
+    return {
+        'province': chosen['province'],
+        'year': RULE_YEAR,
+        'batch': chosen['batch'],
+        'volunteer_mode': chosen['volunteer_mode'],
+        'school_count': int(chosen['school_count']),
+        'major_count_per_school': int(chosen.get('major_count_per_school') or 1),
+        'matched': True,
+        'match_score': 50,
+        'requested_batch': batch or chosen.get('batch'),
+        'rule_description': chosen.get('rule_description') or '',
+        'source': 'catalog',
+    }
+
+
 def find_province_rule(
     province: str,
     batch: str,
@@ -263,6 +317,9 @@ def find_province_rule(
         )
 
     if not rows:
+        catalog_rule = _find_rule_in_catalog(province, batch)
+        if catalog_rule:
+            return catalog_rule
         return {
             **DEFAULT_RULE,
             'province': normalized or province,
@@ -280,6 +337,10 @@ def find_province_rule(
         best_row, best_score = scored[0]
         if best_score >= 60:
             return {**best_row, 'matched': True, 'match_score': best_score, 'requested_batch': batch}
+
+        catalog_rule = _find_rule_in_catalog(normalized or province, batch)
+        if catalog_rule:
+            return catalog_rule
 
     # 无批次时优先返回本科批 / 普通类一段
     preferred = None
@@ -314,11 +375,25 @@ def resolve_volunteer_slots(
 
     rule = find_province_rule(province, batch, year)
     total_slots = int(rule.get('school_count') or DEFAULT_VOLUNTEER_COUNT)
+    if rule.get('matched'):
+        source = 'catalog' if rule.get('source') == 'catalog' else 'province_rule'
+    else:
+        source = 'default'
     return {
         'total_slots': max(1, total_slots),
         'rule': rule,
-        'source': 'province_rule' if rule.get('matched') else 'default',
+        'source': source,
     }
+
+
+def count_province_rules_in_db() -> dict[str, Any]:
+    ensure_province_rules_tables()
+    with get_connection() as connection:
+        total = row_to_dict(connection.execute('SELECT COUNT(*) AS count FROM province_rules').fetchone())
+        henan = row_to_dict(connection.execute(
+            "SELECT province, batch, school_count FROM province_rules WHERE province = '河南' AND batch = '本科批'"
+        ).fetchone())
+    return {'db_rule_count': int((total or {}).get('count') or 0), 'henan_benke': henan}
 
 
 def summarize_province_rules() -> list[dict[str, Any]]:

@@ -1484,6 +1484,7 @@ def list_parent_binds(parent_user_id: int):
 
 @app.get('/api/province-rules/resolve')
 def resolve_province_rules_api(province: str = '', batch: str = '', year: int = 2025):
+    ensure_province_rules_seeded()
     resolved = resolve_volunteer_slots(province, batch, year)
     rule = resolved.get('rule') or {}
     return {
@@ -1492,8 +1493,23 @@ def resolve_province_rules_api(province: str = '', batch: str = '', year: int = 
         'batch': rule.get('batch') or batch,
         'volunteer_mode': rule.get('volunteer_mode'),
         'matched': bool(rule.get('matched')),
-        'source': resolved.get('source'),
+        'source': resolved.get('source') or rule.get('source'),
         'rule_description': rule.get('rule_description') or '',
+    }
+
+
+@app.get('/api/province-rules/status')
+def province_rules_status():
+    from province_rules_service import count_province_rules_in_db
+    ensure_province_rules_seeded()
+    sample = resolve_volunteer_slots('河南', '本科批')
+    return {
+        **count_province_rules_in_db(),
+        'resolve_sample_henan': {
+            'total_slots': sample['total_slots'],
+            'matched': bool((sample.get('rule') or {}).get('matched')),
+            'source': sample.get('source'),
+        },
     }
 
 
