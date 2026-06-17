@@ -108,6 +108,39 @@ def _compact_json(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(',', ':'))
 
 
+def _parse_remote_order_payload(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        if isinstance(payload.get('order'), dict):
+            return payload['order']
+        return payload
+    text = str(payload or '').strip()
+    if not text:
+        return {}
+    if text.startswith('{'):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return _parse_remote_order_payload(parsed)
+    return {}
+
+
+def _split_virtual_pay_ids(remote_order: dict[str, Any]) -> tuple[str, str]:
+    """返回 (微信虚拟支付内部单号 VPO..., 微信支付交易单号)。"""
+    virtual_id = str(remote_order.get('wx_order_id') or '').strip()
+    txn_id = str(remote_order.get('wxpay_order_id') or remote_order.get('TransactionId') or '').strip()
+    return virtual_id, txn_id
+
+
+def _resolve_virtual_pay_ids(order: dict[str, Any], remote_order: dict[str, Any] | None = None) -> tuple[str, str]:
+    remote = remote_order or _parse_remote_order_payload(order.get('wx_notify_raw'))
+    virtual_id, txn_id = _split_virtual_pay_ids(remote)
+    if not txn_id:
+        txn_id = str(order.get('wx_transaction_id') or '').strip()
+    return virtual_id, txn_id
+
+
 def _get_user_openid(user_id: int) -> str:
     with get_connection() as connection:
         user = row_to_dict(connection.execute('SELECT openid FROM users WHERE user_id = ?', [user_id]).fetchone())
@@ -313,8 +346,11 @@ def notify_provide_goods(order_no: str, wx_order_id: str = '') -> dict[str, Any]
     """通知微信虚拟支付：已发货完成（用于回调失败时手动补发）。"""
     config = get_virtual_pay_config()
     body: dict[str, Any] = {'env': config['env']}
-    if wx_order_id:
-        body['wx_order_id'] = wx_order_id
+    notify_id = str(wx_order_id or '').strip()
+    if notify_id.startswith('VPO'):
+        body['wx_order_id'] = notify_id
+    elif notify_id:
+        body['order_id'] = order_no
     else:
         body['order_id'] = order_no
     return _request_xpay_api('/xpay/notify_provide_goods', body)
@@ -342,7 +378,8 @@ def repair_virtual_order(
     if not is_virtual_pay_ready():
         raise ValueError('虚拟支付未配置完成')
 
-    wx_order_id = ''
+    wx_virtual_order_id = ''
+    wxpay_transaction_id = ''
     remote_raw = ''
     query_skipped = assume_paid
 
@@ -359,23 +396,32 @@ def repair_virtual_order(
             status = int(remote_order.get('status') or 0)
             if status not in PAID_ORDER_STATUSES:
                 raise ValueError('微信侧订单尚未支付成功，无法发货')
-            wx_order_id = str(remote_order.get('wxpay_order_id') or remote_order.get('wx_order_id') or '')
+            wx_virtual_order_id, wxpay_transaction_id = _split_virtual_pay_ids(remote_order)
             remote_raw = _compact_json(remote_order)
+
+    if not wx_virtual_order_id and not wxpay_transaction_id:
+        wx_virtual_order_id, wxpay_transaction_id = _resolve_virtual_pay_ids(order)
 
     fulfilled = False
     if order.get('pay_status') != 'paid':
         notify_raw = remote_raw or ('manual_repair_assume_paid' if query_skipped else '')
-        fulfill_wechat_order(order_no, wx_order_id, notify_raw, pay_method='virtual_pay')
+        fulfill_wechat_order(
+            order_no,
+            wxpay_transaction_id or wx_virtual_order_id,
+            notify_raw,
+            pay_method='virtual_pay',
+        )
         fulfilled = True
 
     try:
-        notify_provide_goods(order_no, wx_order_id)
+        notify_provide_goods(order_no, wx_virtual_order_id)
     except ValueError as exc:
         order = get_order_by_order_no(order_no)
         if fulfilled or order.get('pay_status') == 'paid':
             raise ValueError(
                 f'本地会员已开通，但通知微信发货失败：{exc}。'
-                f'请运行 diagnose-virtual-pay.ps1 核对 AppKey，或到微信后台确认现网/沙箱 AppKey 与 WECHAT_VIRTUAL_PAY_ENV 一致'
+                f'可尝试 repair_virtual_order(..., assume_paid=True)，'
+                f'或核对 WECHAT_VIRTUAL_PAY_ENV 与订单支付环境是否一致'
             ) from exc
         raise
 
@@ -412,10 +458,15 @@ def sync_virtual_order_status(order_no: str, user_id: int | None = None) -> dict
     remote_order = remote.get('order') or {}
     status = int(remote_order.get('status') or 0)
     if status in PAID_ORDER_STATUSES:
-        wx_order_id = str(remote_order.get('wxpay_order_id') or remote_order.get('wx_order_id') or '')
-        fulfill_wechat_order(order_no, wx_order_id, _compact_json(remote_order), pay_method='virtual_pay')
+        wx_virtual_order_id, wxpay_transaction_id = _split_virtual_pay_ids(remote_order)
+        fulfill_wechat_order(
+            order_no,
+            wxpay_transaction_id or wx_virtual_order_id,
+            _compact_json(remote_order),
+            pay_method='virtual_pay',
+        )
         try:
-            notify_provide_goods(order_no, wx_order_id)
+            notify_provide_goods(order_no, wx_virtual_order_id)
         except ValueError:
             pass
         order = get_order_by_order_no(order_no)
