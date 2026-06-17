@@ -81,6 +81,8 @@ LOCKED_SOURCE_SNIPPETS: dict[str, dict[str, list[str]]] = {
     'server/province_rules_service.py': {
         'must_contain': [
             '_find_rule_in_catalog',
+            '_enforce_catalog_on_rule',
+            'catalog_enforced',
             "'province': '河南', 'batch': '本科批'",
             "'school_count': 48",
         ],

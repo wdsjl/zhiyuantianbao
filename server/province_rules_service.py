@@ -294,6 +294,24 @@ def _find_rule_in_catalog(province: str, batch: str) -> dict[str, Any] | None:
     }
 
 
+def _enforce_catalog_on_rule(rule: dict[str, Any], province: str, batch: str) -> dict[str, Any]:
+    """数据库有旧值(如河南45)时，以内置 2025 规则表为准覆盖。"""
+    if not rule.get('matched'):
+        return rule
+    catalog = _find_rule_in_catalog(province, batch)
+    if not catalog:
+        return rule
+    merged = dict(rule)
+    merged['school_count'] = int(catalog['school_count'])
+    merged['volunteer_mode'] = catalog.get('volunteer_mode') or merged.get('volunteer_mode')
+    merged['major_count_per_school'] = int(
+        catalog.get('major_count_per_school') or merged.get('major_count_per_school') or 1
+    )
+    merged['rule_description'] = catalog.get('rule_description') or merged.get('rule_description')
+    merged['catalog_enforced'] = True
+    return merged
+
+
 def find_province_rule(
     province: str,
     batch: str,
@@ -336,7 +354,11 @@ def find_province_rule(
         )
         best_row, best_score = scored[0]
         if best_score >= 60:
-            return {**best_row, 'matched': True, 'match_score': best_score, 'requested_batch': batch}
+            return _enforce_catalog_on_rule(
+                {**best_row, 'matched': True, 'match_score': best_score, 'requested_batch': batch},
+                normalized or province,
+                batch,
+            )
 
         catalog_rule = _find_rule_in_catalog(normalized or province, batch)
         if catalog_rule:
@@ -350,12 +372,16 @@ def find_province_rule(
             preferred = candidate
             break
     chosen = preferred or rows[0]
-    return {
-        **chosen,
-        'matched': True,
-        'match_score': 50,
-        'requested_batch': batch or chosen.get('batch'),
-    }
+    return _enforce_catalog_on_rule(
+        {
+            **chosen,
+            'matched': True,
+            'match_score': 50,
+            'requested_batch': batch or chosen.get('batch'),
+        },
+        normalized or province,
+        batch or chosen.get('batch') or '',
+    )
 
 
 def resolve_volunteer_slots(
@@ -376,7 +402,10 @@ def resolve_volunteer_slots(
     rule = find_province_rule(province, batch, year)
     total_slots = int(rule.get('school_count') or DEFAULT_VOLUNTEER_COUNT)
     if rule.get('matched'):
-        source = 'catalog' if rule.get('source') == 'catalog' else 'province_rule'
+        if rule.get('catalog_enforced') or rule.get('source') == 'catalog':
+            source = 'catalog'
+        else:
+            source = 'province_rule'
     else:
         source = 'default'
     return {

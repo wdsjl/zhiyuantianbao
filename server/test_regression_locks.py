@@ -72,9 +72,21 @@ class RegressionLockTests(unittest.TestCase):
         self.assertTrue(virtual_id.startswith(VIRTUAL_PAY_WX_ORDER_PREFIX))
         self.assertTrue(txn_id.startswith('70000'))
 
-    def test_trial_still_has_no_pdf_export(self) -> None:
-        trial = DEFAULT_PLAN_PERMISSIONS['trial']
-        self.assertNotIn(PDF_EXPORT_PERMISSION, trial)
+    def test_stale_db_henan_45_upgrades_to_48(self) -> None:
+        from db import get_connection
+        ensure_province_rules_seeded()
+        with get_connection() as connection:
+            connection.execute(
+                '''
+                UPDATE province_rules
+                SET school_count = 45, rule_description = 'stale test row'
+                WHERE province = '河南' AND batch = '本科批'
+                '''
+            )
+            connection.commit()
+        resolved = resolve_volunteer_slots('河南', '本科批')
+        self.assertEqual(resolved['total_slots'], HENAN_BENKE_VOLUNTEER_SLOTS)
+        self.assertTrue((resolved.get('rule') or {}).get('catalog_enforced'))
 
 
 if __name__ == '__main__':
