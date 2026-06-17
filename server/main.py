@@ -50,7 +50,7 @@ from data_fetch_service import create_source, fetch_source, list_sources, list_t
 from auth_service import login_or_create_user, is_temp_openid, get_wechat_login_status
 from pdf_service import (
     append_ai_generated_notice, build_draft_pdf, build_text_report_pdf,
-    build_student_pdf_filename, pdf_content_disposition,
+    build_student_pdf_filename, pdf_content_disposition, pdf_header_filename,
 )
 from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, revoke_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, adjust_permission_usage, export_permission_usage_csv, expire_overdue_memberships
 from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv, refund_order
@@ -1948,7 +1948,7 @@ def _pdf_response(pdf: bytes, filename: str) -> Response:
         media_type='application/pdf',
         headers={
             'Content-Disposition': pdf_content_disposition(filename),
-            'X-Pdf-Filename': filename,
+            'X-Pdf-Filename': pdf_header_filename(filename),
         }
     )
 

@@ -105,6 +105,15 @@ def pdf_content_disposition(filename: str) -> str:
     ascii_fallback = full_name if full_name.isascii() else 'report.pdf'
     return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quote(full_name)}'
 
+
+def pdf_header_filename(filename: str) -> str:
+    """HTTP 响应头必须是 latin-1；中文文件名用百分号编码。"""
+    base = filename[:-4] if filename.lower().endswith('.pdf') else filename
+    full_name = f'{normalize_pdf_filename_part(base, "导出")}.pdf'
+    if full_name.isascii():
+        return full_name
+    return quote(full_name)
+
 def wrap_text(value: Any, max_chars: int) -> list[str]:
     text = pdf_text(value)
     if not text:
