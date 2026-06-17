@@ -1525,9 +1525,17 @@ def list_schools(
     sql = 'SELECT * FROM schools WHERE 1=1'
     params = []
     if keyword:
-        sql += ' AND (school_name LIKE ? OR school_code LIKE ? OR city LIKE ?)'
         like = f'%{keyword}%'
-        params.extend([like, like, like])
+        sql += ''' AND (
+            school_name LIKE ? OR school_code LIKE ? OR city LIKE ?
+            OR school_id IN (
+                SELECT DISTINCT ep.school_id
+                FROM enrollment_plans ep
+                JOIN majors m ON m.major_id = ep.major_id
+                WHERE m.major_name LIKE ? OR m.major_code LIKE ?
+            )
+        )'''
+        params.extend([like, like, like, like, like])
     if city:
         city = city.strip()
         city_short = city[:-1] if city.endswith('市') else city

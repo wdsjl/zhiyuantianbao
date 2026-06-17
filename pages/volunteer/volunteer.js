@@ -1,6 +1,6 @@
 const { request } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
-const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
+const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
@@ -321,13 +321,77 @@ Page({
   saveDraft() {
     requirePermission('draft_save', '志愿草稿保存', { consume: true }).then((allowed) => {
       if (!allowed) return;
-      this.doSaveDraft();
+      this.persistDraftToServer()
+        .then(() => wx.showToast({ title: '已保存草稿', icon: 'success' }))
+        .catch((error) => {
+          wx.showToast({ title: error.message || '保存草稿失败', icon: 'none' });
+        });
+    });
+  },
+  buildDraftPayload() {
+    const profile = this.data.profile;
+    const localDrafts = wx.getStorageSync('drafts') || [];
+    const currentDraftId = wx.getStorageSync('currentDraftId');
+    const draftName = wx.getStorageSync('currentDraftName') || `志愿方案${localDrafts.length + 1}`;
+    const items = this.data.plan.map(toApiItem);
+    return {
+      profile,
+      currentDraftId,
+      draftName,
+      localDrafts,
+      payload: {
+        student_id: Number(profile.studentId),
+        draft_name: draftName,
+        province: profile.province,
+        year: new Date().getFullYear(),
+        batch: profile.targetBatch,
+        score: Number(profile.score),
+        rank: Number(profile.rank),
+        risk_level: this.data.riskResult ? this.data.riskResult.level : '未排查',
+        ai_explain: this.data.aiExplain,
+        items
+      }
+    };
+  },
+  persistDraftToServer() {
+    if (!this.data.plan.length) {
+      return Promise.reject(new Error('请先生成志愿方案'));
+    }
+    const profile = this.data.profile;
+    const studentId = resolveStudentId(profile);
+    if (!studentId) {
+      return Promise.reject(new Error('请先保存学生档案'));
+    }
+    const { currentDraftId, draftName, localDrafts, payload } = this.buildDraftPayload();
+    payload.student_id = studentId;
+    return request({
+      url: currentDraftId && /^\d+$/.test(String(currentDraftId)) ? `/api/drafts/${currentDraftId}` : '/api/drafts',
+      method: currentDraftId && /^\d+$/.test(String(currentDraftId)) ? 'PUT' : 'POST',
+      data: payload
+    }).then((res) => {
+      const risk = this.data.riskResult || { level: '未排查', chong: 0, wen: 0, bao: 0, dian: 0 };
+      const savedId = res.draft_id || currentDraftId;
+      if (!currentDraftId || !/^\d+$/.test(String(currentDraftId))) {
+        localDrafts.unshift({
+          id: savedId,
+          name: draftName,
+          profile,
+          plan: this.data.plan,
+          risk,
+          aiExplain: this.data.aiExplain,
+          createdAt: new Date().toLocaleString()
+        });
+        wx.setStorageSync('drafts', localDrafts);
+      }
+      wx.setStorageSync('currentDraftId', savedId);
+      wx.setStorageSync('currentDraftName', draftName);
+      return savedId;
     });
   },
   doSaveDraft() {
     if (!this.data.plan.length) return;
     const profile = this.data.profile;
-    if (!profile.studentId) {
+    if (!resolveStudentId(profile)) {
       wx.showModal({
         title: '请先保存学生档案',
         content: '保存草稿需要先将学生档案写入数据库。',
@@ -338,42 +402,24 @@ Page({
       });
       return;
     }
-    const localDrafts = wx.getStorageSync('drafts') || [];
-    const currentDraftId = wx.getStorageSync('currentDraftId');
-    const draftName = wx.getStorageSync('currentDraftName') || `志愿方案${localDrafts.length + 1}`;
-    const items = this.data.plan.map(toApiItem);
-    const payload = {
-      student_id: Number(profile.studentId),
-      draft_name: draftName,
-      province: profile.province,
-      year: new Date().getFullYear(),
-      batch: profile.targetBatch,
-      score: Number(profile.score),
-      rank: Number(profile.rank),
-      risk_level: this.data.riskResult ? this.data.riskResult.level : '未排查',
-      ai_explain: this.data.aiExplain,
-      items
-    };
-    request({
-      url: currentDraftId ? `/api/drafts/${currentDraftId}` : '/api/drafts',
-      method: currentDraftId ? 'PUT' : 'POST',
-      data: payload
-    })
-      .then((res) => {
-        const risk = this.data.riskResult || { level: '未排查', chong: 0, wen: 0, bao: 0, dian: 0 };
-        const savedId = res.draft_id || currentDraftId || `D${Date.now()}`;
-        if (!currentDraftId) {
-          localDrafts.unshift({ id: savedId, name: draftName, profile, plan: this.data.plan, risk, aiExplain: this.data.aiExplain, createdAt: new Date().toLocaleString() });
-          wx.setStorageSync('drafts', localDrafts);
-        }
-        wx.setStorageSync('currentDraftId', savedId);
-        wx.setStorageSync('currentDraftName', draftName);
-        wx.showToast({ title: currentDraftId ? '草稿已更新' : '已保存草稿', icon: 'success' });
+    this.persistDraftToServer()
+      .then((savedId) => {
+        const currentDraftId = wx.getStorageSync('currentDraftId');
+        wx.showToast({ title: currentDraftId && String(savedId) === String(currentDraftId) ? '草稿已更新' : '已保存草稿', icon: 'success' });
       })
-      .catch(() => {
-        wx.showToast({ title: '后端保存失败，已保存在本地', icon: 'none' });
+      .catch((error) => {
+        wx.showToast({ title: error.message || '后端保存失败', icon: 'none' });
+        const { draftName, localDrafts } = this.buildDraftPayload();
         const risk = this.data.riskResult || { level: '未排查', chong: 0, wen: 0, bao: 0, dian: 0 };
-        localDrafts.unshift({ id: `D${Date.now()}`, name: draftName, profile, plan: this.data.plan, risk, aiExplain: this.data.aiExplain, createdAt: new Date().toLocaleString() });
+        localDrafts.unshift({
+          id: `D${Date.now()}`,
+          name: draftName,
+          profile,
+          plan: this.data.plan,
+          risk,
+          aiExplain: this.data.aiExplain,
+          createdAt: new Date().toLocaleString()
+        });
         wx.setStorageSync('drafts', localDrafts);
       });
   },
@@ -433,31 +479,28 @@ Page({
   },
   doGeneratePlanPdf() {
     const profile = this.data.profile;
-    const currentDraftId = wx.getStorageSync('currentDraftId');
     if (!this.data.plan.length) return;
-    if (!profile.studentId) {
+    const studentId = resolveStudentId(profile);
+    if (!studentId) {
       wx.showToast({ title: '请先保存学生档案', icon: 'none' });
       return;
     }
-    if (!currentDraftId) {
-      wx.showModal({
-        title: '请先保存草稿',
-        content: 'PDF 导出需要先保存草稿。',
-        confirmText: '知道了'
-      });
-      return;
-    }
-    const fileName = buildStudentPdfFileName(profile, '填报志愿');
-    const pdfUrl = `/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`;
-    preparePdfFromUrl(pdfUrl, { fileName })
-      .then(({ filePath, fileName: savedName }) => {
+    wx.showLoading({ title: '准备导出...', mask: true });
+    this.persistDraftToServer()
+      .then((draftId) => {
+        wx.hideLoading();
+        const pdfUrl = `/api/drafts/${draftId}/pdf?student_id=${studentId}`;
+        return preparePdfFromUrl(pdfUrl, { fileName: buildStudentPdfFileName(profile, '填报志愿') })
+          .then(({ filePath, fileName: savedName }) => ({ filePath, savedName, draftId }));
+      })
+      .then(({ filePath, savedName, draftId }) => {
         this._pdfFilePath = filePath;
         this._pdfFileName = savedName;
         this.setData({ pdfReady: true, pdfFileName: savedName });
         const records = wx.getStorageSync('exportRecords') || [];
         records.unshift({
           id: Date.now(),
-          draftId: currentDraftId,
+          draftId,
           time: new Date().toLocaleString(),
           count: this.data.plan.length,
           type: 'pdf'
@@ -466,6 +509,7 @@ Page({
         wx.showToast({ title: '已生成，请点②发送', icon: 'success' });
       })
       .catch((error) => {
+        wx.hideLoading();
         wx.showToast({ title: error.message || 'PDF 生成失败', icon: 'none' });
       });
   },

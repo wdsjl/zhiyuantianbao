@@ -42,6 +42,14 @@ function refreshUserIdentityFromServer() {
   const loginUser = wx.getStorageSync('loginUser') || {};
   const openid = loginUser.openid || profile.openid || '';
   const phone = profile.phone || loginUser.phone || '';
+  const loginUserId = loginUser.user_id || loginUser.userId || '';
+  if (loginUserId && String(profile.userId || profile.user_id || '') !== String(loginUserId)) {
+    wx.setStorageSync('studentProfile', {
+      ...profile,
+      userId: loginUserId,
+      openid: openid || profile.openid
+    });
+  }
   if (!phone && (!openid || isTempOpenid(openid))) {
     return Promise.resolve(getCurrentUserId());
   }

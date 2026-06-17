@@ -20,6 +20,12 @@ Page({
   onLoad() {
     this.fetchSchools();
   },
+  onShow() {
+    if (this._loaded) {
+      this.fetchSchools();
+    }
+    this._loaded = true;
+  },
   formatSchools(list) {
     return list.map((school) => {
       const tags = [];
@@ -44,6 +50,9 @@ Page({
   },
   onKeywordInput(event) {
     this.setData({ keyword: event.detail.value });
+  },
+  onKeywordConfirm() {
+    this.fetchSchools();
   },
   toggleFilter() {
     this.setData({ showFilter: !this.data.showFilter });
