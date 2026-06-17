@@ -74,7 +74,7 @@ Page({
     const data = {
       keyword: this.data.keyword,
       city,
-      limit: 50,
+      limit: 200,
       offset: 0
     };
     const isPublic = this.getPublicParam();
@@ -99,8 +99,11 @@ Page({
   },
   applyClientFilters(list) {
     const { selected } = this.data;
+    const normCity = (value) => (value || '').replace(/市$/, '');
     return list.filter((school) => {
-      const cityHit = !selected.cities.length || selected.cities.includes(school.city);
+      const cityHit = !selected.cities.length || selected.cities.some(
+        (city) => normCity(city) === normCity(school.city) || school.city === city || school.city === `${city}市`
+      );
       const typeHit = !selected.schoolTypes.length || selected.schoolTypes.includes(school.type);
       const tagHit = !selected.tags.length || school.tags.some((tag) => selected.tags.includes(tag));
       return cityHit && typeHit && tagHit;

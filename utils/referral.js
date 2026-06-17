@@ -17,7 +17,11 @@ function captureInviteFromLaunch(options) {
   }
   code = normalizeInviteCode(code);
   if (code) {
-    wx.setStorageSync('pendingInviteCode', code);
+    try {
+      wx.setStorageSync('pendingInviteCode', code);
+    } catch (error) {
+      // 开发者工具偶发 storage 失败时忽略，不影响主流程
+    }
   }
 }
 
