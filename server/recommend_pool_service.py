@@ -15,7 +15,8 @@ from rank_strategy_service import (
     get_plan_quotas,
 )
 from schemas import RecommendRequest
-from services import get_gradient_type, get_risk_level, get_risk_reason, matches_subject_requirement
+from recommend_service import query_admission_rows
+from services import get_gradient_type, get_risk_level, get_risk_reason
 
 
 def _parse_preferences(preferences: dict[str, Any] | None) -> dict[str, Any]:
@@ -78,46 +79,18 @@ def compute_preference_score(
 
 
 def fetch_admission_rows(request: RecommendRequest) -> list[dict[str, Any]]:
-    sql = """
-    SELECT ar.*, s.school_name, s.city, s.school_type, s.is_public, s.is_985, s.is_211,
-           s.is_double_first_class, m.major_name, m.major_type, ep.tuition, ep.duration,
-           ep.subject_requirement
-    FROM admission_records ar
-    JOIN schools s ON s.school_id = ar.school_id
-    JOIN majors m ON m.major_id = ar.major_id
-    LEFT JOIN enrollment_plans ep ON ep.school_id = ar.school_id
-      AND ep.major_id = ar.major_id
-      AND ep.province = ar.province
-      AND ep.batch = ar.batch
-    WHERE ar.province = ? AND ar.batch = ?
-    """
-    params: list[Any] = [request.province, request.batch]
-
-    if request.cities:
-        sql += f" AND s.city IN ({','.join(['?'] * len(request.cities))})"
-        params.extend(request.cities)
-    if request.school_types:
-        sql += f" AND s.school_type IN ({','.join(['?'] * len(request.school_types))})"
-        params.extend(request.school_types)
-    if request.major_types:
-        sql += f" AND m.major_type IN ({','.join(['?'] * len(request.major_types))})"
-        params.extend(request.major_types)
     only_public = request.only_public
     if only_public is None and getattr(request, 'preferences', None):
         only_public = _nature_to_public((request.preferences or {}).get('schoolNaturePreference'))
-    if only_public is not None:
-        sql += ' AND s.is_public = ?'
-        params.append(1 if only_public else 0)
-
-    sql += ' ORDER BY ar.year DESC, ar.min_rank ASC'
-
-    with get_connection() as connection:
-        rows = rows_to_dicts(connection.execute(sql, params).fetchall())
-
-    return [
-        row for row in rows
-        if matches_subject_requirement(request.subject_combination, row.get('subject_requirement'))
-    ]
+    return query_admission_rows(
+        request.province,
+        request.batch,
+        request.subject_combination,
+        cities=request.cities,
+        school_types=request.school_types,
+        major_types=request.major_types,
+        only_public=only_public,
+    )
 
 
 def build_weighted_pool(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -162,10 +135,16 @@ def resolve_user_rank(request: RecommendRequest, rows: list[dict[str, Any]]) -> 
 
 
 def resolve_segment(user_rank: int, province: str, batch: str) -> str:
+    from recommend_service import expand_batch_aliases, province_variants
+
+    province_list = province_variants(province)
+    batch_list = expand_batch_aliases(batch) or [batch]
+    province_ph = ','.join(['?'] * len(province_list))
+    batch_ph = ','.join(['?'] * len(batch_list))
     with get_connection() as connection:
         total_row = connection.execute(
-            'SELECT MAX(min_rank) AS total_rank FROM admission_records WHERE province = ? AND batch = ?',
-            [province, batch],
+            f'SELECT MAX(min_rank) AS total_rank FROM admission_records WHERE province IN ({province_ph}) AND batch IN ({batch_ph})',
+            [*province_list, *batch_list],
         ).fetchone()
     province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
     return detect_segment(user_rank, province_total_rank, batch)
