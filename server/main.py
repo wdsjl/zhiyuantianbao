@@ -751,9 +751,22 @@ async def api_wechat_pay_notify(request: Request):
         return JSONResponse({'code': 'FAIL', 'message': str(exc)}, status_code=500)
 
 
-@app.post('/api/payments/virtual/deliver-notify')
+@app.api_route('/api/payments/virtual/deliver-notify', methods=['GET', 'POST'])
 async def api_virtual_deliver_notify(request: Request):
+    from wechat_msg_push_service import get_wechat_msg_token, verify_wechat_server_signature
     from wechat_virtual_pay_service import handle_virtual_deliver_notify
+
+    if request.method == 'GET':
+        signature = request.query_params.get('signature', '')
+        timestamp = request.query_params.get('timestamp', '')
+        nonce = request.query_params.get('nonce', '')
+        echostr = request.query_params.get('echostr', '')
+        if not get_wechat_msg_token():
+            raise HTTPException(status_code=500, detail='未配置 WECHAT_MSG_TOKEN')
+        if not verify_wechat_server_signature(signature, timestamp, nonce):
+            raise HTTPException(status_code=403, detail='signature invalid')
+        return Response(content=echostr, media_type='text/plain')
+
     body = await request.body()
     try:
         result = handle_virtual_deliver_notify(body.decode('utf-8'))
