@@ -1,0 +1,24 @@
+name: Regression Locks
+
+on:
+  push:
+    branches: [main, 'cursor/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  regression-locks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r server/requirements.txt
+
+      - name: Run regression lock tests
+        working-directory: server
+        run: python -m unittest test_regression_locks.py test_membership_pricing.py -v
