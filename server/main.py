@@ -59,9 +59,46 @@ from referral_service import (
     ensure_referral_tables, register_agent, get_agent_dashboard, bind_invitee,
     poster_image_base64, get_binding_for_user, save_referral_settings, update_agent_commission_rate,
 )
-from province_rules_service import (
-    ensure_province_rules_seeded, normalize_volunteer_override, resolve_volunteer_slots,
-)
+try:
+    from province_rules_service import (
+        ensure_province_rules_seeded, normalize_volunteer_override, resolve_volunteer_slots,
+    )
+except ImportError:
+    def ensure_province_rules_seeded() -> None:
+        pass
+
+    def normalize_volunteer_override(count: int | None) -> int | None:
+        value = int(count or 0)
+        if value <= 0 or value == 9:
+            return None
+        return value
+
+    def resolve_volunteer_slots(
+        province: str,
+        batch: str,
+        year: int = 2025,
+        override_count: int | None = None,
+    ) -> dict:
+        override_count = normalize_volunteer_override(override_count)
+        if override_count is not None and int(override_count) > 0:
+            return {'total_slots': int(override_count), 'rule': {}, 'source': 'override'}
+        province_text = (province or '').replace('省', '').replace('市', '')
+        batch_text = batch or ''
+        if province_text == '河南' and ('本科' in batch_text or not batch_text):
+            total = 48
+        elif province_text in ('山东', '河北', '重庆', '贵州', '青海') and '本科' in batch_text:
+            total = 96
+        elif province_text == '辽宁' and '本科' in batch_text:
+            total = 112
+        elif province_text == '浙江' and '一段' in batch_text:
+            total = 80
+        else:
+            total = 45
+        return {
+            'total_slots': total,
+            'rule': {'matched': False, 'batch': batch, 'school_count': total},
+            'source': 'fallback',
+        }
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
 
