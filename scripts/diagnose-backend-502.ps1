@@ -32,7 +32,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ''
 Write-Host '=== 3. Local health (127.0.0.1:8001) ==='
 try {
-  $health = curl.exe -s -m 5 "http://127.0.0.1:8001/api/health"
+  $health = curl.exe -s -m 5 "http://127.0.0.1:8001/health"
   if ($health) { Write-Host $health } else { Write-Host 'no response on :8001' }
 } catch {
   Write-Host 'curl local health failed'
