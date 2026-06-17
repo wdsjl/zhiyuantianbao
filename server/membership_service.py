@@ -88,16 +88,19 @@ def seed_membership_defaults() -> None:
 
 
 def sync_default_plan_permission_limits(connection) -> None:
-    """将代码中的默认权限同步到数据库。"""
+    """将代码中的默认权限同步到数据库（含缺失行 upsert）。"""
     for plan_code, permissions in DEFAULT_PLAN_PERMISSIONS.items():
         for permission_code, limit_value in permissions.items():
             connection.execute(
                 '''
-                UPDATE membership_plan_permissions
-                SET limit_value = ?, is_enabled = 1, updated_at = CURRENT_TIMESTAMP
-                WHERE plan_code = ? AND permission_code = ?
+                INSERT INTO membership_plan_permissions (plan_code, permission_code, is_enabled, limit_value, updated_at)
+                VALUES (?, ?, 1, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(plan_code, permission_code) DO UPDATE SET
+                  limit_value = excluded.limit_value,
+                  is_enabled = 1,
+                  updated_at = CURRENT_TIMESTAMP
                 ''',
-                [limit_value, plan_code, permission_code],
+                [plan_code, permission_code, limit_value],
             )
     for plan_code in ('trial',):
         enabled_codes = set(DEFAULT_PLAN_PERMISSIONS.get(plan_code, {}))

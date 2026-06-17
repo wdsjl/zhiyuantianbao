@@ -59,6 +59,9 @@ from referral_service import (
     ensure_referral_tables, register_agent, get_agent_dashboard, bind_invitee,
     poster_image_base64, get_binding_for_user, save_referral_settings, update_agent_commission_rate,
 )
+from province_rules_service import (
+    ensure_province_rules_seeded, normalize_volunteer_override, resolve_volunteer_slots,
+)
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
 
@@ -106,6 +109,7 @@ ensure_bean_tables()
 ensure_referral_tables()
 from referral_p1 import ensure_referral_p1_tables
 ensure_referral_p1_tables()
+ensure_province_rules_seeded()
 sync_plan_catalog()
 expire_overdue_memberships()
 
@@ -1441,6 +1445,21 @@ def list_parent_binds(parent_user_id: int):
     return {'list': rows_to_dicts(rows)}
 
 
+@app.get('/api/province-rules/resolve')
+def resolve_province_rules_api(province: str = '', batch: str = '', year: int = 2025):
+    resolved = resolve_volunteer_slots(province, batch, year)
+    rule = resolved.get('rule') or {}
+    return {
+        'total_slots': resolved['total_slots'],
+        'school_count': rule.get('school_count'),
+        'batch': rule.get('batch') or batch,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'matched': bool(rule.get('matched')),
+        'source': resolved.get('source'),
+        'rule_description': rule.get('rule_description') or '',
+    }
+
+
 @app.get('/api/schools')
 def list_schools(
     keyword: str = '',
@@ -1457,14 +1476,20 @@ def list_schools(
         like = f'%{keyword}%'
         params.extend([like, like, like])
     if city:
-        sql += ' AND city = ?'
-        params.append(city)
+        city = city.strip()
+        city_short = city[:-1] if city.endswith('市') else city
+        city_long = city if city.endswith('市') else f'{city}市'
+        sql += ' AND (city = ? OR city = ? OR city LIKE ?)'
+        params.extend([city, city_long, f'%{city_short}%'])
     if is_public is not None:
         sql += ' AND is_public = ?'
         params.append(is_public)
     if is_double_first_class is not None:
-        sql += ' AND is_double_first_class = ?'
-        params.append(is_double_first_class)
+        if int(is_double_first_class) == 1:
+            sql += ' AND (is_double_first_class = 1 OR is_985 = 1 OR is_211 = 1)'
+        else:
+            sql += ' AND is_double_first_class = ? AND is_985 = 0 AND is_211 = 0'
+            params.append(is_double_first_class)
     sql += ' ORDER BY is_985 DESC, is_211 DESC, is_double_first_class DESC, school_id ASC LIMIT ? OFFSET ?'
     params.extend([limit, offset])
 
@@ -1646,14 +1671,32 @@ def recommend(request: RecommendRequest):
     province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
     segment = detect_segment(user_rank, province_total_rank, request.batch)
 
+    slot_info = resolve_volunteer_slots(
+        request.province,
+        request.batch,
+        override_count=normalize_volunteer_override(request.volunteer_count),
+    )
+    total_slots = slot_info['total_slots']
+    rule = slot_info.get('rule') or {}
+
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
         user_rank=user_rank,
         plan_style=request.plan_style or 'balanced',
         batch=request.batch,
         segment=segment,
-        total_slots=max(1, int(request.volunteer_count or 9)),
+        total_slots=max(1, total_slots),
     )
+    strategy_meta = strategy_meta or {}
+    strategy_meta['volunteer_rule'] = {
+        'total_slots': total_slots,
+        'school_count': rule.get('school_count'),
+        'batch': rule.get('batch') or request.batch,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'matched': bool(rule.get('matched')),
+        'source': slot_info.get('source'),
+        'rule_description': rule.get('rule_description') or '',
+    }
 
     items = []
     for index, row in enumerate(selected_rows, start=1):
@@ -1692,6 +1735,11 @@ def recommend(request: RecommendRequest):
         'risk': inspect_plan_risk(items),
         'strategy': strategy_meta,
         'algorithm': strategy_meta.get('algorithm'),
+        'generation': {
+            'target_slots': total_slots,
+            'generated_count': len(items),
+            'candidate_pool': len(weighted_items),
+        },
     }
 
 
