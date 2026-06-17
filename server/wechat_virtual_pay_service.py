@@ -25,17 +25,17 @@ PAID_ORDER_STATUSES = {2, 3, 4}
 
 
 def get_virtual_pay_config() -> dict[str, Any]:
-    env = int(os.getenv('WECHAT_VIRTUAL_PAY_ENV', '0') or '0')
+    env = int(str(os.getenv('WECHAT_VIRTUAL_PAY_ENV', '0') or '0').strip() or '0')
+    prod_key = (os.getenv('WECHAT_VIRTUAL_PAY_APP_KEY', '') or '').strip()
+    sandbox_key = (os.getenv('WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY', '') or '').strip()
     return {
-        'offer_id': os.getenv('WECHAT_VIRTUAL_PAY_OFFER_ID', '1450554502'),
+        'offer_id': (os.getenv('WECHAT_VIRTUAL_PAY_OFFER_ID', '1450554502') or '1450554502').strip(),
         'env': 1 if env == 1 else 0,
-        'app_key': (
-            os.getenv('WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY', '')
-            if env == 1
-            else os.getenv('WECHAT_VIRTUAL_PAY_APP_KEY', '')
-        ),
-        'appid': os.getenv('WECHAT_APPID', ''),
-        'secret': os.getenv('WECHAT_SECRET', ''),
+        'app_key': sandbox_key if env == 1 else prod_key,
+        'prod_app_key': prod_key,
+        'sandbox_app_key': sandbox_key,
+        'appid': (os.getenv('WECHAT_APPID', '') or '').strip(),
+        'secret': (os.getenv('WECHAT_SECRET', '') or '').strip(),
     }
 
 
@@ -136,10 +136,25 @@ def _get_access_token() -> str:
     return token
 
 
-def _request_xpay_api(path: str, body: dict[str, Any]) -> dict[str, Any]:
+def _is_pay_sig_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return 'pay_sig' in text or '签名' in text or '268490003' in text
+
+
+def _xpay_env_candidates() -> list[dict[str, Any]]:
     config = get_virtual_pay_config()
-    post_body = _compact_json(body)
-    pay_sig = _calc_pay_sig(path, post_body, config['app_key'])
+    candidates = [config]
+    for env, app_key in ((0, config['prod_app_key']), (1, config['sandbox_app_key'])):
+        if not app_key:
+            continue
+        if env == config['env'] and app_key == config['app_key']:
+            continue
+        candidates.append({**config, 'env': env, 'app_key': app_key})
+    return candidates
+
+
+def _request_xpay_api_once(path: str, post_body: str, app_key: str) -> dict[str, Any]:
+    pay_sig = _calc_pay_sig(path, post_body, app_key)
     access_token = _get_access_token()
     query = urllib.parse.urlencode({'access_token': access_token, 'pay_sig': pay_sig})
     request = urllib.request.Request(
@@ -153,6 +168,73 @@ def _request_xpay_api(path: str, body: dict[str, Any]) -> dict[str, Any]:
     if data.get('errcode') not in (0, None):
         raise ValueError(data.get('errmsg') or f'虚拟支付接口调用失败：{data.get("errcode")}')
     return data
+
+
+def _request_xpay_api(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    last_error: ValueError | None = None
+    seen: set[tuple[int, str]] = set()
+    for candidate in _xpay_env_candidates():
+        trial_body = dict(body)
+        if 'env' in trial_body:
+            trial_body['env'] = candidate['env']
+        post_body = _compact_json(trial_body)
+        key_sig = (candidate['env'], candidate['app_key'])
+        if key_sig in seen:
+            continue
+        seen.add(key_sig)
+        try:
+            return _request_xpay_api_once(path, post_body, candidate['app_key'])
+        except ValueError as exc:
+            if _is_pay_sig_error(exc):
+                last_error = exc
+                continue
+            raise
+    if last_error:
+        raise ValueError(
+            f'{last_error}（已尝试现网/沙箱 AppKey，请核对 ecosystem.secrets.js 中 '
+            f'WECHAT_VIRTUAL_PAY_APP_KEY、WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY 与 '
+            f'WECHAT_VIRTUAL_PAY_ENV 是否与微信后台「虚拟支付-基础配置」一致）'
+        ) from last_error
+    raise ValueError('虚拟支付接口调用失败')
+
+
+def diagnose_virtual_pay_sig() -> dict[str, Any]:
+    """诊断虚拟支付配置与 pay_sig 算法，便于排查补发货失败。"""
+    status = get_virtual_pay_status()
+    config = get_virtual_pay_config()
+    uri = '/xpay/query_user_balance'
+    appkey = '12345'
+    post_body = '{"openid": "xxx", "user_ip": "127.0.0.1", "env": 0}'
+    expected = 'c37809f27c6d7fd1837ad2500a04512b66b34fd793a39a385fade56dca89a4b5'
+    algo_ok = _calc_pay_sig(uri, post_body, appkey) == expected
+    token_ok = False
+    token_error = ''
+    try:
+        _get_access_token()
+        token_ok = True
+    except ValueError as exc:
+        token_error = str(exc)
+
+    def _mask_key(key: str) -> str:
+        key = key or ''
+        if len(key) <= 4:
+            return '****' if key else ''
+        return f'{key[:2]}...{key[-4:]}'
+
+    return {
+        **status,
+        'algo_ok': algo_ok,
+        'access_token_ok': token_ok,
+        'access_token_error': token_error,
+        'app_key_mask': _mask_key(config['app_key']),
+        'prod_app_key_mask': _mask_key(config['prod_app_key']),
+        'sandbox_app_key_mask': _mask_key(config['sandbox_app_key']),
+        'hint': (
+            'pay_sig 算法正常，access_token 正常。若补发货仍失败，请确认微信后台「现网 AppKey」'
+            '与 WECHAT_VIRTUAL_PAY_APP_KEY 完全一致（env=0 用现网，env=1 用沙箱）。'
+            if algo_ok and token_ok and status.get('enabled') else status.get('hint', '')
+        ),
+    }
 
 
 def create_virtual_payment(user_id: int, plan_code: str, order_type: str = 'open', login_code: str | None = None) -> dict[str, Any]:
@@ -238,8 +320,17 @@ def notify_provide_goods(order_no: str, wx_order_id: str = '') -> dict[str, Any]
     return _request_xpay_api('/xpay/notify_provide_goods', body)
 
 
-def repair_virtual_order(order_no: str, user_id: int | None = None) -> dict[str, Any]:
-    """查询微信订单 → 本地开通会员 → 通知微信已发货。"""
+def repair_virtual_order(
+    order_no: str,
+    user_id: int | None = None,
+    *,
+    assume_paid: bool = False,
+) -> dict[str, Any]:
+    """查询微信订单 → 本地开通会员 → 通知微信已发货。
+
+    assume_paid=True 时跳过查单，适用于微信后台已显示支付成功但 pay_sig 查单失败的情况。
+    查单因 pay_sig 失败时也会自动跳过查单并继续本地开通 + 通知发货。
+    """
     order = get_order_by_order_no(order_no)
     if not order:
         raise ValueError('订单不存在')
@@ -251,25 +342,53 @@ def repair_virtual_order(order_no: str, user_id: int | None = None) -> dict[str,
     if not is_virtual_pay_ready():
         raise ValueError('虚拟支付未配置完成')
 
-    remote = query_virtual_order(order_no)
-    remote_order = remote.get('order') or {}
-    status = int(remote_order.get('status') or 0)
-    if status not in PAID_ORDER_STATUSES:
-        raise ValueError('微信侧订单尚未支付成功，无法发货')
+    wx_order_id = ''
+    remote_raw = ''
+    query_skipped = assume_paid
 
-    wx_order_id = str(remote_order.get('wxpay_order_id') or remote_order.get('wx_order_id') or '')
+    if not assume_paid:
+        try:
+            remote = query_virtual_order(order_no)
+        except ValueError as exc:
+            if _is_pay_sig_error(exc):
+                query_skipped = True
+            else:
+                raise
+        else:
+            remote_order = remote.get('order') or {}
+            status = int(remote_order.get('status') or 0)
+            if status not in PAID_ORDER_STATUSES:
+                raise ValueError('微信侧订单尚未支付成功，无法发货')
+            wx_order_id = str(remote_order.get('wxpay_order_id') or remote_order.get('wx_order_id') or '')
+            remote_raw = _compact_json(remote_order)
+
     fulfilled = False
     if order.get('pay_status') != 'paid':
-        fulfill_wechat_order(order_no, wx_order_id, _compact_json(remote_order), pay_method='virtual_pay')
+        notify_raw = remote_raw or ('manual_repair_assume_paid' if query_skipped else '')
+        fulfill_wechat_order(order_no, wx_order_id, notify_raw, pay_method='virtual_pay')
         fulfilled = True
 
-    notify_provide_goods(order_no, wx_order_id)
+    try:
+        notify_provide_goods(order_no, wx_order_id)
+    except ValueError as exc:
+        order = get_order_by_order_no(order_no)
+        if fulfilled or order.get('pay_status') == 'paid':
+            raise ValueError(
+                f'本地会员已开通，但通知微信发货失败：{exc}。'
+                f'请运行 diagnose-virtual-pay.ps1 核对 AppKey，或到微信后台确认现网/沙箱 AppKey 与 WECHAT_VIRTUAL_PAY_ENV 一致'
+            ) from exc
+        raise
+
     order = get_order_by_order_no(order_no)
+    message = '已同步开通会员并通知微信发货完成'
+    if query_skipped:
+        message += '（已跳过查单，按微信后台已支付处理）'
     return {
         'order': order,
         'fulfilled': fulfilled,
         'notified': True,
-        'message': '已同步开通会员并通知微信发货完成',
+        'query_skipped': query_skipped,
+        'message': message,
     }
 
 
