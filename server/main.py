@@ -7,7 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import (
-    RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
+    RecommendRequest, EligiblePoolRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
     ReferralAgentRegisterRequest, ReferralBindRequest, ReferralWithdrawRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
@@ -23,6 +23,8 @@ from services import get_gradient_type, get_risk_level, get_risk_reason, inspect
 from rank_strategy_service import (
     assemble_recommendation_plan, detect_segment, estimate_rank_from_score, AI_STRATEGY_PROMPT,
 )
+from recommend_pool_service import query_eligible_pool
+from recommend_service import list_province_admission_batches
 from import_service import parse_import_file, import_admission_rows
 from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
@@ -1653,6 +1655,33 @@ def list_province_rules(province: str = '', year: int | None = None, batch: str 
     with get_connection() as connection:
         rows = connection.execute(sql, params).fetchall()
     return {'list': rows_to_dicts(rows)}
+
+
+@app.get('/api/admission-data/batches')
+def api_admission_data_batches(province: str):
+    if not province.strip():
+        raise HTTPException(status_code=400, detail='请提供省份')
+    batches = list_province_admission_batches(province)
+    total = sum(int(item.get('school_major_count') or item.get('record_count') or 0) for item in batches)
+    return {
+        'province': province,
+        'batches': batches,
+        'total_school_major': total,
+    }
+
+
+@app.post('/api/eligible-pool')
+def eligible_pool(request: EligiblePoolRequest):
+    try:
+        return query_eligible_pool(
+            request,
+            gradient=request.gradient or '',
+            keyword=request.keyword or '',
+            page=request.page,
+            page_size=request.page_size,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post('/api/recommend')
