@@ -25,5 +25,19 @@ $envObj.PSObject.Properties | ForEach-Object {
   }
 }
 
-Set-Location $ServerDir
-python -c "import json; from wechat_virtual_pay_service import diagnose_virtual_pay_sig; print(json.dumps(diagnose_virtual_pay_sig(), ensure_ascii=False, indent=2))"
+$secretsPath = Join-Path $Root 'ecosystem.secrets.js'
+if (Test-Path $secretsPath) {
+  $secretsJson = node -e "const s=require('./ecosystem.secrets.js'); process.stdout.write(JSON.stringify(s||{}));"
+  if ($secretsJson) {
+    ($secretsJson | ConvertFrom-Json).PSObject.Properties | ForEach-Object {
+      $name = $_.Name
+      $value = [string]$_.Value
+      if ($value) {
+        Set-Item -Path ('Env:' + $name) -Value $value
+      }
+    }
+  }
+}
+
+Set-Location $Root
+python (Join-Path $Root 'scripts\diagnose_virtual_pay.py')
