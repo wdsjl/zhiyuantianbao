@@ -15,10 +15,10 @@ from payment_service import create_pending_order, fulfill_wechat_order, get_orde
 
 WECHAT_API_HOST = 'https://api.weixin.qq.com'
 
-# 套餐虚拟道具配置：goodsPrice 为分
+# 套餐虚拟道具配置：goodsPrice 为分（须与微信虚拟支付后台道具 ID、现网价格一致）
 PLAN_VIRTUAL_PRODUCTS: dict[str, dict[str, Any]] = {
-    'trial': {'product_id': 'trial', 'goods_price_fen': 1990},
-    'premium': {'product_id': 'premium', 'goods_price_fen': 29800},
+    'trial': {'product_id': 'xdptk', 'goods_price_fen': 1990},
+    'premium': {'product_id': 'xdbjk', 'goods_price_fen': 29800},
 }
 
 PAID_ORDER_STATUSES = {2, 3, 4}
@@ -59,6 +59,19 @@ def get_virtual_pay_status() -> dict[str, Any]:
     if not config['app_key']:
         key_name = 'WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY' if config['env'] == 1 else 'WECHAT_VIRTUAL_PAY_APP_KEY'
         missing.append(key_name)
+
+    products: dict[str, dict[str, Any]] = {}
+    for plan_code in ('trial', 'premium'):
+        try:
+            item = _get_plan_product(plan_code)
+            products[plan_code] = {
+                'product_id': item['product_id'],
+                'goods_price_fen': item['goods_price_fen'],
+                'goods_price_yuan': round(item['goods_price_fen'] / 100, 2),
+            }
+        except ValueError:
+            products[plan_code] = {'error': '套餐不可用'}
+
     return {
         'enabled': not missing,
         'mode': 'virtual_pay',
@@ -68,6 +81,7 @@ def get_virtual_pay_status() -> dict[str, Any]:
         'secret_configured': bool(config['secret']),
         'app_key_configured': bool(config['app_key']),
         'missing': missing,
+        'products': products,
         'hint': (
             '虚拟支付无需商户证书 apiclient_key.pem；请在 ecosystem.secrets.js 配置 WECHAT_SECRET 与 WECHAT_VIRTUAL_PAY_APP_KEY 后执行 pm2 restart zhiyuan-backend --update-env'
             if missing else '虚拟支付已就绪'
@@ -94,6 +108,8 @@ def _get_plan_product(plan_code: str) -> dict[str, Any]:
     product_id = env_product_id or defaults.get('product_id') or plan_code
     if env_goods_price:
         goods_price_fen = int(env_goods_price)
+    elif defaults.get('goods_price_fen') is not None:
+        goods_price_fen = int(defaults['goods_price_fen'])
     else:
         goods_price_fen = int(round(price * 100))
     return {
