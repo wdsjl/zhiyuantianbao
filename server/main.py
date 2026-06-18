@@ -7,11 +7,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import (
-    RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
+    RecommendRequest, EligiblePoolRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
     ReferralAgentRegisterRequest, ReferralBindRequest, ReferralWithdrawRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
-    BeanConsumeReportRequest,
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
@@ -24,6 +23,8 @@ from services import get_gradient_type, get_risk_level, get_risk_reason, inspect
 from rank_strategy_service import (
     assemble_recommendation_plan, detect_segment, estimate_rank_from_score, AI_STRATEGY_PROMPT,
 )
+from recommend_pool_service import query_eligible_pool
+from recommend_service import list_province_admission_batches
 from import_service import parse_import_file, import_admission_rows
 from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
@@ -51,7 +52,7 @@ from data_fetch_service import create_source, fetch_source, list_sources, list_t
 from auth_service import login_or_create_user, is_temp_openid, get_wechat_login_status
 from pdf_service import (
     append_ai_generated_notice, build_draft_pdf, build_text_report_pdf,
-    build_student_pdf_filename, pdf_content_disposition,
+    build_student_pdf_filename, pdf_content_disposition, pdf_header_filename,
 )
 from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, revoke_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, adjust_permission_usage, export_permission_usage_csv, expire_overdue_memberships
 from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv, refund_order
@@ -60,6 +61,46 @@ from referral_service import (
     ensure_referral_tables, register_agent, get_agent_dashboard, bind_invitee,
     poster_image_base64, get_binding_for_user, save_referral_settings, update_agent_commission_rate,
 )
+try:
+    from province_rules_service import (
+        ensure_province_rules_seeded, normalize_volunteer_override, resolve_volunteer_slots,
+    )
+except ImportError:
+    def ensure_province_rules_seeded() -> None:
+        pass
+
+    def normalize_volunteer_override(count: int | None) -> int | None:
+        value = int(count or 0)
+        if value <= 0 or value == 9:
+            return None
+        return value
+
+    def resolve_volunteer_slots(
+        province: str,
+        batch: str,
+        year: int = 2025,
+        override_count: int | None = None,
+    ) -> dict:
+        override_count = normalize_volunteer_override(override_count)
+        if override_count is not None and int(override_count) > 0:
+            return {'total_slots': int(override_count), 'rule': {}, 'source': 'override'}
+        province_text = (province or '').replace('省', '').replace('市', '')
+        batch_text = batch or ''
+        if province_text == '河南' and ('本科' in batch_text or not batch_text):
+            total = 48
+        elif province_text in ('山东', '河北', '重庆', '贵州', '青海') and '本科' in batch_text:
+            total = 96
+        elif province_text == '辽宁' and '本科' in batch_text:
+            total = 112
+        elif province_text == '浙江' and '一段' in batch_text:
+            total = 80
+        else:
+            total = 45
+        return {
+            'total_slots': total,
+            'rule': {'matched': False, 'batch': batch, 'school_count': total},
+            'source': 'fallback',
+        }
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
 
@@ -107,6 +148,7 @@ ensure_bean_tables()
 ensure_referral_tables()
 from referral_p1 import ensure_referral_p1_tables
 ensure_referral_p1_tables()
+ensure_province_rules_seeded()
 sync_plan_catalog()
 expire_overdue_memberships()
 
@@ -642,6 +684,21 @@ def admin_payment_request_cancel(request_id: int = Form(...)):
     return RedirectResponse('/admin/payments?message=开通申请已取消', status_code=303)
 
 
+@app.post('/admin/payments/{order_id}/repair-deliver')
+def admin_payment_repair_deliver(order_id: int):
+    from db import get_connection, row_to_dict
+    from wechat_virtual_pay_service import repair_virtual_order
+    try:
+        with get_connection() as connection:
+            order = row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_id = ?', [order_id]).fetchone())
+        if not order:
+            raise ValueError('订单不存在')
+        repair_virtual_order(str(order['order_no']))
+        return RedirectResponse('/admin/payments?message=补发货成功，会员已同步开通', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/payments?message=补发货失败：{exc}', status_code=303)
+
+
 @app.post('/admin/payments/{order_id}/refund')
 def admin_payment_refund(order_id: int, remark: str = Form('')):
     try:
@@ -737,9 +794,22 @@ async def api_wechat_pay_notify(request: Request):
         return JSONResponse({'code': 'FAIL', 'message': str(exc)}, status_code=500)
 
 
-@app.post('/api/payments/virtual/deliver-notify')
+@app.api_route('/api/payments/virtual/deliver-notify', methods=['GET', 'POST'])
 async def api_virtual_deliver_notify(request: Request):
+    from wechat_msg_push_service import get_wechat_msg_token, verify_wechat_server_signature
     from wechat_virtual_pay_service import handle_virtual_deliver_notify
+
+    if request.method == 'GET':
+        signature = request.query_params.get('signature', '')
+        timestamp = request.query_params.get('timestamp', '')
+        nonce = request.query_params.get('nonce', '')
+        echostr = request.query_params.get('echostr', '')
+        if not get_wechat_msg_token():
+            raise HTTPException(status_code=500, detail='未配置 WECHAT_MSG_TOKEN')
+        if not verify_wechat_server_signature(signature, timestamp, nonce):
+            raise HTTPException(status_code=403, detail='signature invalid')
+        return Response(content=echostr, media_type='text/plain')
+
     body = await request.body()
     try:
         result = handle_virtual_deliver_notify(body.decode('utf-8'))
@@ -793,31 +863,7 @@ def api_membership_permission_check(permission_code: str, user_id: int | None = 
 
 @app.get('/api/membership/entitlements')
 def api_membership_entitlements(user_id: int | None = None):
-    entitlements = get_user_entitlements(user_id)
-    if user_id:
-        from bean_service import get_bean_balance
-        entitlements['beans'] = get_bean_balance(user_id)
-    return entitlements
-
-
-@app.get('/api/membership/beans')
-def api_membership_beans(user_id: int):
-    from bean_service import get_bean_balance, PLAN_BEAN_GRANT, REPORT_BEAN_COST
-    balance = get_bean_balance(user_id)
-    return {
-        **balance,
-        'plan_grants': PLAN_BEAN_GRANT,
-        'non_refundable_notice': '星鼎豆充值后不支持退款，已消费的星鼎豆不退还。',
-    }
-
-
-@app.post('/api/membership/beans/consume-report')
-def api_membership_consume_report_beans(payload: BeanConsumeReportRequest):
-    from bean_service import consume_report_beans
-    try:
-        return consume_report_beans(payload.user_id, payload.report_title)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return get_user_entitlements(user_id)
 
 
 @app.get('/admin/admissions')
@@ -1188,12 +1234,18 @@ def api_referral_dashboard(user_id: int = Query(...)):
 def api_referral_poster(user_id: int = Query(...)):
     try:
         agent = register_agent(user_id)
-        image_base64 = poster_image_base64(agent['invite_code'])
+        image_base64 = poster_image_base64(agent['invite_code'], agent.get('display_name') or '')
+        from poster_service import POSTER_HEIGHT, POSTER_WIDTH, poster_metadata
+        meta = poster_metadata()
         return {
             'invite_code': agent['invite_code'],
             'display_name': agent.get('display_name'),
             'commission_rate': agent.get('commission_rate'),
             'image_base64': image_base64,
+            'width': POSTER_WIDTH,
+            'height': POSTER_HEIGHT,
+            'composed': True,
+            'template_exists': meta.get('template_exists'),
             'share_path': f'pages/home/home?invite={agent["invite_code"]}',
         }
     except ValueError as exc:
@@ -1438,6 +1490,37 @@ def list_parent_binds(parent_user_id: int):
     return {'list': rows_to_dicts(rows)}
 
 
+@app.get('/api/province-rules/resolve')
+def resolve_province_rules_api(province: str = '', batch: str = '', year: int = 2025):
+    ensure_province_rules_seeded()
+    resolved = resolve_volunteer_slots(province, batch, year)
+    rule = resolved.get('rule') or {}
+    return {
+        'total_slots': resolved['total_slots'],
+        'school_count': rule.get('school_count'),
+        'batch': rule.get('batch') or batch,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'matched': bool(rule.get('matched')),
+        'source': resolved.get('source') or rule.get('source'),
+        'rule_description': rule.get('rule_description') or '',
+    }
+
+
+@app.get('/api/province-rules/status')
+def province_rules_status():
+    from province_rules_service import count_province_rules_in_db
+    ensure_province_rules_seeded()
+    sample = resolve_volunteer_slots('河南', '本科批')
+    return {
+        **count_province_rules_in_db(),
+        'resolve_sample_henan': {
+            'total_slots': sample['total_slots'],
+            'matched': bool((sample.get('rule') or {}).get('matched')),
+            'source': sample.get('source'),
+        },
+    }
+
+
 @app.get('/api/schools')
 def list_schools(
     keyword: str = '',
@@ -1450,18 +1533,32 @@ def list_schools(
     sql = 'SELECT * FROM schools WHERE 1=1'
     params = []
     if keyword:
-        sql += ' AND (school_name LIKE ? OR school_code LIKE ? OR city LIKE ?)'
         like = f'%{keyword}%'
-        params.extend([like, like, like])
+        sql += ''' AND (
+            school_name LIKE ? OR school_code LIKE ? OR city LIKE ?
+            OR school_id IN (
+                SELECT DISTINCT ep.school_id
+                FROM enrollment_plans ep
+                JOIN majors m ON m.major_id = ep.major_id
+                WHERE m.major_name LIKE ? OR m.major_code LIKE ?
+            )
+        )'''
+        params.extend([like, like, like, like, like])
     if city:
-        sql += ' AND city = ?'
-        params.append(city)
+        city = city.strip()
+        city_short = city[:-1] if city.endswith('市') else city
+        city_long = city if city.endswith('市') else f'{city}市'
+        sql += ' AND (city = ? OR city = ? OR city LIKE ?)'
+        params.extend([city, city_long, f'%{city_short}%'])
     if is_public is not None:
         sql += ' AND is_public = ?'
         params.append(is_public)
     if is_double_first_class is not None:
-        sql += ' AND is_double_first_class = ?'
-        params.append(is_double_first_class)
+        if int(is_double_first_class) == 1:
+            sql += ' AND (is_double_first_class = 1 OR is_985 = 1 OR is_211 = 1)'
+        else:
+            sql += ' AND is_double_first_class = ? AND is_985 = 0 AND is_211 = 0'
+            params.append(is_double_first_class)
     sql += ' ORDER BY is_985 DESC, is_211 DESC, is_double_first_class DESC, school_id ASC LIMIT ? OFFSET ?'
     params.extend([limit, offset])
 
@@ -1566,6 +1663,33 @@ def list_province_rules(province: str = '', year: int | None = None, batch: str 
     return {'list': rows_to_dicts(rows)}
 
 
+@app.get('/api/admission-data/batches')
+def api_admission_data_batches(province: str):
+    if not province.strip():
+        raise HTTPException(status_code=400, detail='请提供省份')
+    batches = list_province_admission_batches(province)
+    total = sum(int(item.get('school_major_count') or item.get('record_count') or 0) for item in batches)
+    return {
+        'province': province,
+        'batches': batches,
+        'total_school_major': total,
+    }
+
+
+@app.post('/api/eligible-pool')
+def eligible_pool(request: EligiblePoolRequest):
+    try:
+        return query_eligible_pool(
+            request,
+            gradient=request.gradient or '',
+            keyword=request.keyword or '',
+            page=request.page,
+            page_size=request.page_size,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
     sql = """
@@ -1643,14 +1767,32 @@ def recommend(request: RecommendRequest):
     province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
     segment = detect_segment(user_rank, province_total_rank, request.batch)
 
+    slot_info = resolve_volunteer_slots(
+        request.province,
+        request.batch,
+        override_count=normalize_volunteer_override(request.volunteer_count),
+    )
+    total_slots = slot_info['total_slots']
+    rule = slot_info.get('rule') or {}
+
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
         user_rank=user_rank,
         plan_style=request.plan_style or 'balanced',
         batch=request.batch,
         segment=segment,
-        total_slots=max(1, int(request.volunteer_count or 9)),
+        total_slots=max(1, total_slots),
     )
+    strategy_meta = strategy_meta or {}
+    strategy_meta['volunteer_rule'] = {
+        'total_slots': total_slots,
+        'school_count': rule.get('school_count'),
+        'batch': rule.get('batch') or request.batch,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'matched': bool(rule.get('matched')),
+        'source': slot_info.get('source'),
+        'rule_description': rule.get('rule_description') or '',
+    }
 
     items = []
     for index, row in enumerate(selected_rows, start=1):
@@ -1689,6 +1831,11 @@ def recommend(request: RecommendRequest):
         'risk': inspect_plan_risk(items),
         'strategy': strategy_meta,
         'algorithm': strategy_meta.get('algorithm'),
+        'generation': {
+            'target_slots': total_slots,
+            'generated_count': len(items),
+            'candidate_pool': len(weighted_items),
+        },
     }
 
 
@@ -1836,7 +1983,7 @@ def _pdf_response(pdf: bytes, filename: str) -> Response:
         media_type='application/pdf',
         headers={
             'Content-Disposition': pdf_content_disposition(filename),
-            'X-Pdf-Filename': filename,
+            'X-Pdf-Filename': pdf_header_filename(filename),
         }
     )
 

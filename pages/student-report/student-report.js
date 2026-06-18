@@ -7,7 +7,7 @@ const {
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
 const { formatReportContent } = require('../../utils/reportFormat');
-const { confirmReportBeanDeduction, consumeReportBeans } = require('../../utils/reportBean');
+const { confirmReportPermission } = require('../../utils/reportBean');
 const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
@@ -150,18 +150,10 @@ Page({
   },
   generateReport() {
     if (!this.validateBeforeGenerate()) return;
-    confirmReportBeanDeduction('个性化填报报告').then((confirmed) => {
-      if (!confirmed) return;
-      consumeReportBeans('个性化填报报告')
-        .then(() => requirePermission('personality_deep', '个性化填报报告', { consume: false }))
-        .then((allowed) => {
-          if (!allowed) return;
-          this.doGenerateReport();
-        })
-        .catch((error) => {
-          wx.showToast({ title: error.message || '星鼎豆扣除失败', icon: 'none' });
-        });
-    });
+      confirmReportPermission('个性化填报报告', 'personality_deep').then((allowed) => {
+        if (!allowed) return;
+        this.doGenerateReport();
+      });
   },
   doGenerateReport() {
     const profile = this.data.profile;
@@ -224,7 +216,7 @@ Page({
   generateReportPdf() {
     const profile = this.canExportPdf();
     if (!profile) return;
-    requirePermission('personality_deep', '个性化填报报告', { consume: false }).then((allowed) => {
+    requirePermission('pdf_export', 'PDF 报告导出', { consume: false }).then((allowed) => {
       if (!allowed) return;
       const studentId = resolveStudentId(profile);
       const report = formatReportContent(this.data.report, profile);
@@ -265,7 +257,7 @@ Page({
       wx.showToast({ title: '请先保存学生档案', icon: 'none' });
       return;
     }
-    requirePermission('personality_deep', '个性化填报报告', { consume: false }).then((allowed) => {
+    requirePermission('pdf_export', 'PDF 报告导出', { consume: false }).then((allowed) => {
       if (!allowed) return;
       openPdfFromPost('/api/ai/student-report/pdf', {
         student_id: studentId,

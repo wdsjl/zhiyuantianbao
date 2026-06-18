@@ -43,11 +43,24 @@
   margin-top: 8rpx;
 }
 
+.poster-card {
+  text-align: center;
+}
+
 .poster-image {
-  width: 100%;
-  margin: 24rpx 0;
+  width: 560rpx;
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 24rpx auto 12rpx;
   border-radius: 16rpx;
   background: #f5f7fb;
+}
+
+.poster-meta {
+  margin-bottom: 8rpx;
+  font-size: 22rpx;
+  color: #98a2b3;
 }
 
 .warn-text {

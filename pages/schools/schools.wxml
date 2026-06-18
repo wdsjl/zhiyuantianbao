@@ -1,6 +1,7 @@
 <view class="container">
   <view class="card search-card">
-    <input class="input" placeholder="搜索院校 / 专业 / 城市" value="{{keyword}}" bindinput="onKeywordInput" />
+    <input class="input" placeholder="搜索院校 / 专业 / 城市" value="{{keyword}}" bindinput="onKeywordInput" bindconfirm="onKeywordConfirm" confirm-type="search" />
+    <button class="secondary-btn filter-btn" bindtap="applyFilter">搜索</button>
     <button class="secondary-btn filter-btn" bindtap="toggleFilter">筛选</button>
   </view>
 

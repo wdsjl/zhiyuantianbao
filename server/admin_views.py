@@ -1292,6 +1292,7 @@ def admin_payments(keyword: str = '', message: str = ''):
             <td>{escape(str(order.get('paid_at') or ''))}</td>
             <td>{escape(str(order.get('remark') or ''))}</td>
             <td>
+              {f'<form method="post" action="/admin/payments/{order.get("order_id")}/repair-deliver" style="display:inline" onsubmit="return confirm(\'确认补发货并同步会员？\')"><button type="submit" class="btn-sm">补发货</button></form>' if order.get('pay_method') == 'virtual_pay' else ''}
               {f'<form method="post" action="/admin/payments/{order.get("order_id")}/refund" style="display:inline" onsubmit="return confirm(\'确认退款？\')"><button type="submit" class="btn-sm btn-danger">退款</button></form>' if order.get('pay_status') == 'paid' else ''}
             </td>
           </tr>
