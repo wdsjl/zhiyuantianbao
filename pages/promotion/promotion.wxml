@@ -35,7 +35,9 @@
     <view class="card poster-card">
       <view class="section-title">专属推广海报</view>
       <view class="sub-text">保存海报或转发给家长/学生扫码，即可绑定推广关系。</view>
-      <image wx:if="{{posterImage}}" class="poster-image" src="{{posterImage}}" mode="widthFix" show-menu-by-longpress="{{true}}" />
+      <view class="poster-frame">
+        <image wx:if="{{posterImage}}" class="poster-image" src="{{posterImage}}" mode="aspectFit" show-menu-by-longpress="{{true}}" />
+      </view>
       <view wx:else class="sub-text warn-text">海报生成失败，请确认服务端已配置 WECHAT_SECRET</view>
       <button class="primary-btn" bindtap="savePoster" disabled="{{!posterImage}}">保存海报到相册</button>
       <button class="secondary-btn" bindtap="refreshPoster">刷新海报</button>
