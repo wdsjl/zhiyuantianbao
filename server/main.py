@@ -1235,11 +1235,17 @@ def api_referral_poster(user_id: int = Query(...)):
     try:
         agent = register_agent(user_id)
         image_base64 = poster_image_base64(agent['invite_code'], agent.get('display_name') or '')
+        from poster_service import POSTER_HEIGHT, POSTER_WIDTH, poster_metadata
+        meta = poster_metadata()
         return {
             'invite_code': agent['invite_code'],
             'display_name': agent.get('display_name'),
             'commission_rate': agent.get('commission_rate'),
             'image_base64': image_base64,
+            'width': POSTER_WIDTH,
+            'height': POSTER_HEIGHT,
+            'composed': True,
+            'template_exists': meta.get('template_exists'),
             'share_path': f'pages/home/home?invite={agent["invite_code"]}',
         }
     except ValueError as exc:

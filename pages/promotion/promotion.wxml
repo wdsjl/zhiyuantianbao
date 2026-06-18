@@ -35,11 +35,16 @@
     <view class="card poster-card">
       <view class="section-title">专属推广海报</view>
       <view class="sub-text">保存海报或转发给家长/学生扫码，即可绑定推广关系。</view>
-      <view class="poster-frame">
-        <image wx:if="{{posterImage}}" class="poster-image" src="{{posterImage}}" mode="aspectFit" show-menu-by-longpress="{{true}}" />
-      </view>
-      <view wx:else class="sub-text warn-text">海报生成失败，请确认服务端已配置 WECHAT_SECRET</view>
-      <button class="primary-btn" bindtap="savePoster" disabled="{{!posterImage}}">保存海报到相册</button>
+      <image
+        wx:if="{{posterFilePath}}"
+        class="poster-image"
+        src="{{posterFilePath}}"
+        mode="widthFix"
+        show-menu-by-longpress="{{true}}"
+      />
+      <view wx:elif="{{!loading && !posterFilePath}}" class="sub-text warn-text">海报生成失败，请确认服务端已配置 WECHAT_SECRET 与 poster_service</view>
+      <view wx:if="{{posterMeta}}" class="sub-text poster-meta">{{posterMeta}}</view>
+      <button class="primary-btn" bindtap="savePoster" disabled="{{!posterFilePath}}">保存海报到相册</button>
       <button class="secondary-btn" bindtap="refreshPoster">刷新海报</button>
     </view>
 
