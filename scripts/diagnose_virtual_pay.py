@@ -66,9 +66,9 @@ def main() -> None:
         'algo_ok': algo_ok,
         'access_token_ok': token_ok,
         'access_token_error': token_error,
-        'app_key_mask': mask_key(config['app_key']),
-        'prod_app_key_mask': mask_key(config['prod_app_key']),
-        'sandbox_app_key_mask': mask_key(config['sandbox_app_key']),
+        'app_key_mask': mask_key(config.get('app_key')),
+        'prod_app_key_mask': mask_key(config.get('prod_app_key') or config.get('app_key')),
+        'sandbox_app_key_mask': mask_key(config.get('sandbox_app_key', '')),
         'plans': plans,
         'hint': (
             'pay_sig 算法与 access_token 正常。若小程序仍 PAY_SIG_INVALID：'
