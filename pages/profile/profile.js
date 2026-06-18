@@ -5,6 +5,8 @@ const {
   findOptionIndex,
   normalizeSubjectCombination
 } = require('../../utils/profileOptions');
+const { getBatchMismatchWarning } = require('../../utils/batchHint');
+const { buildProfileSnapshot, clearDerivedArtifacts } = require('../../utils/profileSnapshot');
 
 Page({
   data: {
@@ -12,6 +14,9 @@ Page({
     targetBatchOptions: TARGET_BATCHES,
     subjectIndex: -1,
     targetBatchIndex: -1,
+    batchDataSummary: '',
+    batchWarning: '',
+    availableBatches: [],
     form: {
       role: '学生',
       name: '',
@@ -50,6 +55,7 @@ Page({
       };
       this.setData({ form });
       this.syncPickerIndices(form);
+      this.refreshBatchHints(form);
       return;
     }
     if (loginUser.openid) {
@@ -61,7 +67,42 @@ Page({
   },
   onInput(event) {
     const field = event.currentTarget.dataset.field;
+    const form = { ...this.data.form, [field]: event.detail.value };
     this.setData({ [`form.${field}`]: event.detail.value });
+    if (field === 'province' || field === 'score' || field === 'rank') {
+      this.refreshBatchHints(form);
+    } else if (field === 'targetBatch') {
+      this.updateBatchWarning(form, this.data.availableBatches || []);
+    }
+  },
+  refreshBatchHints(form) {
+    const province = (form && form.province) || '';
+    if (!province.trim()) {
+      this.setData({ batchDataSummary: '', batchWarning: '', availableBatches: [] });
+      return;
+    }
+    request({ url: '/api/admission-data/batches', data: { province } })
+      .then((res) => {
+        const batches = res.batches || [];
+        const summary = batches.length
+          ? batches.slice(0, 4).map((item) => `${item.batch}(${item.school_major_count || item.record_count || 0}条)`).join('、')
+          : '暂无录取数据';
+        this.setData({
+          availableBatches: batches,
+          batchDataSummary: `库内批次：${summary}`,
+          batchWarning: getBatchMismatchWarning(form, batches)
+        });
+      })
+      .catch(() => {
+        this.setData({
+          availableBatches: [],
+          batchDataSummary: '',
+          batchWarning: getBatchMismatchWarning(form, [])
+        });
+      });
+  },
+  updateBatchWarning(form, availableBatches) {
+    this.setData({ batchWarning: getBatchMismatchWarning(form, availableBatches) });
   },
   onSubjectChange(event) {
     const index = Number(event.detail.value);
@@ -72,10 +113,12 @@ Page({
   },
   onTargetBatchChange(event) {
     const index = Number(event.detail.value);
+    const form = { ...this.data.form, targetBatch: TARGET_BATCHES[index] };
     this.setData({
       targetBatchIndex: index,
       'form.targetBatch': TARGET_BATCHES[index]
     });
+    this.updateBatchWarning(form, this.data.availableBatches || []);
   },
   isTempOpenid(openid) {
     return !openid || openid.startsWith('dev_') || openid.startsWith('local_') || openid.startsWith('test_');
@@ -98,20 +141,32 @@ Page({
   finishSave(saved) {
     const { form } = this.data;
     const loginUser = wx.getStorageSync('loginUser') || {};
+    const previousProfile = wx.getStorageSync('studentProfile') || {};
+    const profileChanged = Boolean(
+      previousProfile.score
+      && previousProfile.rank
+      && buildProfileSnapshot(previousProfile) !== buildProfileSnapshot(saved)
+    );
+    if (profileChanged) {
+      clearDerivedArtifacts();
+    }
     wx.setStorageSync('loginUser', { ...loginUser, openid: saved.openid, user_id: saved.userId, has_profile: true });
     wx.setStorageSync('studentProfile', saved);
     wx.setStorageSync('currentRole', form.role);
     const finish = () => {
       wx.showToast({ title: '保存成功', icon: 'success' });
       setTimeout(() => {
+        const nextHint = profileChanged
+          ? '分数或位次已更新，之前的检索结果和志愿方案已清空。请先查看「可报院校」，再智能生成最终志愿。'
+          : '下一步可检索所有可报院校专业，再完成测评与智能填报。';
         wx.showModal({
-          title: '档案已保存',
-          content: '下一步建议完成霍兰德职业兴趣测评，系统才能生成更准确的个性化报告。',
-          confirmText: '去测评',
+          title: profileChanged ? '档案已更新' : '档案已保存',
+          content: nextHint,
+          confirmText: profileChanged ? '查看可报院校' : '去检索',
           cancelText: '回首页',
           success: (modalRes) => {
             if (modalRes.confirm) {
-              wx.navigateTo({ url: '/pages/personality/personality' });
+              wx.navigateTo({ url: '/pages/eligible-pool/eligible-pool' });
               return;
             }
             wx.switchTab({ url: '/pages/home/home' });

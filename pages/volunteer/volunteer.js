@@ -1,6 +1,6 @@
 const { request } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
-const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
+const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
@@ -90,6 +90,7 @@ Page({
     planStyle: 'balanced',
     planStyleOptions: PLAN_STYLE_OPTIONS,
     strategyMeta: null,
+    provinceRule: null,
     pdfReady: false,
     pdfFileName: ''
   },
@@ -97,7 +98,9 @@ Page({
     const savedStyle = wx.getStorageSync('volunteerPlanStyle') || 'balanced';
     this.setData({ planStyle: savedStyle });
     refreshActiveProfile().then((profile) => {
-      this.setData({ profile: profile || loadActiveProfileSync() });
+      const resolvedProfile = profile || loadActiveProfileSync();
+      this.setData({ profile: resolvedProfile });
+      this.loadProvinceRule(resolvedProfile);
       this.consumePendingPlanAppend();
     });
     let personality = wx.getStorageSync('personalityResult') || null;
@@ -161,6 +164,26 @@ Page({
     wx.setStorageSync('currentPlan', plan);
     wx.removeStorageSync('currentAiExplain');
   },
+  loadProvinceRule(profile) {
+    const current = profile || this.data.profile || {};
+    if (!current.province) {
+      this.setData({ provinceRule: null });
+      return;
+    }
+    request({
+      url: '/api/province-rules/resolve',
+      data: {
+        province: current.province,
+        batch: current.targetBatch || ''
+      }
+    })
+      .then((res) => {
+        this.setData({ provinceRule: res || null });
+      })
+      .catch(() => {
+        this.setData({ provinceRule: null });
+      });
+  },
   ensureProfile() {
     const { profile } = this.data;
     if (!profile.province || !profile.subjectCombination || !profile.score || !profile.rank || !profile.targetBatch) {
@@ -207,7 +230,7 @@ Page({
         major_types: (this.data.personality && this.data.personality.majorTypes) || [],
         accept_adjustment: true,
         plan_style: this.data.planStyle || 'balanced',
-        volunteer_count: 9
+        volunteer_count: 0
       }
     })
       .then((res) => {
@@ -220,11 +243,25 @@ Page({
         }));
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
-        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta: res.strategy || null });
+        const strategyMeta = res.strategy || null;
+        const provinceRule = (strategyMeta && strategyMeta.volunteer_rule) || this.data.provinceRule;
+        const targetCount = (res.generation && res.generation.target_slots)
+          || (provinceRule && (provinceRule.total_slots || provinceRule.school_count));
+        const toastTitle = targetCount
+          ? `已生成 ${plan.length}/${targetCount} 个志愿`
+          : `已生成 ${plan.length} 个志愿`;
+        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule });
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
-        wx.showToast({ title: '已生成志愿方案', icon: 'success' });
+        wx.showToast({ title: toastTitle, icon: 'success' });
+        if (res.generation && res.generation.generated_count < res.generation.target_slots) {
+          wx.showModal({
+            title: '志愿数量提示',
+            content: `目标 ${res.generation.target_slots} 个志愿，当前生成 ${res.generation.generated_count} 个。候选数据 ${res.generation.candidate_pool} 条，可补充录取数据或放宽筛选。`,
+            showCancel: false
+          });
+        }
       })
       .catch(() => {
         wx.showToast({ title: '推荐接口连接失败', icon: 'none' });
@@ -284,13 +321,77 @@ Page({
   saveDraft() {
     requirePermission('draft_save', '志愿草稿保存', { consume: true }).then((allowed) => {
       if (!allowed) return;
-      this.doSaveDraft();
+      this.persistDraftToServer()
+        .then(() => wx.showToast({ title: '已保存草稿', icon: 'success' }))
+        .catch((error) => {
+          wx.showToast({ title: error.message || '保存草稿失败', icon: 'none' });
+        });
+    });
+  },
+  buildDraftPayload() {
+    const profile = this.data.profile;
+    const localDrafts = wx.getStorageSync('drafts') || [];
+    const currentDraftId = wx.getStorageSync('currentDraftId');
+    const draftName = wx.getStorageSync('currentDraftName') || `志愿方案${localDrafts.length + 1}`;
+    const items = this.data.plan.map(toApiItem);
+    return {
+      profile,
+      currentDraftId,
+      draftName,
+      localDrafts,
+      payload: {
+        student_id: Number(profile.studentId),
+        draft_name: draftName,
+        province: profile.province,
+        year: new Date().getFullYear(),
+        batch: profile.targetBatch,
+        score: Number(profile.score),
+        rank: Number(profile.rank),
+        risk_level: this.data.riskResult ? this.data.riskResult.level : '未排查',
+        ai_explain: this.data.aiExplain,
+        items
+      }
+    };
+  },
+  persistDraftToServer() {
+    if (!this.data.plan.length) {
+      return Promise.reject(new Error('请先生成志愿方案'));
+    }
+    const profile = this.data.profile;
+    const studentId = resolveStudentId(profile);
+    if (!studentId) {
+      return Promise.reject(new Error('请先保存学生档案'));
+    }
+    const { currentDraftId, draftName, localDrafts, payload } = this.buildDraftPayload();
+    payload.student_id = studentId;
+    return request({
+      url: currentDraftId && /^\d+$/.test(String(currentDraftId)) ? `/api/drafts/${currentDraftId}` : '/api/drafts',
+      method: currentDraftId && /^\d+$/.test(String(currentDraftId)) ? 'PUT' : 'POST',
+      data: payload
+    }).then((res) => {
+      const risk = this.data.riskResult || { level: '未排查', chong: 0, wen: 0, bao: 0, dian: 0 };
+      const savedId = res.draft_id || currentDraftId;
+      if (!currentDraftId || !/^\d+$/.test(String(currentDraftId))) {
+        localDrafts.unshift({
+          id: savedId,
+          name: draftName,
+          profile,
+          plan: this.data.plan,
+          risk,
+          aiExplain: this.data.aiExplain,
+          createdAt: new Date().toLocaleString()
+        });
+        wx.setStorageSync('drafts', localDrafts);
+      }
+      wx.setStorageSync('currentDraftId', savedId);
+      wx.setStorageSync('currentDraftName', draftName);
+      return savedId;
     });
   },
   doSaveDraft() {
     if (!this.data.plan.length) return;
     const profile = this.data.profile;
-    if (!profile.studentId) {
+    if (!resolveStudentId(profile)) {
       wx.showModal({
         title: '请先保存学生档案',
         content: '保存草稿需要先将学生档案写入数据库。',
@@ -301,42 +402,24 @@ Page({
       });
       return;
     }
-    const localDrafts = wx.getStorageSync('drafts') || [];
-    const currentDraftId = wx.getStorageSync('currentDraftId');
-    const draftName = wx.getStorageSync('currentDraftName') || `志愿方案${localDrafts.length + 1}`;
-    const items = this.data.plan.map(toApiItem);
-    const payload = {
-      student_id: Number(profile.studentId),
-      draft_name: draftName,
-      province: profile.province,
-      year: new Date().getFullYear(),
-      batch: profile.targetBatch,
-      score: Number(profile.score),
-      rank: Number(profile.rank),
-      risk_level: this.data.riskResult ? this.data.riskResult.level : '未排查',
-      ai_explain: this.data.aiExplain,
-      items
-    };
-    request({
-      url: currentDraftId ? `/api/drafts/${currentDraftId}` : '/api/drafts',
-      method: currentDraftId ? 'PUT' : 'POST',
-      data: payload
-    })
-      .then((res) => {
-        const risk = this.data.riskResult || { level: '未排查', chong: 0, wen: 0, bao: 0, dian: 0 };
-        const savedId = res.draft_id || currentDraftId || `D${Date.now()}`;
-        if (!currentDraftId) {
-          localDrafts.unshift({ id: savedId, name: draftName, profile, plan: this.data.plan, risk, aiExplain: this.data.aiExplain, createdAt: new Date().toLocaleString() });
-          wx.setStorageSync('drafts', localDrafts);
-        }
-        wx.setStorageSync('currentDraftId', savedId);
-        wx.setStorageSync('currentDraftName', draftName);
-        wx.showToast({ title: currentDraftId ? '草稿已更新' : '已保存草稿', icon: 'success' });
+    this.persistDraftToServer()
+      .then((savedId) => {
+        const currentDraftId = wx.getStorageSync('currentDraftId');
+        wx.showToast({ title: currentDraftId && String(savedId) === String(currentDraftId) ? '草稿已更新' : '已保存草稿', icon: 'success' });
       })
-      .catch(() => {
-        wx.showToast({ title: '后端保存失败，已保存在本地', icon: 'none' });
+      .catch((error) => {
+        wx.showToast({ title: error.message || '后端保存失败', icon: 'none' });
+        const { draftName, localDrafts } = this.buildDraftPayload();
         const risk = this.data.riskResult || { level: '未排查', chong: 0, wen: 0, bao: 0, dian: 0 };
-        localDrafts.unshift({ id: `D${Date.now()}`, name: draftName, profile, plan: this.data.plan, risk, aiExplain: this.data.aiExplain, createdAt: new Date().toLocaleString() });
+        localDrafts.unshift({
+          id: `D${Date.now()}`,
+          name: draftName,
+          profile,
+          plan: this.data.plan,
+          risk,
+          aiExplain: this.data.aiExplain,
+          createdAt: new Date().toLocaleString()
+        });
         wx.setStorageSync('drafts', localDrafts);
       });
   },
@@ -396,31 +479,28 @@ Page({
   },
   doGeneratePlanPdf() {
     const profile = this.data.profile;
-    const currentDraftId = wx.getStorageSync('currentDraftId');
     if (!this.data.plan.length) return;
-    if (!profile.studentId) {
+    const studentId = resolveStudentId(profile);
+    if (!studentId) {
       wx.showToast({ title: '请先保存学生档案', icon: 'none' });
       return;
     }
-    if (!currentDraftId) {
-      wx.showModal({
-        title: '请先保存草稿',
-        content: 'PDF 导出需要先保存草稿。',
-        confirmText: '知道了'
-      });
-      return;
-    }
-    const fileName = buildStudentPdfFileName(profile, '填报志愿');
-    const pdfUrl = `/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`;
-    preparePdfFromUrl(pdfUrl, { fileName })
-      .then(({ filePath, fileName: savedName }) => {
+    wx.showLoading({ title: '准备导出...', mask: true });
+    this.persistDraftToServer()
+      .then((draftId) => {
+        wx.hideLoading();
+        const pdfUrl = `/api/drafts/${draftId}/pdf?student_id=${studentId}`;
+        return preparePdfFromUrl(pdfUrl, { fileName: buildStudentPdfFileName(profile, '填报志愿') })
+          .then(({ filePath, fileName: savedName }) => ({ filePath, savedName, draftId }));
+      })
+      .then(({ filePath, savedName, draftId }) => {
         this._pdfFilePath = filePath;
         this._pdfFileName = savedName;
         this.setData({ pdfReady: true, pdfFileName: savedName });
         const records = wx.getStorageSync('exportRecords') || [];
         records.unshift({
           id: Date.now(),
-          draftId: currentDraftId,
+          draftId,
           time: new Date().toLocaleString(),
           count: this.data.plan.length,
           type: 'pdf'
@@ -429,6 +509,7 @@ Page({
         wx.showToast({ title: '已生成，请点②发送', icon: 'success' });
       })
       .catch((error) => {
+        wx.hideLoading();
         wx.showToast({ title: error.message || 'PDF 生成失败', icon: 'none' });
       });
   },

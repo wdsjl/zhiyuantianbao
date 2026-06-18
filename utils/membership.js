@@ -42,6 +42,14 @@ function refreshUserIdentityFromServer() {
   const loginUser = wx.getStorageSync('loginUser') || {};
   const openid = loginUser.openid || profile.openid || '';
   const phone = profile.phone || loginUser.phone || '';
+  const loginUserId = loginUser.user_id || loginUser.userId || '';
+  if (loginUserId && String(profile.userId || profile.user_id || '') !== String(loginUserId)) {
+    wx.setStorageSync('studentProfile', {
+      ...profile,
+      userId: loginUserId,
+      openid: openid || profile.openid
+    });
+  }
   if (!phone && (!openid || isTempOpenid(openid))) {
     return Promise.resolve(getCurrentUserId());
   }
@@ -159,7 +167,7 @@ function showUpgradeModal(permissionCode, title, message) {
   const name = title || PERMISSION_LABELS[permissionCode] || '该功能';
   wx.showModal({
     title: '会员功能',
-    content: message || `${name}需要开通对应会员后使用，或当前套餐次数已用完。请前往会员中心使用星鼎豆支付开通。`,
+    content: message || `${name}需要开通白金卡后使用，或当前套餐未包含该功能。`,
     confirmText: '查看会员',
     cancelText: '稍后再说',
     success: (res) => {

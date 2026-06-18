@@ -1,0 +1,25 @@
+---
+description: 已修复功能的回归锁，修改会员/志愿/院校/虚拟支付前必读
+globs:
+  - server/main.py
+  - server/membership_service.py
+  - server/province_rules_service.py
+  - server/wechat_virtual_pay_service.py
+  - server/schemas.py
+  - pages/volunteer/**
+  - pages/schools/**
+alwaysApply: false
+---
+
+# 回归锁
+
+已修复并锁死的功能见仓库根目录 `REGRESSION_LOCKS.md`。
+
+修改本规则覆盖范围内的文件时：
+
+1. 先阅读 `server/regression_locks.py` 中的 `LOCKED_SOURCE_SNIPPETS`
+2. 修改后必须运行：`cd server && python -m unittest test_regression_locks.py test_membership_pricing.py -v`
+3. 不得删除或弱化：省份 48 条志愿、`pdf_export` 白金权限、院校筛选修复、虚拟支付 VPO 发货逻辑
+4. 不得将 `volunteer_count` 默认值或前端传参改回 `9`
+
+若业务确需变更锁死行为，须同时更新 `regression_locks.py`、测试与 `REGRESSION_LOCKS.md`。

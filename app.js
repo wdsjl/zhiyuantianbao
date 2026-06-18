@@ -1,6 +1,24 @@
 const { login } = require('./utils/auth');
 const { captureInviteFromLaunch } = require('./utils/referral');
 
+function safeGetStorage(key, fallback) {
+  try {
+    const value = wx.getStorageSync(key);
+    return value === '' || value === undefined || value === null ? fallback : value;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function safeSetStorage(key, value) {
+  try {
+    wx.setStorageSync(key, value);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
 App({
   globalData: {
     userInfo: null,
@@ -10,13 +28,13 @@ App({
   },
   onLaunch(options) {
     captureInviteFromLaunch(options);
-    if (!wx.getStorageSync('deviceId')) {
-      wx.setStorageSync('deviceId', `d_${Date.now()}_${Math.floor(Math.random() * 100000)}`);
+    if (!safeGetStorage('deviceId', '')) {
+      safeSetStorage('deviceId', `d_${Date.now()}_${Math.floor(Math.random() * 100000)}`);
     }
-    const userInfo = wx.getStorageSync('userInfo') || null;
-    const currentRole = wx.getStorageSync('currentRole') || '';
-    const studentProfile = wx.getStorageSync('studentProfile') || null;
-    const loginUser = wx.getStorageSync('loginUser') || null;
+    const userInfo = safeGetStorage('userInfo', null);
+    const currentRole = safeGetStorage('currentRole', '');
+    const studentProfile = safeGetStorage('studentProfile', null);
+    const loginUser = safeGetStorage('loginUser', null);
     this.globalData.userInfo = userInfo;
     this.globalData.currentRole = currentRole;
     this.globalData.studentProfile = studentProfile;
@@ -24,8 +42,7 @@ App({
 
     login().then((res) => {
       this.globalData.loginUser = res;
-      const latestProfile = wx.getStorageSync('studentProfile') || null;
-      this.globalData.studentProfile = latestProfile;
-    });
+      this.globalData.studentProfile = safeGetStorage('studentProfile', null);
+    }).catch(() => {});
   }
 });

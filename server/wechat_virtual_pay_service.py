@@ -15,28 +15,31 @@ from payment_service import create_pending_order, fulfill_wechat_order, get_orde
 
 WECHAT_API_HOST = 'https://api.weixin.qq.com'
 
-# 套餐虚拟道具配置：goodsPrice 为分；充值到账星鼎豆见 bean_service.PLAN_BEAN_GRANT
+# 套餐虚拟道具配置：goodsPrice 为分（须与微信虚拟支付后台道具 ID、现网价格一致）
 PLAN_VIRTUAL_PRODUCTS: dict[str, dict[str, Any]] = {
-    'trial': {'product_id': 'trial', 'goods_price_fen': 1990, 'bean_price': 2000},
-    'standard': {'product_id': 'standard', 'goods_price_fen': 9900, 'bean_price': 12000},
-    'premium': {'product_id': 'premium', 'goods_price_fen': 16800, 'bean_price': 24000},
+    'trial': {'product_id': 'xdptk', 'goods_price_fen': 1990},
+    'premium': {'product_id': 'xdbjk', 'goods_price_fen': 29800},
 }
 
 PAID_ORDER_STATUSES = {2, 3, 4}
 
 
+def _clean_secret(value: str | None) -> str:
+    return (value or '').strip().strip('"').strip("'")
+
+
 def get_virtual_pay_config() -> dict[str, Any]:
-    env = int(os.getenv('WECHAT_VIRTUAL_PAY_ENV', '0') or '0')
+    env = int(str(os.getenv('WECHAT_VIRTUAL_PAY_ENV', '0') or '0').strip() or '0')
+    prod_key = _clean_secret(os.getenv('WECHAT_VIRTUAL_PAY_APP_KEY', ''))
+    sandbox_key = _clean_secret(os.getenv('WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY', ''))
     return {
-        'offer_id': os.getenv('WECHAT_VIRTUAL_PAY_OFFER_ID', '1450554502'),
+        'offer_id': (os.getenv('WECHAT_VIRTUAL_PAY_OFFER_ID', '1450554502') or '1450554502').strip(),
         'env': 1 if env == 1 else 0,
-        'app_key': (
-            os.getenv('WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY', '')
-            if env == 1
-            else os.getenv('WECHAT_VIRTUAL_PAY_APP_KEY', '')
-        ),
-        'appid': os.getenv('WECHAT_APPID', ''),
-        'secret': os.getenv('WECHAT_SECRET', ''),
+        'app_key': sandbox_key if env == 1 else prod_key,
+        'prod_app_key': prod_key,
+        'sandbox_app_key': sandbox_key,
+        'appid': (os.getenv('WECHAT_APPID', '') or '').strip(),
+        'secret': (os.getenv('WECHAT_SECRET', '') or '').strip(),
     }
 
 
@@ -56,6 +59,19 @@ def get_virtual_pay_status() -> dict[str, Any]:
     if not config['app_key']:
         key_name = 'WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY' if config['env'] == 1 else 'WECHAT_VIRTUAL_PAY_APP_KEY'
         missing.append(key_name)
+
+    products: dict[str, dict[str, Any]] = {}
+    for plan_code in ('trial', 'premium'):
+        try:
+            item = _get_plan_product(plan_code)
+            products[plan_code] = {
+                'product_id': item['product_id'],
+                'goods_price_fen': item['goods_price_fen'],
+                'goods_price_yuan': round(item['goods_price_fen'] / 100, 2),
+            }
+        except ValueError:
+            products[plan_code] = {'error': '套餐不可用'}
+
     return {
         'enabled': not missing,
         'mode': 'virtual_pay',
@@ -65,6 +81,7 @@ def get_virtual_pay_status() -> dict[str, Any]:
         'secret_configured': bool(config['secret']),
         'app_key_configured': bool(config['app_key']),
         'missing': missing,
+        'products': products,
         'hint': (
             '虚拟支付无需商户证书 apiclient_key.pem；请在 ecosystem.secrets.js 配置 WECHAT_SECRET 与 WECHAT_VIRTUAL_PAY_APP_KEY 后执行 pm2 restart zhiyuan-backend --update-env'
             if missing else '虚拟支付已就绪'
@@ -86,16 +103,19 @@ def _get_plan_product(plan_code: str) -> dict[str, Any]:
         raise ValueError('免费套餐无需支付')
 
     defaults = PLAN_VIRTUAL_PRODUCTS.get(plan_code, {})
-    env_product_id = os.getenv(f'WECHAT_VIRTUAL_PRODUCT_{plan_code.upper()}', '').strip()
+    env_product_id = _clean_secret(os.getenv(f'WECHAT_VIRTUAL_PRODUCT_{plan_code.upper()}', ''))
+    env_goods_price = _clean_secret(os.getenv(f'WECHAT_VIRTUAL_GOODS_PRICE_{plan_code.upper()}', ''))
     product_id = env_product_id or defaults.get('product_id') or plan_code
-    goods_price_fen = int(round(price * 100))
-    from bean_service import get_plan_bean_grant
-    bean_price = get_plan_bean_grant(plan_code) or defaults.get('bean_price') or 0
+    if env_goods_price:
+        goods_price_fen = int(env_goods_price)
+    elif defaults.get('goods_price_fen') is not None:
+        goods_price_fen = int(defaults['goods_price_fen'])
+    else:
+        goods_price_fen = int(round(price * 100))
     return {
         'plan': plan,
         'product_id': product_id,
         'goods_price_fen': goods_price_fen,
-        'bean_price': bean_price,
     }
 
 
@@ -110,6 +130,39 @@ def _calc_user_signature(sign_data: str, session_key: str) -> str:
 
 def _compact_json(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+
+
+def _parse_remote_order_payload(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        if isinstance(payload.get('order'), dict):
+            return payload['order']
+        return payload
+    text = str(payload or '').strip()
+    if not text:
+        return {}
+    if text.startswith('{'):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return _parse_remote_order_payload(parsed)
+    return {}
+
+
+def _split_virtual_pay_ids(remote_order: dict[str, Any]) -> tuple[str, str]:
+    """返回 (微信虚拟支付内部单号 VPO..., 微信支付交易单号)。"""
+    virtual_id = str(remote_order.get('wx_order_id') or '').strip()
+    txn_id = str(remote_order.get('wxpay_order_id') or remote_order.get('TransactionId') or '').strip()
+    return virtual_id, txn_id
+
+
+def _resolve_virtual_pay_ids(order: dict[str, Any], remote_order: dict[str, Any] | None = None) -> tuple[str, str]:
+    remote = remote_order or _parse_remote_order_payload(order.get('wx_notify_raw'))
+    virtual_id, txn_id = _split_virtual_pay_ids(remote)
+    if not txn_id:
+        txn_id = str(order.get('wx_transaction_id') or '').strip()
+    return virtual_id, txn_id
 
 
 def _get_user_openid(user_id: int) -> str:
@@ -140,10 +193,25 @@ def _get_access_token() -> str:
     return token
 
 
-def _request_xpay_api(path: str, body: dict[str, Any]) -> dict[str, Any]:
+def _is_pay_sig_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return 'pay_sig' in text or '签名' in text or '268490003' in text
+
+
+def _xpay_env_candidates() -> list[dict[str, Any]]:
     config = get_virtual_pay_config()
-    post_body = _compact_json(body)
-    pay_sig = _calc_pay_sig(path, post_body, config['app_key'])
+    candidates = [config]
+    for env, app_key in ((0, config['prod_app_key']), (1, config['sandbox_app_key'])):
+        if not app_key:
+            continue
+        if env == config['env'] and app_key == config['app_key']:
+            continue
+        candidates.append({**config, 'env': env, 'app_key': app_key})
+    return candidates
+
+
+def _request_xpay_api_once(path: str, post_body: str, app_key: str) -> dict[str, Any]:
+    pay_sig = _calc_pay_sig(path, post_body, app_key)
     access_token = _get_access_token()
     query = urllib.parse.urlencode({'access_token': access_token, 'pay_sig': pay_sig})
     request = urllib.request.Request(
@@ -157,6 +225,73 @@ def _request_xpay_api(path: str, body: dict[str, Any]) -> dict[str, Any]:
     if data.get('errcode') not in (0, None):
         raise ValueError(data.get('errmsg') or f'虚拟支付接口调用失败：{data.get("errcode")}')
     return data
+
+
+def _request_xpay_api(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    last_error: ValueError | None = None
+    seen: set[tuple[int, str]] = set()
+    for candidate in _xpay_env_candidates():
+        trial_body = dict(body)
+        if 'env' in trial_body:
+            trial_body['env'] = candidate['env']
+        post_body = _compact_json(trial_body)
+        key_sig = (candidate['env'], candidate['app_key'])
+        if key_sig in seen:
+            continue
+        seen.add(key_sig)
+        try:
+            return _request_xpay_api_once(path, post_body, candidate['app_key'])
+        except ValueError as exc:
+            if _is_pay_sig_error(exc):
+                last_error = exc
+                continue
+            raise
+    if last_error:
+        raise ValueError(
+            f'{last_error}（已尝试现网/沙箱 AppKey，请核对 ecosystem.secrets.js 中 '
+            f'WECHAT_VIRTUAL_PAY_APP_KEY、WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY 与 '
+            f'WECHAT_VIRTUAL_PAY_ENV 是否与微信后台「虚拟支付-基础配置」一致）'
+        ) from last_error
+    raise ValueError('虚拟支付接口调用失败')
+
+
+def diagnose_virtual_pay_sig() -> dict[str, Any]:
+    """诊断虚拟支付配置与 pay_sig 算法，便于排查补发货失败。"""
+    status = get_virtual_pay_status()
+    config = get_virtual_pay_config()
+    uri = '/xpay/query_user_balance'
+    appkey = '12345'
+    post_body = '{"openid": "xxx", "user_ip": "127.0.0.1", "env": 0}'
+    expected = 'c37809f27c6d7fd1837ad2500a04512b66b34fd793a39a385fade56dca89a4b5'
+    algo_ok = _calc_pay_sig(uri, post_body, appkey) == expected
+    token_ok = False
+    token_error = ''
+    try:
+        _get_access_token()
+        token_ok = True
+    except ValueError as exc:
+        token_error = str(exc)
+
+    def _mask_key(key: str) -> str:
+        key = key or ''
+        if len(key) <= 4:
+            return '****' if key else ''
+        return f'{key[:2]}...{key[-4:]}'
+
+    return {
+        **status,
+        'algo_ok': algo_ok,
+        'access_token_ok': token_ok,
+        'access_token_error': token_error,
+        'app_key_mask': _mask_key(config['app_key']),
+        'prod_app_key_mask': _mask_key(config['prod_app_key']),
+        'sandbox_app_key_mask': _mask_key(config['sandbox_app_key']),
+        'hint': (
+            'pay_sig 算法正常，access_token 正常。若补发货仍失败，请确认微信后台「现网 AppKey」'
+            '与 WECHAT_VIRTUAL_PAY_APP_KEY 完全一致（env=0 用现网，env=1 用沙箱）。'
+            if algo_ok and token_ok and status.get('enabled') else status.get('hint', '')
+        ),
+    }
 
 
 def create_virtual_payment(user_id: int, plan_code: str, order_type: str = 'open', login_code: str | None = None) -> dict[str, Any]:
@@ -183,11 +318,8 @@ def create_virtual_payment(user_id: int, plan_code: str, order_type: str = 'open
         pay_method='virtual_pay',
     )
 
-    attach = _compact_json({
-        'user_id': user_id,
-        'plan_code': plan_code,
-        'order_type': order_type,
-    })
+    # attach 使用简单字符串，避免嵌套 JSON 在部分客户端引发签名校验问题
+    attach = f'{plan_code}:{user_id}:{order_type}'
     sign_data_obj = {
         'offerId': config['offer_id'],
         'buyQuantity': 1,
@@ -208,7 +340,6 @@ def create_virtual_payment(user_id: int, plan_code: str, order_type: str = 'open
         'plan_code': plan_code,
         'plan_name': plan.get('plan_name'),
         'amount': float(plan.get('price') or 0),
-        'bean_price': product['bean_price'],
         'mode': 'short_series_goods',
         'virtual_pay': {
             'signData': sign_data,
@@ -232,6 +363,102 @@ def query_virtual_order(order_no: str, openid: str | None = None) -> dict[str, A
     })
 
 
+def notify_provide_goods(order_no: str, wx_order_id: str = '') -> dict[str, Any]:
+    """通知微信虚拟支付：已发货完成（用于回调失败时手动补发）。"""
+    config = get_virtual_pay_config()
+    body: dict[str, Any] = {'env': config['env']}
+    notify_id = str(wx_order_id or '').strip()
+    if notify_id.startswith('VPO'):
+        body['wx_order_id'] = notify_id
+    elif notify_id:
+        body['order_id'] = order_no
+    else:
+        body['order_id'] = order_no
+    return _request_xpay_api('/xpay/notify_provide_goods', body)
+
+
+def repair_virtual_order(
+    order_no: str,
+    user_id: int | None = None,
+    *,
+    assume_paid: bool = False,
+) -> dict[str, Any]:
+    """查询微信订单 → 本地开通会员 → 通知微信已发货。
+
+    assume_paid=True 时跳过查单，适用于微信后台已显示支付成功但 pay_sig 查单失败的情况。
+    查单因 pay_sig 失败时也会自动跳过查单并继续本地开通 + 通知发货。
+    """
+    order = get_order_by_order_no(order_no)
+    if not order:
+        raise ValueError('订单不存在')
+    if user_id is not None and int(order['user_id']) != int(user_id):
+        raise ValueError('无权操作该订单')
+    if str(order.get('pay_method') or '') != 'virtual_pay':
+        raise ValueError('仅虚拟支付订单支持补发货')
+
+    if not is_virtual_pay_ready():
+        raise ValueError('虚拟支付未配置完成')
+
+    wx_virtual_order_id = ''
+    wxpay_transaction_id = ''
+    remote_raw = ''
+    query_skipped = assume_paid
+
+    if not assume_paid:
+        try:
+            remote = query_virtual_order(order_no)
+        except ValueError as exc:
+            if _is_pay_sig_error(exc):
+                query_skipped = True
+            else:
+                raise
+        else:
+            remote_order = remote.get('order') or {}
+            status = int(remote_order.get('status') or 0)
+            if status not in PAID_ORDER_STATUSES:
+                raise ValueError('微信侧订单尚未支付成功，无法发货')
+            wx_virtual_order_id, wxpay_transaction_id = _split_virtual_pay_ids(remote_order)
+            remote_raw = _compact_json(remote_order)
+
+    if not wx_virtual_order_id and not wxpay_transaction_id:
+        wx_virtual_order_id, wxpay_transaction_id = _resolve_virtual_pay_ids(order)
+
+    fulfilled = False
+    if order.get('pay_status') != 'paid':
+        notify_raw = remote_raw or ('manual_repair_assume_paid' if query_skipped else '')
+        fulfill_wechat_order(
+            order_no,
+            wxpay_transaction_id or wx_virtual_order_id,
+            notify_raw,
+            pay_method='virtual_pay',
+        )
+        fulfilled = True
+
+    try:
+        notify_provide_goods(order_no, wx_virtual_order_id)
+    except ValueError as exc:
+        order = get_order_by_order_no(order_no)
+        if fulfilled or order.get('pay_status') == 'paid':
+            raise ValueError(
+                f'本地会员已开通，但通知微信发货失败：{exc}。'
+                f'可尝试 repair_virtual_order(..., assume_paid=True)，'
+                f'或核对 WECHAT_VIRTUAL_PAY_ENV 与订单支付环境是否一致'
+            ) from exc
+        raise
+
+    order = get_order_by_order_no(order_no)
+    message = '已同步开通会员并通知微信发货完成'
+    if query_skipped:
+        message += '（已跳过查单，按微信后台已支付处理）'
+    return {
+        'order': order,
+        'fulfilled': fulfilled,
+        'notified': True,
+        'query_skipped': query_skipped,
+        'message': message,
+    }
+
+
 def sync_virtual_order_status(order_no: str, user_id: int | None = None) -> dict[str, Any]:
     order = get_order_by_order_no(order_no)
     if not order:
@@ -252,8 +479,17 @@ def sync_virtual_order_status(order_no: str, user_id: int | None = None) -> dict
     remote_order = remote.get('order') or {}
     status = int(remote_order.get('status') or 0)
     if status in PAID_ORDER_STATUSES:
-        transaction_id = remote_order.get('wxpay_order_id') or remote_order.get('wx_order_id') or ''
-        fulfill_wechat_order(order_no, transaction_id, _compact_json(remote_order), pay_method='virtual_pay')
+        wx_virtual_order_id, wxpay_transaction_id = _split_virtual_pay_ids(remote_order)
+        fulfill_wechat_order(
+            order_no,
+            wxpay_transaction_id or wx_virtual_order_id,
+            _compact_json(remote_order),
+            pay_method='virtual_pay',
+        )
+        try:
+            notify_provide_goods(order_no, wx_virtual_order_id)
+        except ValueError:
+            pass
         order = get_order_by_order_no(order_no)
         return {'order': order, 'synced': True}
     return {'order': order, 'synced': False}
