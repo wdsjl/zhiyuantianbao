@@ -24,10 +24,14 @@ PLAN_VIRTUAL_PRODUCTS: dict[str, dict[str, Any]] = {
 PAID_ORDER_STATUSES = {2, 3, 4}
 
 
+def _clean_secret(value: str | None) -> str:
+    return (value or '').strip().strip('"').strip("'")
+
+
 def get_virtual_pay_config() -> dict[str, Any]:
     env = int(str(os.getenv('WECHAT_VIRTUAL_PAY_ENV', '0') or '0').strip() or '0')
-    prod_key = (os.getenv('WECHAT_VIRTUAL_PAY_APP_KEY', '') or '').strip()
-    sandbox_key = (os.getenv('WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY', '') or '').strip()
+    prod_key = _clean_secret(os.getenv('WECHAT_VIRTUAL_PAY_APP_KEY', ''))
+    sandbox_key = _clean_secret(os.getenv('WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY', ''))
     return {
         'offer_id': (os.getenv('WECHAT_VIRTUAL_PAY_OFFER_ID', '1450554502') or '1450554502').strip(),
         'env': 1 if env == 1 else 0,
@@ -85,9 +89,13 @@ def _get_plan_product(plan_code: str) -> dict[str, Any]:
         raise ValueError('免费套餐无需支付')
 
     defaults = PLAN_VIRTUAL_PRODUCTS.get(plan_code, {})
-    env_product_id = os.getenv(f'WECHAT_VIRTUAL_PRODUCT_{plan_code.upper()}', '').strip()
+    env_product_id = _clean_secret(os.getenv(f'WECHAT_VIRTUAL_PRODUCT_{plan_code.upper()}', ''))
+    env_goods_price = _clean_secret(os.getenv(f'WECHAT_VIRTUAL_GOODS_PRICE_{plan_code.upper()}', ''))
     product_id = env_product_id or defaults.get('product_id') or plan_code
-    goods_price_fen = int(round(price * 100))
+    if env_goods_price:
+        goods_price_fen = int(env_goods_price)
+    else:
+        goods_price_fen = int(round(price * 100))
     return {
         'plan': plan,
         'product_id': product_id,
@@ -294,11 +302,8 @@ def create_virtual_payment(user_id: int, plan_code: str, order_type: str = 'open
         pay_method='virtual_pay',
     )
 
-    attach = _compact_json({
-        'user_id': user_id,
-        'plan_code': plan_code,
-        'order_type': order_type,
-    })
+    # attach 使用简单字符串，避免嵌套 JSON 在部分客户端引发签名校验问题
+    attach = f'{plan_code}:{user_id}:{order_type}'
     sign_data_obj = {
         'offerId': config['offer_id'],
         'buyQuantity': 1,
