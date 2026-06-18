@@ -72,6 +72,42 @@ class RegressionLockTests(unittest.TestCase):
         self.assertTrue(virtual_id.startswith(VIRTUAL_PAY_WX_ORDER_PREFIX))
         self.assertTrue(txn_id.startswith('70000'))
 
+    def test_make_order_no_unique_within_same_second(self) -> None:
+        from payment_service import make_order_no
+
+        numbers = {make_order_no(95) for _ in range(20)}
+        self.assertEqual(len(numbers), 20)
+
+    def test_create_pending_order_retries_duplicate_order_no(self) -> None:
+        import sqlite3
+        import unittest.mock as mock
+        from payment_service import create_pending_order, make_order_no
+
+        duplicate = make_order_no(95)
+        calls = {'count': 0}
+
+        def fake_make_order_no(user_id: int) -> str:
+            calls['count'] += 1
+            return duplicate if calls['count'] == 1 else f'{duplicate}R'
+
+        with mock.patch('payment_service.make_order_no', side_effect=fake_make_order_no):
+            with mock.patch('payment_service.get_connection') as mock_conn:
+                connection = mock_conn.return_value.__enter__.return_value
+                cursor = connection.execute.return_value
+                cursor.lastrowid = 101
+
+                def execute_side_effect(*args, **kwargs):
+                    if calls['count'] == 1:
+                        raise sqlite3.IntegrityError('UNIQUE constraint failed: payment_orders.order_no')
+                    return cursor
+
+                connection.execute.side_effect = execute_side_effect
+                order_no, order_id = create_pending_order(95, 'trial', 19.9, pay_method='virtual_pay')
+
+        self.assertEqual(order_no, f'{duplicate}R')
+        self.assertEqual(order_id, 101)
+        self.assertEqual(calls['count'], 2)
+
     def test_stale_db_henan_45_upgrades_to_48(self) -> None:
         from db import get_connection
         ensure_province_rules_seeded()

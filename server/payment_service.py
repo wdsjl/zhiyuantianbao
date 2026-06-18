@@ -56,7 +56,11 @@ def ensure_payment_tables() -> None:
 
 def make_order_no(user_id: int) -> str:
     from datetime import datetime
-    return f'M{datetime.now().strftime("%Y%m%d%H%M%S")}{user_id}'
+    import secrets
+
+    # 毫秒 + 随机后缀，避免同秒重复下单触发 order_no UNIQUE 约束导致 500
+    stamp = datetime.now().strftime('%Y%m%d%H%M%S%f')[:-3]
+    return f'M{stamp}{user_id}{secrets.randbelow(10000):04d}'
 
 
 def create_pending_order(
@@ -66,19 +70,29 @@ def create_pending_order(
     order_type: str = 'open',
     pay_method: str = 'wechat_pay'
 ) -> tuple[str, int]:
+    import sqlite3
+
     ensure_payment_tables()
-    order_no = make_order_no(user_id)
-    with get_connection() as connection:
-        cursor = connection.execute(
-            '''
-            INSERT INTO payment_orders (
-              order_no, user_id, plan_code, amount, pay_method, pay_status, order_type, paid_at, remark
-            ) VALUES (?, ?, ?, ?, ?, 'pending', ?, '', ?)
-            ''',
-            [order_no, user_id, plan_code, float(amount), pay_method, order_type, '']
-        )
-        connection.commit()
-        return order_no, cursor.lastrowid
+    last_error: sqlite3.IntegrityError | None = None
+    for _ in range(5):
+        order_no = make_order_no(user_id)
+        try:
+            with get_connection() as connection:
+                cursor = connection.execute(
+                    '''
+                    INSERT INTO payment_orders (
+                      order_no, user_id, plan_code, amount, pay_method, pay_status, order_type, paid_at, remark
+                    ) VALUES (?, ?, ?, ?, ?, 'pending', ?, '', ?)
+                    ''',
+                    [order_no, user_id, plan_code, float(amount), pay_method, order_type, '']
+                )
+                connection.commit()
+                return order_no, cursor.lastrowid
+        except sqlite3.IntegrityError as exc:
+            last_error = exc
+            if 'order_no' not in str(exc).lower():
+                raise ValueError('创建支付订单失败，请稍后重试') from exc
+    raise ValueError('创建支付订单失败，请稍后重试') from last_error
 
 
 def get_order_by_order_no(order_no: str) -> dict[str, Any] | None:

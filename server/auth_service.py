@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -52,8 +53,13 @@ def get_wechat_session(code: str) -> dict[str, Any] | None:
         'js_code': code,
         'grant_type': 'authorization_code'
     })
-    with urllib.request.urlopen(f'{WECHAT_SESSION_URL}?{query}', timeout=8) as response:
-        data = json.loads(response.read().decode('utf-8'))
+    try:
+        with urllib.request.urlopen(f'{WECHAT_SESSION_URL}?{query}', timeout=8) as response:
+            data = json.loads(response.read().decode('utf-8'))
+    except urllib.error.URLError as exc:
+        raise ValueError('微信登录服务暂时不可用，请稍后重试') from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError('微信登录响应异常，请稍后重试') from exc
     if data.get('errcode'):
         raise ValueError(data.get('errmsg', '微信登录失败'))
     return data

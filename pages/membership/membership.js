@@ -181,9 +181,11 @@ Page({
   },
 
   startPay(eventOrPlan, isRenewal) {
-    const plan = eventOrPlan && eventOrPlan.currentTarget
-      ? this.data.plans[eventOrPlan.currentTarget.dataset.index]
-      : eventOrPlan;
+    let plan = eventOrPlan;
+    if (eventOrPlan && eventOrPlan.currentTarget) {
+      const planCode = eventOrPlan.currentTarget.dataset.planCode;
+      plan = (this.data.plans || []).find((item) => item.plan_code === planCode);
+    }
     if (!plan || this.data.paying) return;
 
     const userId = this.ensureUserReady();

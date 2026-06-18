@@ -765,6 +765,10 @@ def api_wechat_pay_status():
 
 @app.post('/api/payments/wechat/create')
 def api_wechat_pay_create(payload: PaymentCreateRequest):
+    import logging
+    import sqlite3
+
+    logger = logging.getLogger('zhiyuan.payment')
     try:
         return create_wechat_payment(
             payload.user_id,
@@ -774,6 +778,12 @@ def api_wechat_pay_create(payload: PaymentCreateRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except sqlite3.Error as exc:
+        logger.exception('payment create db error user_id=%s plan=%s', payload.user_id, payload.plan_code)
+        raise HTTPException(status_code=400, detail='创建支付订单失败，请稍后重试') from exc
+    except Exception as exc:
+        logger.exception('payment create failed user_id=%s plan=%s', payload.user_id, payload.plan_code)
+        raise HTTPException(status_code=500, detail='支付服务异常，请稍后重试') from exc
 
 
 @app.get('/api/payments/wechat/orders/{order_no}')
