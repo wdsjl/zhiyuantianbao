@@ -16,7 +16,22 @@ if (Test-Path $Backup) {
 }
 
 Write-Host ''
-Write-Host '=== 2. Python import test ==='
+Write-Host '=== 2. Fix province_rules_service.py (missing resolve_volunteer_slots) ==='
+$ProvinceFile = Join-Path $ServerDir 'province_rules_service.py'
+$Branch = 'cursor/fix-payment-500-0c75'
+$Url = 'https://raw.githubusercontent.com/wdsjl/zhiyuantianbao/' + $Branch + '/server/province_rules_service.py'
+if (Test-Path $ProvinceFile) {
+  Copy-Item $ProvinceFile ($ProvinceFile + '.bak') -Force
+}
+Write-Host ('Downloading province_rules_service.py from ' + $Branch + ' ...')
+curl.exe -fsSL -o $ProvinceFile $Url
+if (-not (Test-Path $ProvinceFile)) {
+  Write-Host 'Download failed. Copy manually from E:\zhiyuantianbao\server\province_rules_service.py'
+  exit 1
+}
+
+Write-Host ''
+Write-Host '=== 3. Python import test ==='
 Set-Location $ServerDir
 python -c "import main; print('import main: OK')"
 if ($LASTEXITCODE -ne 0) {
@@ -31,7 +46,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ''
-Write-Host '=== 3. Restart + local health ==='
+Write-Host '=== 4. Restart + local health ==='
 Set-Location $Root
 pm2 restart zhiyuan-backend --update-env
 Start-Sleep -Seconds 2
