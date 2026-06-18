@@ -1,6 +1,6 @@
 const { refreshActiveProfile } = require('../../utils/profileHelper');
 const { getFlowStatus, goNextStep, navigateToStep } = require('../../utils/applyFlow');
-const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode } = require('../../utils/referral');
+const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode, cleanupInvalidInviteCode } = require('../../utils/referral');
 const { request } = require('../../utils/request');
 const { getCurrentUserId } = require('../../utils/membership');
 
@@ -18,6 +18,7 @@ Page({
     }
   },
   onLoad(options) {
+    cleanupInvalidInviteCode();
     captureInviteFromLaunch({ query: options || {}, scene: options && options.scene });
     this.tryBindInvite();
   },
@@ -51,6 +52,7 @@ Page({
     });
   },
   onShow() {
+    cleanupInvalidInviteCode();
     this.tryBindInvite();
     refreshActiveProfile().then((profile) => {
       const savedProfile = profile || wx.getStorageSync('studentProfile') || {};
