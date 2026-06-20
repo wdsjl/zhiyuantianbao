@@ -113,13 +113,26 @@ Page({
   },
   goEligiblePool() {
     const profile = this.data.profile || {};
-    if (!profile.province || !profile.score || !profile.rank || !profile.targetBatch) {
+    if (!profile.province || !profile.score || !profile.targetBatch) {
       wx.showModal({
         title: '请先完善档案',
-        content: '检索可报院校需要分数、位次、省份和批次。',
+        content: '检索可报院校需要分数、省份和批次。',
         confirmText: '去完善',
         success: (res) => {
           if (res.confirm) wx.navigateTo({ url: '/pages/profile/profile' });
+        }
+      });
+      return;
+    }
+    const { isArtSportsActive } = require('../../utils/henanArtSports');
+    if (isArtSportsActive(profile) && !(profile.professionalScore || profile.professional_score)) {
+      const track = profile.examType === '体育类' ? 'sports' : 'art';
+      wx.showModal({
+        title: '请填写专业统考分',
+        content: '河南艺体考生须先填写专业统考分。',
+        confirmText: '去完善',
+        success: (res) => {
+          if (res.confirm) wx.navigateTo({ url: `/pages/profile/profile?track=${track}` });
         }
       });
       return;

@@ -1725,6 +1725,16 @@ def api_henan_art_sports_match(request: HenanArtSportsMatchRequest):
 @app.post('/api/eligible-pool')
 def eligible_pool(request: EligiblePoolRequest):
     try:
+        from henan_art_sports_service import is_art_sports_request, query_art_sports_eligible_pool
+        payload = request.model_dump()
+        if is_art_sports_request(payload):
+            return query_art_sports_eligible_pool(
+                payload,
+                gradient=request.gradient or '',
+                keyword=request.keyword or '',
+                page=request.page,
+                page_size=request.page_size,
+            )
         return query_eligible_pool(
             request,
             gradient=request.gradient or '',
@@ -1738,6 +1748,13 @@ def eligible_pool(request: EligiblePoolRequest):
 
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
+    from henan_art_sports_service import is_art_sports_request, build_art_sports_recommendation
+    payload = request.model_dump()
+    if is_art_sports_request(payload):
+        try:
+            return build_art_sports_recommendation(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     sql = """
     SELECT ar.*, s.school_name, s.city, s.school_type, s.is_public, s.is_double_first_class,
            m.major_name, m.major_type, ep.tuition, ep.duration, ep.subject_requirement

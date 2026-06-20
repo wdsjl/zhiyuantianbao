@@ -1,8 +1,17 @@
 <view class="container">
   <view class="card">
-    <view class="section-title">可报院校专业检索</view>
-    <view class="sub-text">根据你的分数、位次、选科和批次，从录取数据库中检索所有符合条件的院校专业，并按冲稳保分类。</view>
-    <view class="sub-text" wx:if="{{profile.score}}">
+    <view class="section-title">{{artSportsMode ? '艺体综合分对标检索' : '可报院校专业检索'}}</view>
+    <view class="sub-text" wx:if="{{artSportsMode}}">
+      根据文化课、专业统考分与院校公式计算综合分，按近3年最低综合分划分冲稳保（非官方位次）。
+    </view>
+    <view class="sub-text" wx:else>
+      根据你的分数、位次、选科和批次，从录取数据库中检索所有符合条件的院校专业，并按冲稳保分类。
+    </view>
+    <view class="sub-text" wx:if="{{profile.score && artSportsMode}}">
+      当前档案：{{profile.province}} · {{profile.targetBatch}} · 文化{{profile.score}}分 · 专业{{profile.professionalScore || profile.professional_score}}分
+      <text wx:if="{{compositeScore}}"> · 综合分 {{compositeScore}}</text>
+    </view>
+    <view class="sub-text" wx:elif="{{profile.score}}">
       当前档案：{{profile.province}} · {{profile.targetBatch}} · {{profile.score}}分 / 位次{{profile.rank}}
     </view>
     <view class="summary-row">
@@ -28,12 +37,18 @@
     <button class="secondary-btn" bindtap="onSearch">搜索</button>
   </view>
 
-  <view wx:if="{{strategy}}" class="card">
+  <view wx:if="{{strategy && !artSportsMode}}" class="card">
     <view class="sub-text">
       位次区间：冲 {{strategy.bands.chong[0]}}~{{strategy.bands.chong[1]}}，
       稳 {{strategy.bands.wen[0]}}~{{strategy.bands.wen[1]}}，
       保 {{strategy.bands.bao[0]}}~{{strategy.bands.bao[1]}}
     </view>
+  </view>
+
+  <view wx:if="{{strategy && artSportsMode}}" class="card art-sports-strategy">
+    <view class="sub-text">{{strategy.message}}</view>
+    <view class="sub-text" wx:if="{{strategy.formula_label}}">{{strategy.formula_label}}</view>
+    <view class="warn-box" wx:if="{{strategy.dual_line && !strategy.dual_line.dual_line_ok}}">{{strategy.dual_line.message}}</view>
   </view>
 
   <view wx:for="{{items}}" wx:key="school_id-{{major_id}}" class="card item-card" data-school-id="{{item.school_id}}" bindtap="openSchool">
@@ -42,12 +57,16 @@
       <text class="school-name">{{item.school_name}}</text>
     </view>
     <view class="major-line">{{item.major_name}}（{{item.major_type || '专业'}}）</view>
-    <view class="sub-text">{{item.city}} · 参考位次 {{item.weighted_rank || item.min_rank || '--'}} · 参考分数 {{item.weighted_score || item.min_score || '--'}}</view>
+    <view class="sub-text" wx:if="{{artSportsMode}}">
+      {{item.city || '河南'}} · 参考最低综合分 {{item.ref_min_composite || item.weighted_score || '--'}} · 分差 {{item.score_diff || '--'}}
+    </view>
+    <view class="sub-text" wx:else>{{item.city}} · 参考位次 {{item.weighted_rank || item.min_rank || '--'}} · 参考分数 {{item.weighted_score || item.min_score || '--'}}</view>
     <view class="sub-text" wx:if="{{item.admission_probability}}">录取概率参考：{{item.admission_probability}}</view>
   </view>
 
   <view wx:if="{{!loading && !items.length}}" class="card muted-card">
-    <view class="sub-text">暂无可报院校专业。请检查档案批次是否与导入的录取数据一致。</view>
+    <view class="sub-text" wx:if="{{artSportsMode}}">暂无可对标院校。请检查专业统考分、双过线情况，或确认后台已导入对应公式院校数据。</view>
+    <view class="sub-text" wx:else>暂无可报院校专业。请检查档案批次是否与导入的录取数据一致。</view>
   </view>
 
   <view wx:if="{{hasMore}}" class="load-more">

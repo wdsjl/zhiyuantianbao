@@ -43,7 +43,33 @@ function checkDualLine(cultureScore, proScore, cultureCutoff, proCutoff) {
 }
 
 function isHenanArtSportsProvince(province) {
-  return String(province || '').replace(/\s/g, '') === '河南';
+  return String(province || '').replace(/\s/g, '').replace(/省$/, '') === '河南';
+}
+
+function getExamType(profile) {
+  if (!profile) return '普通类';
+  return profile.examType || profile.exam_type || '普通类';
+}
+
+function isWaivedArtSports(profile) {
+  return !!(profile && (profile.waiveArtSports || profile.waive_art_sports_batch));
+}
+
+function isArtSportsActive(profile) {
+  const examType = getExamType(profile);
+  return (examType === '艺术类' || examType === '体育类')
+    && !isWaivedArtSports(profile)
+    && isHenanArtSportsProvince(profile.province);
+}
+
+function batchLevelFromTargetBatch(targetBatch) {
+  return String(targetBatch || '').includes('专科') ? '专科' : '本科';
+}
+
+function categoryFromExamType(examType) {
+  if (examType === '体育类') return '体育类';
+  if (examType === '艺术类') return '艺术类';
+  return '';
 }
 
 module.exports = {
@@ -53,5 +79,10 @@ module.exports = {
   defaultFormulaId,
   calcComposite,
   checkDualLine,
-  isHenanArtSportsProvince
+  isHenanArtSportsProvince,
+  getExamType,
+  isWaivedArtSports,
+  isArtSportsActive,
+  batchLevelFromTargetBatch,
+  categoryFromExamType
 };

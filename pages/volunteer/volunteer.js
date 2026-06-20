@@ -5,6 +5,8 @@ const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
 const { formatAiContent } = require('../../utils/reportFormat');
+const { buildRecommendPayload } = require('../../utils/recommendPayload');
+const { isArtSportsActive } = require('../../utils/henanArtSports');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -218,18 +220,17 @@ Page({
   doGeneratePlan() {
     const profile = this.data.profile;
     this.setData({ loading: true });
+    const payload = buildRecommendPayload(profile, {
+      planStyle: this.data.planStyle || 'balanced',
+      personality: this.data.personality,
+      volunteerCount: 0
+    });
+    payload.major_types = (this.data.personality && this.data.personality.majorTypes) || [];
     request({
       url: '/api/recommend',
       method: 'POST',
       data: {
-        province: profile.province,
-        batch: profile.targetBatch,
-        score: Number(profile.score),
-        rank: Number(profile.rank),
-        subject_combination: profile.subjectCombination,
-        major_types: (this.data.personality && this.data.personality.majorTypes) || [],
-        accept_adjustment: true,
-        plan_style: this.data.planStyle || 'balanced',
+        ...payload,
         volunteer_count: 0
       }
     })

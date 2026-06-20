@@ -13,6 +13,12 @@ function mapBoundStudent(bound, stored) {
     rank: bound.rank,
     targetBatch: bound.target_batch || stored.targetBatch,
     subjectCombination: stored.subjectCombination,
+    examType: bound.exam_type || stored.examType,
+    professionalScore: bound.professional_score ?? stored.professionalScore,
+    formulaId: bound.art_sports_formula_id ?? stored.formulaId,
+    waiveArtSports: !!(bound.waive_art_sports_batch ?? stored.waiveArtSports),
+    cultureCutoff: bound.culture_cutoff ?? stored.cultureCutoff,
+    proCutoff: bound.pro_cutoff ?? stored.proCutoff,
     isParentView: true
   };
 }

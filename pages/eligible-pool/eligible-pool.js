@@ -3,6 +3,7 @@ const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/pro
 const { buildProfileSnapshot } = require('../../utils/profileSnapshot');
 const { buildRecommendPayload } = require('../../utils/recommendPayload');
 const { getGradientClass } = require('../../utils/volunteer');
+const { isArtSportsActive } = require('../../utils/henanArtSports');
 
 const GRADIENT_TABS = [
   { value: '', label: '全部' },
@@ -10,6 +11,13 @@ const GRADIENT_TABS = [
   { value: '稳', label: '稳' },
   { value: '保', label: '保' },
   { value: '垫', label: '垫' }
+];
+
+const ART_SPORTS_GRADIENT_TABS = [
+  { value: '', label: '全部' },
+  { value: '冲', label: '冲' },
+  { value: '稳', label: '稳' },
+  { value: '保', label: '保' }
 ];
 
 Page({
@@ -26,13 +34,50 @@ Page({
     total: 0,
     loading: false,
     hasMore: false,
-    userRank: ''
+    userRank: '',
+    artSportsMode: false,
+    compositeScore: ''
   },
   onShow() {
     refreshActiveProfile().then((profile) => {
       const resolved = profile || loadActiveProfileSync();
-      this.setData({ profile: resolved });
-      if (!resolved.score || !resolved.rank || !resolved.province || !resolved.targetBatch) {
+      const artSportsMode = isArtSportsActive(resolved);
+      this.setData({
+        profile: resolved,
+        artSportsMode,
+        gradientTabs: artSportsMode ? ART_SPORTS_GRADIENT_TABS : GRADIENT_TABS
+      });
+      if (!resolved.score || !resolved.province || !resolved.targetBatch) {
+        wx.showModal({
+          title: '请先完善档案',
+          content: artSportsMode
+            ? '艺体检索需要文化课分数、专业统考分、省份和批次。'
+            : '检索可报院校需要分数、位次、省份和批次。',
+          confirmText: '去完善',
+          success: (res) => {
+            if (res.confirm) {
+              const track = resolved.examType === '体育类' ? 'sports' : (resolved.examType === '艺术类' ? 'art' : '');
+              wx.navigateTo({ url: track ? `/pages/profile/profile?track=${track}` : '/pages/profile/profile' });
+            }
+          }
+        });
+        return;
+      }
+      if (artSportsMode && !resolved.professionalScore && !resolved.professional_score) {
+        wx.showModal({
+          title: '请填写专业统考分',
+          content: '河南艺体考生须填写专业统考分，才能按综合分对标检索院校。',
+          confirmText: '去完善',
+          success: (res) => {
+            if (res.confirm) {
+              const track = resolved.examType === '体育类' ? 'sports' : 'art';
+              wx.navigateTo({ url: `/pages/profile/profile?track=${track}` });
+            }
+          }
+        });
+        return;
+      }
+      if (!artSportsMode && !resolved.rank) {
         wx.showModal({
           title: '请先完善档案',
           content: '检索可报院校需要分数、位次、省份和批次。',
@@ -89,6 +134,7 @@ Page({
           strategy: res.strategy || null,
           total: res.total || 0,
           userRank: res.user_rank || profile.rank,
+          compositeScore: res.composite_score || (res.strategy && res.strategy.composite_score) || '',
           hasMore: items.length < (res.total || 0),
           page: page + 1
         });
@@ -115,7 +161,7 @@ Page({
   },
   openSchool(event) {
     const schoolId = event.currentTarget.dataset.schoolId;
-    if (!schoolId) return;
+    if (!schoolId || this.data.artSportsMode) return;
     wx.navigateTo({ url: `/pages/school-detail/school-detail?id=${schoolId}` });
   }
 });

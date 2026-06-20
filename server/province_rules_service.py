@@ -31,6 +31,10 @@ PROVINCE_RULES_2025: list[dict[str, Any]] = [
     # —— 院校专业组 ——
     {'province': '河南', 'batch': '本科批', 'volunteer_mode': '院校专业组', 'school_count': 48, 'major_count_per_school': 6, 'rule_description': '2025新高考：48个院校专业组，每组最多6个专业+调剂选项。'},
     {'province': '河南', 'batch': '专科批', 'volunteer_mode': '院校专业组', 'school_count': 48, 'major_count_per_school': 6, 'rule_description': '专科批48个院校专业组。'},
+    {'province': '河南', 'batch': '艺术本科批', 'volunteer_mode': '专业平行志愿', 'school_count': 64, 'major_count_per_school': 1, 'rule_description': '艺术本科提前批/本科批平行志愿，最多64个志愿；综合分按院校公式计算。'},
+    {'province': '河南', 'batch': '艺术专科批', 'volunteer_mode': '专业平行志愿', 'school_count': 64, 'major_count_per_school': 1, 'rule_description': '艺术专科批平行志愿，最多64个志愿；专科统一使用艺术类公式⑤。'},
+    {'province': '河南', 'batch': '体育本科批', 'volunteer_mode': '专业平行志愿', 'school_count': 64, 'major_count_per_school': 1, 'rule_description': '体育本科批平行志愿，最多64个志愿；综合分按院校公式计算。'},
+    {'province': '河南', 'batch': '体育专科批', 'volunteer_mode': '专业平行志愿', 'school_count': 64, 'major_count_per_school': 1, 'rule_description': '体育专科批平行志愿，最多64个志愿；专科统一使用体育类公式③。'},
     {'province': '北京', 'batch': '本科批', 'volunteer_mode': '院校专业组', 'school_count': 30, 'major_count_per_school': 6, 'rule_description': '本科普通批30个院校专业组。'},
     {'province': '北京', 'batch': '专科批', 'volunteer_mode': '院校专业组', 'school_count': 20, 'major_count_per_school': 6, 'rule_description': '专科批20个。'},
     {'province': '天津', 'batch': '本科批A段', 'volunteer_mode': '院校专业组', 'school_count': 50, 'major_count_per_school': 6, 'rule_description': '本科A段50个院校专业组。'},

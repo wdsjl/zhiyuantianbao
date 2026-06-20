@@ -71,6 +71,10 @@
   </view>
 
   <view class="card">
-    <button class="primary-btn" bindtap="goProfile">完善艺术类档案</button>
+    <view class="btn-row">
+      <button class="primary-btn" bindtap="goEligiblePool">查看可报院校对标</button>
+      <button class="secondary-btn" bindtap="goVolunteer">生成志愿方案</button>
+    </view>
+    <button class="secondary-btn" style="margin-top:16rpx" bindtap="goProfile">完善艺术类档案</button>
   </view>
 </view>

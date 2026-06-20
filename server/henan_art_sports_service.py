@@ -247,3 +247,332 @@ def match_schools(data: dict[str, Any]) -> dict[str, Any]:
         'total': len(ranked),
         'volunteer_slots': VOLUNTEER_SLOTS,
     }
+
+
+TIER_TO_GRADIENT = {'rush': '冲', 'steady': '稳', 'safe': '保'}
+GRADIENT_TO_TIER = {'冲': 'rush', '稳': 'steady', '保': 'safe'}
+
+
+def _normalize_province(province: str) -> str:
+    return str(province or '').replace('省', '').replace(' ', '')
+
+
+def is_art_sports_request(data: dict[str, Any]) -> bool:
+    exam_type = data.get('exam_type') or '普通类'
+    if exam_type not in ('艺术类', '体育类'):
+        return False
+    if bool(data.get('waive_art_sports_batch')):
+        return False
+    return _normalize_province(data.get('province') or '') == PROVINCE
+
+
+def batch_level_from_target_batch(batch: str) -> str:
+    return '专科' if '专科' in str(batch or '') else '本科'
+
+
+def category_from_exam_type(exam_type: str) -> str:
+    if exam_type == '体育类':
+        return '体育类'
+    if exam_type == '艺术类':
+        return '艺术类'
+    raise ValueError('考试类别须为艺术类或体育类')
+
+
+def request_to_match_payload(data: dict[str, Any]) -> dict[str, Any]:
+    exam_type = data.get('exam_type') or '普通类'
+    batch_level = batch_level_from_target_batch(data.get('batch') or '')
+    formula_id = data.get('art_sports_formula_id') or data.get('formula_id')
+    if formula_id in (None, ''):
+        formula_id = default_formula_id(category_from_exam_type(exam_type), batch_level)
+    return {
+        'category': category_from_exam_type(exam_type),
+        'culture_score': float(data.get('score') or data.get('culture_score') or 0),
+        'professional_score': float(data.get('professional_score') or 0),
+        'formula_id': int(formula_id),
+        'batch_level': batch_level,
+        'culture_cutoff': data.get('culture_cutoff'),
+        'pro_cutoff': data.get('pro_cutoff'),
+        'waive_art_sports_batch': bool(data.get('waive_art_sports_batch')),
+    }
+
+
+def ensure_art_sports_admissions_table() -> None:
+    with get_connection() as connection:
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS art_sports_admissions (
+              admission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+              province TEXT NOT NULL DEFAULT '河南',
+              category TEXT NOT NULL,
+              batch_level TEXT NOT NULL,
+              school_name TEXT NOT NULL,
+              major_name TEXT NOT NULL,
+              formula_id INTEGER NOT NULL,
+              min_composite_2025 REAL,
+              min_composite_2024 REAL,
+              min_composite_2023 REAL,
+              city TEXT,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE (province, category, batch_level, school_name, major_name, formula_id)
+            )
+            '''
+        )
+        count = connection.execute('SELECT COUNT(*) AS count FROM art_sports_admissions').fetchone()['count']
+        if not count:
+            for school in SAMPLE_SCHOOLS:
+                connection.execute(
+                    '''
+                    INSERT INTO art_sports_admissions (
+                      province, category, batch_level, school_name, major_name, formula_id,
+                      min_composite_2025, min_composite_2024, min_composite_2023, city
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''',
+                    [
+                        PROVINCE,
+                        school['category'],
+                        school['batch_level'],
+                        school['school_name'],
+                        school['major_name'],
+                        int(school['formula_id']),
+                        school.get('min_composite_2025'),
+                        school.get('min_composite_2024'),
+                        school.get('min_composite_2023'),
+                        school.get('city') or '',
+                    ],
+                )
+        connection.commit()
+
+
+def load_art_sports_admissions(category: str, batch_level: str, formula_id: int) -> list[dict[str, Any]]:
+    ensure_art_sports_admissions_table()
+    with get_connection() as connection:
+        rows = connection.execute(
+            '''
+            SELECT * FROM art_sports_admissions
+            WHERE province = ? AND category = ? AND batch_level = ? AND formula_id = ?
+            ORDER BY min_composite_2025 DESC
+            ''',
+            [PROVINCE, category, batch_level, int(formula_id)],
+        ).fetchall()
+    if rows:
+        return [dict(row) for row in rows]
+    return [
+        s for s in SAMPLE_SCHOOLS
+        if s['category'] == category and s['batch_level'] == batch_level and int(s['formula_id']) == int(formula_id)
+    ]
+
+
+def _pseudo_id(prefix: str, name: str) -> int:
+    return abs(hash(f'{prefix}:{name}')) % 900000 + 100000
+
+
+def _classify_tier(score_diff: float) -> tuple[str, str]:
+    if score_diff >= 8:
+        return 'rush', '冲刺'
+    if score_diff >= -5:
+        return 'steady', '稳妥'
+    return 'safe', '保底'
+
+
+def _rank_school_rows(calc: dict[str, Any], schools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    composite = float(calc['composite_score'])
+    ranked: list[dict[str, Any]] = []
+    for school in schools:
+        ref = _avg_min_composite(school)
+        diff = composite - ref
+        tier, tier_label = _classify_tier(diff)
+        ranked.append({
+            **school,
+            'ref_min_composite': round(ref, 2),
+            'score_diff': round(diff, 2),
+            'tier': tier,
+            'tier_label': tier_label,
+            'gradient_type': TIER_TO_GRADIENT[tier],
+        })
+    ranked.sort(key=lambda item: (-item['ref_min_composite'], -item['score_diff']))
+    return ranked
+
+
+def _build_match_context(data: dict[str, Any]) -> dict[str, Any]:
+    payload = request_to_match_payload(data)
+    calc = calculate_composite({**payload, 'category': payload['category']})
+    if calc.get('use_normal_track'):
+        raise ValueError('已放弃艺体批次，请使用普通类志愿检索')
+    category = payload['category']
+    batch_level = payload['batch_level']
+    formula_id = int(calc['formula_id'])
+    if batch_level == '本科' and not calc['dual_line'].get('dual_line_ok'):
+        return {
+            **calc,
+            'eligible': False,
+            'message': '未满足双过线，本科院校推荐已屏蔽；可填专科或勾选放弃艺体批次走普通类。',
+            'ranked': [],
+        }
+    schools = load_art_sports_admissions(category, batch_level, formula_id)
+    ranked = _rank_school_rows(calc, schools)
+    return {
+        **calc,
+        'eligible': True,
+        'message': '按院校对应公式与近3年最低综合分对标，划分冲稳保（非官方位次）。',
+        'ranked': ranked,
+        'batch_level': batch_level,
+    }
+
+
+def _pool_item_from_ranked(row: dict[str, Any], *, accept_adjustment: bool) -> dict[str, Any]:
+    school_name = row.get('school_name') or ''
+    major_name = row.get('major_name') or ''
+    gradient = row.get('gradient_type') or TIER_TO_GRADIENT.get(row.get('tier') or '', '稳')
+    return {
+        'gradient_type': gradient,
+        'school_id': _pseudo_id('school', school_name),
+        'school_name': school_name,
+        'school_code': '',
+        'major_id': _pseudo_id('major', f'{school_name}:{major_name}'),
+        'major_name': major_name,
+        'major_code': '',
+        'major_type': row.get('category') or '',
+        'city': row.get('city') or '',
+        'school_type': '',
+        'tuition': None,
+        'duration': None,
+        'min_score': row.get('ref_min_composite'),
+        'min_rank': None,
+        'weighted_score': row.get('ref_min_composite'),
+        'weighted_rank': None,
+        'years_used': [2025, 2024, 2023],
+        'admission_probability': f'综合分分差 {row.get("score_diff")}',
+        'preference_score': 0,
+        'personality_matched': False,
+        'is_adjustable': accept_adjustment,
+        'risk_level': '低' if gradient == '保' else ('中' if gradient == '稳' else '高'),
+        'risk_reason': f'{row.get("tier_label")}档：参考最低综合分 {row.get("ref_min_composite")}',
+        'ref_min_composite': row.get('ref_min_composite'),
+        'score_diff': row.get('score_diff'),
+        'formula_id': row.get('formula_id'),
+        'art_sports_mode': True,
+    }
+
+
+def query_art_sports_eligible_pool(
+    data: dict[str, Any],
+    *,
+    gradient: str = '',
+    keyword: str = '',
+    page: int = 1,
+    page_size: int = 50,
+) -> dict[str, Any]:
+    context = _build_match_context(data)
+    ranked = context.get('ranked') or []
+    pool = [_pool_item_from_ranked(row, accept_adjustment=bool(data.get('accept_adjustment', True))) for row in ranked]
+    if gradient:
+        pool = [row for row in pool if row.get('gradient_type') == gradient]
+    if keyword:
+        keyword_lower = keyword.lower()
+        pool = [
+            row for row in pool
+            if keyword_lower in str(row.get('school_name') or '').lower()
+            or keyword_lower in str(row.get('major_name') or '').lower()
+            or keyword_lower in str(row.get('city') or '').lower()
+        ]
+    total = len(pool)
+    page = max(1, int(page or 1))
+    page_size = max(1, min(200, int(page_size or 50)))
+    start = (page - 1) * page_size
+    items = pool[start:start + page_size]
+    summary = {'冲': 0, '稳': 0, '保': 0, '垫': 0, 'total': len(ranked)}
+    for row in ranked:
+        gradient_type = row.get('gradient_type') or '稳'
+        if gradient_type in summary:
+            summary[gradient_type] += 1
+    return {
+        'items': items,
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+        'summary': summary,
+        'strategy': {
+            'mode': 'art_sports_composite',
+            'composite_score': context.get('composite_score'),
+            'formula_label': context.get('formula_label'),
+            'dual_line': context.get('dual_line'),
+            'eligible': context.get('eligible'),
+            'message': context.get('message'),
+            'volunteer_slots': VOLUNTEER_SLOTS,
+            'rank_notice': '河南省不发布艺体综合分官方位次，以下为历年最低综合分对标结果。',
+        },
+        'user_rank': None,
+        'composite_score': context.get('composite_score'),
+        'art_sports_mode': True,
+    }
+
+
+def build_art_sports_recommendation(data: dict[str, Any]) -> dict[str, Any]:
+    pool_result = query_art_sports_eligible_pool(data, page=1, page_size=500)
+    if not pool_result.get('strategy', {}).get('eligible'):
+        return {
+            'items': [],
+            'risk': {'level': '高', 'count': {}, 'warnings': [pool_result.get('strategy', {}).get('message') or '暂无推荐']},
+            'strategy': pool_result.get('strategy'),
+            'generation': {'target_slots': VOLUNTEER_SLOTS, 'generated_count': 0, 'candidate_pool': 0},
+            'art_sports_mode': True,
+        }
+    order = {'冲': 0, '稳': 1, '保': 2, '垫': 3}
+    all_items = query_art_sports_eligible_pool(data, page=1, page_size=500)['items']
+    all_items.sort(key=lambda row: (order.get(row.get('gradient_type') or '稳', 9), -(row.get('ref_min_composite') or 0)))
+    quotas = {'冲': 16, '稳': 24, '保': 24}
+    if data.get('plan_style') == 'aggressive':
+        quotas = {'冲': 24, '稳': 24, '保': 16}
+    elif data.get('plan_style') == 'conservative':
+        quotas = {'冲': 12, '稳': 20, '保': 32}
+    selected: list[dict[str, Any]] = []
+    buckets: dict[str, list[dict[str, Any]]] = {'冲': [], '稳': [], '保': []}
+    for item in all_items:
+        gradient = item.get('gradient_type') or '稳'
+        if gradient in buckets:
+            buckets[gradient].append(item)
+    for gradient in ('冲', '稳', '保'):
+        selected.extend(buckets[gradient][:quotas.get(gradient, 0)])
+    if len(selected) < VOLUNTEER_SLOTS:
+        used = {(item['school_name'], item['major_name']) for item in selected}
+        for item in all_items:
+            key = (item['school_name'], item['major_name'])
+            if key in used:
+                continue
+            selected.append(item)
+            used.add(key)
+            if len(selected) >= VOLUNTEER_SLOTS:
+                break
+    selected = selected[:VOLUNTEER_SLOTS]
+    for index, item in enumerate(selected, start=1):
+        item['sort_order'] = index
+    warnings = []
+    if len(selected) < VOLUNTEER_SLOTS:
+        warnings.append(f'候选数据 {len(all_items)} 条，当前生成 {len(selected)}/{VOLUNTEER_SLOTS} 个志愿，可补充艺体录取数据。')
+    return {
+        'items': selected,
+        'risk': {
+            'level': '低' if selected else '高',
+            'count': {'冲': sum(1 for x in selected if x.get('gradient_type') == '冲'), '稳': sum(1 for x in selected if x.get('gradient_type') == '稳'), '保': sum(1 for x in selected if x.get('gradient_type') == '保')},
+            'warnings': warnings,
+        },
+        'strategy': {
+            **(pool_result.get('strategy') or {}),
+            'volunteer_rule': {
+                'total_slots': VOLUNTEER_SLOTS,
+                'school_count': VOLUNTEER_SLOTS,
+                'batch': data.get('batch'),
+                'volunteer_mode': '专业平行志愿',
+                'matched': True,
+                'source': 'henan_art_sports',
+                'rule_description': '河南艺体批次平行志愿，最多64个志愿；按综合分与历年最低分对标生成冲稳保方案。',
+            },
+            'quotas': quotas,
+        },
+        'generation': {
+            'target_slots': VOLUNTEER_SLOTS,
+            'generated_count': len(selected),
+            'candidate_pool': len(all_items),
+        },
+        'art_sports_mode': True,
+    }

@@ -91,6 +91,12 @@ class RecommendRequest(BaseModel):
     volunteer_count: int = 0
     preferences: Optional[dict] = None
     personality_major_types: list[str] = Field(default_factory=list)
+    exam_type: Optional[str] = '普通类'
+    professional_score: Optional[float] = None
+    art_sports_formula_id: Optional[int] = None
+    waive_art_sports_batch: bool = False
+    culture_cutoff: Optional[float] = None
+    pro_cutoff: Optional[float] = None
 
 
 class EligiblePoolRequest(RecommendRequest):

@@ -69,7 +69,13 @@ function refreshUserIdentityFromServer() {
         score: serverProfile.score || profile.score,
         rank: serverProfile.rank || profile.rank,
         subjectCombination: serverProfile.subject_combination || profile.subjectCombination,
-        targetBatch: serverProfile.target_batch || profile.targetBatch
+        targetBatch: serverProfile.target_batch || profile.targetBatch,
+        examType: serverProfile.exam_type || profile.examType || '普通类',
+        professionalScore: serverProfile.professional_score ?? profile.professionalScore,
+        formulaId: serverProfile.art_sports_formula_id ?? profile.formulaId,
+        waiveArtSports: !!(serverProfile.waive_art_sports_batch ?? profile.waiveArtSports),
+        cultureCutoff: serverProfile.culture_cutoff ?? profile.cultureCutoff,
+        proCutoff: serverProfile.pro_cutoff ?? profile.proCutoff
       };
       wx.setStorageSync('studentProfile', updatedProfile);
       wx.setStorageSync('loginUser', {

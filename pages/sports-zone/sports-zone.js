@@ -21,12 +21,21 @@ Page({
   onLoad() {
     this.loadMeta();
     const profile = wx.getStorageSync('studentProfile') || {};
-    if (profile.score) {
-      this.setData({
-        'form.cultureScore': String(profile.score),
-        'form.professionalScore': profile.professionalScore ? String(profile.professionalScore) : ''
-      });
+    const patch = {};
+    if (profile.score) patch['form.cultureScore'] = String(profile.score);
+    if (profile.professionalScore || profile.professional_score) {
+      patch['form.professionalScore'] = String(profile.professionalScore || profile.professional_score);
     }
+    if (profile.cultureCutoff || profile.culture_cutoff) {
+      patch['form.cultureCutoff'] = String(profile.cultureCutoff || profile.culture_cutoff);
+    }
+    if (profile.proCutoff || profile.pro_cutoff) {
+      patch['form.proCutoff'] = String(profile.proCutoff || profile.pro_cutoff);
+    }
+    if (profile.formulaId || profile.art_sports_formula_id) {
+      patch['form.formulaId'] = Number(profile.formulaId || profile.art_sports_formula_id) || 3;
+    }
+    if (Object.keys(patch).length) this.setData(patch);
   },
   loadMeta() {
     request({ url: '/api/henan-art-sports/meta' })
@@ -97,5 +106,11 @@ Page({
   },
   goProfile() {
     wx.navigateTo({ url: '/pages/profile/profile?track=sports' });
+  },
+  goEligiblePool() {
+    wx.navigateTo({ url: '/pages/eligible-pool/eligible-pool' });
+  },
+  goVolunteer() {
+    wx.switchTab({ url: '/pages/volunteer/volunteer' });
   }
 });

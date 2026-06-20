@@ -68,6 +68,49 @@ class HenanArtSportsTests(unittest.TestCase):
         total = len(result['groups']['rush']) + len(result['groups']['steady']) + len(result['groups']['safe'])
         self.assertGreater(total, 0)
 
+    def test_is_art_sports_request(self) -> None:
+        from henan_art_sports_service import is_art_sports_request, query_art_sports_eligible_pool, build_art_sports_recommendation
+        self.assertTrue(is_art_sports_request({
+            'province': '河南',
+            'exam_type': '艺术类',
+            'score': 500,
+            'professional_score': 250,
+            'batch': '艺术本科批',
+        }))
+        self.assertFalse(is_art_sports_request({
+            'province': '河南',
+            'exam_type': '艺术类',
+            'waive_art_sports_batch': True,
+            'score': 500,
+            'batch': '艺术本科批',
+        }))
+        pool = query_art_sports_eligible_pool({
+            'province': '河南',
+            'exam_type': '艺术类',
+            'score': 520,
+            'professional_score': 250,
+            'batch': '艺术本科批',
+            'art_sports_formula_id': 5,
+            'culture_cutoff': 350,
+            'pro_cutoff': 180,
+        })
+        self.assertTrue(pool['art_sports_mode'])
+        self.assertGreater(pool['summary']['total'], 0)
+        plan = build_art_sports_recommendation({
+            'province': '河南',
+            'exam_type': '艺术类',
+            'score': 520,
+            'professional_score': 250,
+            'batch': '艺术本科批',
+            'art_sports_formula_id': 5,
+            'culture_cutoff': 350,
+            'pro_cutoff': 180,
+            'rank': 10000,
+            'subject_combination': '物理+化学+生物',
+        })
+        self.assertTrue(plan['art_sports_mode'])
+        self.assertGreater(len(plan['items']), 0)
+
 
 if __name__ == '__main__':
     unittest.main()
