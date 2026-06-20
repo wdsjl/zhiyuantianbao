@@ -2,13 +2,16 @@
 
 import unittest
 
+from db import get_connection
 from henan_art_sports_service import (
     calc_art_composite,
     calc_sports_composite,
     calculate_composite,
     check_dual_line,
     default_formula_id,
+    load_from_admission_records,
     match_schools,
+    resolve_school_major_ids,
 )
 
 
@@ -110,6 +113,87 @@ class HenanArtSportsTests(unittest.TestCase):
         })
         self.assertTrue(plan['art_sports_mode'])
         self.assertGreater(len(plan['items']), 0)
+
+    def test_load_from_admission_records(self) -> None:
+        school_name = '单元测试艺术大学AS'
+        major_name = '单元测试专业AS'
+        school_id, major_id = resolve_school_major_ids(school_name, major_name, '艺术类')
+        batch = '艺术本科批'
+        with get_connection() as connection:
+            connection.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS enrollment_plans (
+                  plan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  year INTEGER NOT NULL,
+                  province TEXT NOT NULL,
+                  batch TEXT NOT NULL,
+                  school_id INTEGER NOT NULL,
+                  school_code TEXT NOT NULL,
+                  major_id INTEGER NOT NULL,
+                  major_code TEXT NOT NULL,
+                  major_name TEXT NOT NULL,
+                  subject_requirement TEXT,
+                  enrollment_count INTEGER,
+                  tuition INTEGER,
+                  duration TEXT,
+                  campus TEXT,
+                  special_notes TEXT,
+                  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  UNIQUE (year, province, batch, school_id, major_id)
+                )
+                '''
+            )
+            connection.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS admission_records (
+                  admission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  year INTEGER NOT NULL,
+                  province TEXT NOT NULL,
+                  batch TEXT NOT NULL,
+                  school_id INTEGER NOT NULL,
+                  school_code TEXT NOT NULL,
+                  major_id INTEGER NOT NULL,
+                  major_code TEXT NOT NULL,
+                  min_score INTEGER,
+                  min_rank INTEGER,
+                  avg_score INTEGER,
+                  avg_rank INTEGER,
+                  max_score INTEGER,
+                  max_rank INTEGER,
+                  enrollment_count INTEGER,
+                  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  UNIQUE (year, province, batch, school_id, major_id)
+                )
+                '''
+            )
+            for year, score in ((2025, 520), (2024, 510), (2023, 500)):
+                connection.execute(
+                    '''
+                    INSERT OR REPLACE INTO admission_records
+                    (year, province, batch, school_id, school_code, major_id, major_code, min_score)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''',
+                    [year, '河南', batch, school_id, f'S{school_id}', major_id, f'M{major_id}', score],
+                )
+            connection.commit()
+        rows = load_from_admission_records({
+            'province': '河南',
+            'exam_type': '艺术类',
+            'batch': batch,
+            'art_sports_formula_id': 5,
+        })
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['school_name'], school_name)
+        self.assertEqual(rows[0]['data_source'], 'admission_records')
+        self.assertGreater(rows[0]['ref_min_composite'], 500)
+        with get_connection() as connection:
+            connection.execute(
+                'DELETE FROM admission_records WHERE school_id = ? AND major_id = ?',
+                [school_id, major_id],
+            )
+            connection.commit()
 
     def test_import_art_sports_rows(self) -> None:
         try:

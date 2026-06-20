@@ -459,7 +459,7 @@ def admin_import(message: str = ''):
       <div class="card">
         <h2>导入普通类历年录取数据</h2>
         {message_html}
-        <p class="muted">支持 `.xlsx` 和 `.csv`。请使用模板字段：年份、省份、批次、院校代码、院校名称、专业代码、专业名称等。</p>
+        <p class="muted">支持 `.xlsx` 和 `.csv`。请使用模板字段：年份、省份、批次、院校代码、院校名称、专业代码、专业名称等。<strong>艺考/体育批次数据也可通过此处导入</strong>，艺体冲稳保将优先读取录取库中对应批次的最低分（作为综合分参考）。</p>
         <form action="/admin/import" method="post" enctype="multipart/form-data">
           <div class="toolbar">
             <input type="file" name="file" accept=".xlsx,.csv" required />
@@ -470,8 +470,8 @@ def admin_import(message: str = ''):
         <p class="muted">模板文件位置：<code>database/admission_import_template.csv</code></p>
       </div>
       <div class="card">
-        <h2>导入河南艺体历年最低综合分</h2>
-        <p class="muted">支持 `.xlsx` 和 `.csv`。必填：省份、类别、批次层次、院校名称、专业名称、公式编号；可选：最低综合分2025/2024/2023、城市。</p>
+        <h2>导入河南艺体历年最低综合分（可选补充）</h2>
+        <p class="muted">若已在上方「普通类录取数据」中导入艺考/体育批次，艺体专区会自动使用录取库，无需重复上传。本入口用于补充专项综合分或录取库未覆盖的院校专业。支持 `.xlsx` 和 `.csv`；必填：省份、类别、批次层次、院校名称、专业名称、公式编号；可选：最低综合分2025/2024/2023、城市。</p>
         <form action="/admin/import/art-sports" method="post" enctype="multipart/form-data">
           <div class="toolbar">
             <input type="file" name="file" accept=".xlsx,.csv" required />
@@ -924,12 +924,12 @@ def admin_art_sports_admissions(keyword: str = '', category: str = '', page: int
           </tr>
         '''
     if not rows_html:
-        rows_html = '<tr><td colspan="10" class="muted">暂无数据，请先在「数据导入」上传艺体录取数据</td></tr>'
+        rows_html = '<tr><td colspan="10" class="muted">暂无专项数据；若已导入艺考/体育批次录取数据，小程序将自动使用录取库</td></tr>'
     body = f'''
       <div class="card">
         <h2>河南艺体录取数据（历年最低综合分）</h2>
         {message_html}
-        <p class="muted">用于艺体考生冲稳保对标。河南省不发布官方综合分位次，请维护各院校对应公式的历年最低综合分。</p>
+        <p class="muted">艺体冲稳保优先使用「录取数据导入」中的艺考/体育批次；本库为可选补充。河南省不发布官方综合分位次，请维护各院校对应公式的历年最低综合分。</p>
         <form class="toolbar" method="get">
           <input name="keyword" value="{escape(keyword)}" placeholder="院校 / 专业" />
           <select name="category">

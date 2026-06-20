@@ -1,6 +1,7 @@
 """河南艺术类 / 体育类志愿填报规则与综合分计算（小程序直接复用）。"""
 from __future__ import annotations
 
+import sqlite3
 from typing import Any, Callable
 
 from db import get_connection
@@ -129,7 +130,7 @@ def get_meta() -> dict[str, Any]:
         'art_formulas': [{'id': k, 'label': v} for k, v in ART_FORMULA_LABELS.items()],
         'sports_formulas': [{'id': k, 'label': v} for k, v in SPORTS_FORMULA_LABELS.items()],
         'default_formula': {'艺术类本科': 5, '艺术类专科': 5, '体育类本科': 3, '体育类专科': 3},
-        'rank_notice': '河南省不发布艺体综合分官方一分一段位次；请用院校近3年同公式最低综合分对标冲稳保，勿套用普通类文化课位次。',
+        'rank_notice': '河南省不发布艺体综合分官方一分一段位次；优先使用已导入录取库（艺考批次最低分）对标冲稳保，勿套用普通类文化课位次。',
         'volunteer_slots': VOLUNTEER_SLOTS,
         'rhyme': RHYME,
         'art_batches': ART_TARGET_BATCHES,
@@ -185,64 +186,144 @@ def calculate_composite(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _avg_min_composite(school: dict[str, Any]) -> float:
+    if school.get('ref_min_composite') is not None:
+        return float(school['ref_min_composite'])
     values = [school.get('min_composite_2025'), school.get('min_composite_2024'), school.get('min_composite_2023')]
     nums = [float(v) for v in values if v is not None]
     return sum(nums) / len(nums) if nums else 0.0
 
 
-def match_schools(data: dict[str, Any]) -> dict[str, Any]:
-    calc = calculate_composite(data)
-    if calc.get('use_normal_track'):
-        raise ValueError('已放弃艺体批次，请使用普通类志愿检索')
+def _message_for_data_source(source: str) -> str:
+    if source == 'admission_records':
+        return '按已导入录取库历年最低分（综合分）对标冲稳保，非官方位次。'
+    if source == 'art_sports_admissions':
+        return '按艺体专项库历年最低综合分对标冲稳保（非官方位次）。'
+    return '按示例院校历年最低综合分对标冲稳保（非官方位次）；建议导入录取数据后自动切换。'
 
-    category = data.get('category')
-    batch_level = data.get('batch_level') or '本科'
-    composite = float(calc['composite_score'])
-    formula_id = int(calc['formula_id'])
 
-    if batch_level == '本科' and not calc['dual_line'].get('dual_line_ok'):
-        return {
-            **calc,
-            'eligible': False,
-            'message': '未满足双过线，本科院校推荐已屏蔽；可填专科或勾选放弃艺体批次走普通类。',
-            'groups': {'rush': [], 'steady': [], 'safe': []},
-        }
+def load_from_admission_records(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """优先使用普通录取导入库中的艺考/体育批次数据（最低分视为综合分参考）。"""
+    from recommend_service import query_admission_rows
 
-    schools = [
-        s for s in SAMPLE_SCHOOLS
-        if s['category'] == category and s['batch_level'] == batch_level and int(s['formula_id']) == formula_id
-    ]
-    ranked: list[dict[str, Any]] = []
-    for school in schools:
-        ref = _avg_min_composite(school)
-        diff = composite - ref
-        if diff >= 8:
-            tier = 'rush'
-            tier_label = '冲刺'
-        elif diff >= -5:
-            tier = 'steady'
-            tier_label = '稳妥'
-        else:
-            tier = 'safe'
-            tier_label = '保底'
-        ranked.append({
-            **school,
-            'ref_min_composite': round(ref, 2),
-            'score_diff': round(diff, 2),
-            'tier': tier,
-            'tier_label': tier_label,
+    province = data.get('province') or PROVINCE
+    batch = data.get('batch') or ''
+    subject = data.get('subject_combination') or ''
+    exam_type = data.get('exam_type') or data.get('category') or '艺术类'
+    category = category_from_exam_type(exam_type) if exam_type in ('艺术类', '体育类') else str(exam_type)
+    batch_level = batch_level_from_target_batch(batch)
+    formula_id = data.get('art_sports_formula_id') or data.get('formula_id')
+    if formula_id in (None, ''):
+        formula_id = default_formula_id(category, batch_level)
+    else:
+        formula_id = int(formula_id)
+
+    rows = query_admission_rows(province, batch, subject)
+    if not rows and subject:
+        rows = query_admission_rows(province, batch, '')
+    if not rows:
+        return []
+
+    year_weights = [0.5, 0.3, 0.2]
+    grouped: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
+    for row in rows:
+        if row.get('min_score') is None:
+            continue
+        key = (row['school_id'], row['major_id'])
+        grouped.setdefault(key, []).append(row)
+
+    schools: list[dict[str, Any]] = []
+    for records in grouped.values():
+        sorted_records = sorted(records, key=lambda item: int(item.get('year') or 0), reverse=True)[:3]
+        weight_sum = 0.0
+        score_sum = 0.0
+        latest = sorted_records[0]
+        year_scores: dict[int, float] = {}
+        for index, record in enumerate(sorted_records):
+            weight = year_weights[index] if index < len(year_weights) else 0.0
+            if record.get('min_score') is not None:
+                score = float(record['min_score'])
+                score_sum += score * weight
+                weight_sum += weight
+                year_scores[int(record.get('year') or 0)] = score
+        if not weight_sum:
+            continue
+        ref = round(score_sum / weight_sum, 2)
+        schools.append({
+            'school_id': latest.get('school_id'),
+            'major_id': latest.get('major_id'),
+            'school_name': latest.get('school_name'),
+            'major_name': latest.get('major_name'),
+            'school_code': latest.get('school_code') or '',
+            'major_code': latest.get('major_code') or '',
+            'category': category,
+            'batch_level': batch_level,
+            'formula_id': formula_id,
+            'ref_min_composite': ref,
+            'min_composite_2025': year_scores.get(2025),
+            'min_composite_2024': year_scores.get(2024),
+            'min_composite_2023': year_scores.get(2023),
+            'city': latest.get('city') or '',
+            'school_type': latest.get('school_type'),
+            'tuition': latest.get('tuition'),
+            'duration': latest.get('duration'),
+            'major_type': latest.get('major_type'),
+            'data_source': 'admission_records',
         })
+    return schools
 
-    ranked.sort(key=lambda item: (-item['ref_min_composite'], -item['score_diff']))
+
+def load_art_sports_candidates(data: dict[str, Any], category: str, batch_level: str, formula_id: int) -> tuple[list[dict[str, Any]], str]:
+    merged = {
+        **data,
+        'exam_type': category,
+        'batch': data.get('batch') or '',
+        'subject_combination': data.get('subject_combination') or '',
+    }
+    try:
+        from_import = load_from_admission_records(merged)
+    except sqlite3.OperationalError:
+        from_import = []
+    if from_import:
+        return from_import, 'admission_records'
+
+    ensure_art_sports_admissions_table()
+    with get_connection() as connection:
+        rows = connection.execute(
+            '''
+            SELECT * FROM art_sports_admissions
+            WHERE province = ? AND category = ? AND batch_level = ? AND formula_id = ?
+            ORDER BY min_composite_2025 DESC
+            ''',
+            [PROVINCE, category, batch_level, int(formula_id)],
+        ).fetchall()
+    if rows:
+        return [{**dict(row), 'data_source': 'art_sports_admissions'} for row in rows], 'art_sports_admissions'
+
+    sample = [
+        {**s, 'data_source': 'sample'}
+        for s in EXTENDED_SAMPLE_SCHOOLS
+        if s['category'] == category and s['batch_level'] == batch_level and int(s['formula_id']) == int(formula_id)
+    ]
+    return sample, 'sample'
+
+
+def match_schools(data: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(data)
+    if merged.get('category') and 'exam_type' not in merged:
+        merged['exam_type'] = merged['category']
+    if not merged.get('batch') and merged.get('batch_level'):
+        cat = merged.get('category') or merged.get('exam_type') or '艺术类'
+        prefix = '艺术' if cat == '艺术类' else '体育'
+        merged['batch'] = f'{prefix}{merged["batch_level"]}批'
+    ctx = _build_match_context(merged)
+    ranked = ctx.get('ranked') or []
     groups = {
-        'rush': [x for x in ranked if x['tier'] == 'rush'],
-        'steady': [x for x in ranked if x['tier'] == 'steady'],
-        'safe': [x for x in ranked if x['tier'] == 'safe'],
+        'rush': [x for x in ranked if x.get('tier') == 'rush'],
+        'steady': [x for x in ranked if x.get('tier') == 'steady'],
+        'safe': [x for x in ranked if x.get('tier') == 'safe'],
     }
     return {
-        **calc,
-        'eligible': True,
-        'message': '按院校对应公式与近3年最低综合分对标，划分冲稳保（非官方位次）。',
+        **{k: v for k, v in ctx.items() if k not in ('ranked', 'batch_level', 'data_source')},
         'groups': groups,
         'total': len(ranked),
         'volunteer_slots': VOLUNTEER_SLOTS,
@@ -344,22 +425,14 @@ def ensure_art_sports_admissions_table() -> None:
 
 
 def load_art_sports_admissions(category: str, batch_level: str, formula_id: int) -> list[dict[str, Any]]:
-    ensure_art_sports_admissions_table()
-    with get_connection() as connection:
-        rows = connection.execute(
-            '''
-            SELECT * FROM art_sports_admissions
-            WHERE province = ? AND category = ? AND batch_level = ? AND formula_id = ?
-            ORDER BY min_composite_2025 DESC
-            ''',
-            [PROVINCE, category, batch_level, int(formula_id)],
-        ).fetchall()
-    if rows:
-        return [dict(row) for row in rows]
-    return [
-        s for s in EXTENDED_SAMPLE_SCHOOLS
-        if s['category'] == category and s['batch_level'] == batch_level and int(s['formula_id']) == int(formula_id)
-    ]
+    """兼容旧调用：优先录取导入库，再艺体专项库，最后示例数据。"""
+    schools, _source = load_art_sports_candidates(
+        {'province': PROVINCE, 'batch': f'{"艺术" if category == "艺术类" else "体育"}{batch_level}批'},
+        category,
+        batch_level,
+        int(formula_id),
+    )
+    return schools
 
 
 def _pseudo_id(prefix: str, name: str) -> int:
@@ -488,14 +561,16 @@ def _build_match_context(data: dict[str, Any]) -> dict[str, Any]:
             'message': '未满足双过线，本科院校推荐已屏蔽；可填专科或勾选放弃艺体批次走普通类。',
             'ranked': [],
         }
-    schools = load_art_sports_admissions(category, batch_level, formula_id)
+    schools, data_source = load_art_sports_candidates(data, category, batch_level, formula_id)
     ranked = _rank_school_rows(calc, schools)
     return {
         **calc,
         'eligible': True,
-        'message': '按院校对应公式与近3年最低综合分对标，划分冲稳保（非官方位次）。',
+        'message': _message_for_data_source(data_source),
         'ranked': ranked,
         'batch_level': batch_level,
+        'data_source': data_source,
+        'candidate_count': len(schools),
     }
 
 
@@ -503,21 +578,24 @@ def _pool_item_from_ranked(row: dict[str, Any], *, accept_adjustment: bool) -> d
     school_name = row.get('school_name') or ''
     major_name = row.get('major_name') or ''
     category = row.get('category') or ''
-    school_id, major_id = resolve_school_major_ids(school_name, major_name, category)
+    if row.get('school_id') and row.get('major_id'):
+        school_id, major_id = int(row['school_id']), int(row['major_id'])
+    else:
+        school_id, major_id = resolve_school_major_ids(school_name, major_name, category)
     gradient = row.get('gradient_type') or TIER_TO_GRADIENT.get(row.get('tier') or '', '稳')
     return {
         'gradient_type': gradient,
         'school_id': school_id,
         'school_name': school_name,
-        'school_code': '',
+        'school_code': row.get('school_code') or '',
         'major_id': major_id,
         'major_name': major_name,
-        'major_code': '',
-        'major_type': row.get('category') or '',
+        'major_code': row.get('major_code') or '',
+        'major_type': row.get('major_type') or row.get('category') or '',
         'city': row.get('city') or '',
-        'school_type': '',
-        'tuition': None,
-        'duration': None,
+        'school_type': row.get('school_type') or '',
+        'tuition': row.get('tuition'),
+        'duration': row.get('duration'),
         'min_score': row.get('ref_min_composite'),
         'min_rank': None,
         'weighted_score': row.get('ref_min_composite'),
@@ -533,6 +611,7 @@ def _pool_item_from_ranked(row: dict[str, Any], *, accept_adjustment: bool) -> d
         'score_diff': row.get('score_diff'),
         'formula_id': row.get('formula_id'),
         'art_sports_mode': True,
+        'data_source': row.get('data_source') or 'unknown',
     }
 
 
@@ -582,6 +661,8 @@ def query_art_sports_eligible_pool(
             'message': context.get('message'),
             'volunteer_slots': VOLUNTEER_SLOTS,
             'rank_notice': '河南省不发布艺体综合分官方位次，以下为历年最低综合分对标结果。',
+            'data_source': context.get('data_source'),
+            'candidate_count': context.get('candidate_count'),
         },
         'user_rank': None,
         'composite_score': context.get('composite_score'),
@@ -629,7 +710,9 @@ def build_art_sports_recommendation(data: dict[str, Any]) -> dict[str, Any]:
     for index, item in enumerate(selected, start=1):
         item['sort_order'] = index
     warnings = []
-    if len(selected) < VOLUNTEER_SLOTS:
+    if len(selected) < VOLUNTEER_SLOTS and pool_result.get('strategy', {}).get('data_source') == 'admission_records':
+        warnings.append(f'已使用导入录取库 {pool_result.get("strategy", {}).get("candidate_count", 0)} 条候选，当前生成 {len(selected)}/{VOLUNTEER_SLOTS} 个志愿。')
+    elif len(selected) < VOLUNTEER_SLOTS:
         warnings.append(f'候选数据 {len(all_items)} 条，当前生成 {len(selected)}/{VOLUNTEER_SLOTS} 个志愿，可补充艺体录取数据。')
     return {
         'items': selected,

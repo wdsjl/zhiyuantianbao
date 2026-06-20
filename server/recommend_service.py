@@ -15,7 +15,25 @@ BATCH_ALIAS_GROUPS: dict[str, list[str]] = {
     '专科提前批': ['专科提前批', '专科提前', '提前批专科'],
     '普通类一段': ['普通类一段', '平行录取一段', '普通类平行录取一段'],
     '普通类二段': ['普通类二段', '平行录取二段'],
+    '艺术本科批': [
+        '艺术本科批', '艺术类本科批', '艺术本科', '本科艺术批', '艺术类专业本科批',
+        '艺术本科提前批', '本科提前批艺术', '艺术类本科', '艺术统考本科批', '艺考本科批',
+    ],
+    '艺术专科批': [
+        '艺术专科批', '艺术类专科批', '艺术专科', '专科艺术批', '艺术类专科', '艺考专科批',
+    ],
+    '体育本科批': [
+        '体育本科批', '体育类本科批', '体育本科', '本科体育批', '体育类本科', '体育统考本科批',
+    ],
+    '体育专科批': [
+        '体育专科批', '体育类专科批', '体育专科', '专科体育批', '体育类专科',
+    ],
 }
+
+
+def _is_art_sports_batch(batch: str) -> bool:
+    text = batch or ''
+    return any(keyword in text for keyword in ('艺术', '体育', '艺考'))
 
 
 def expand_batch_aliases(batch: str) -> list[str]:
@@ -28,14 +46,20 @@ def expand_batch_aliases(batch: str) -> list[str]:
             for alias in aliases:
                 if alias not in variants:
                     variants.append(alias)
-    if requested and '本科' in requested and '专科' not in requested:
-        for alias in BATCH_ALIAS_GROUPS['本科批']:
-            if alias not in variants:
-                variants.append(alias)
-    if requested and '专科' in requested:
-        for alias in BATCH_ALIAS_GROUPS['专科批']:
-            if alias not in variants:
-                variants.append(alias)
+    if requested and not _is_art_sports_batch(requested):
+        if '本科' in requested and '专科' not in requested:
+            for alias in BATCH_ALIAS_GROUPS['本科批']:
+                if alias not in variants:
+                    variants.append(alias)
+        if '专科' in requested:
+            for alias in BATCH_ALIAS_GROUPS['专科批']:
+                if alias not in variants:
+                    variants.append(alias)
+    for key, aliases in BATCH_ALIAS_GROUPS.items():
+        if requested and (requested == key or requested in aliases):
+            for alias in aliases:
+                if alias not in variants:
+                    variants.append(alias)
     return variants or [requested]
 
 
