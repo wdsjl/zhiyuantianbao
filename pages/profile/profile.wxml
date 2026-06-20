@@ -1,4 +1,6 @@
 <view class="container">
+  <view wx:if="{{trackLabel}}" class="track-banner">来自河南{{trackLabel}}专区，已预选对应考试类别</view>
+
   <view class="card">
     <view class="section-title">身份选择</view>
     <view class="tag-row role-row">
@@ -33,13 +35,47 @@
         </view>
       </picker>
     </view>
+    <view class="form-item" wx:if="{{isHenan}}">
+      <text class="label">考试类别</text>
+      <picker mode="selector" range="{{examTypeOptions}}" value="{{examTypeIndex}}" bindchange="onExamTypeChange">
+        <view class="picker {{form.examType ? '' : 'picker-placeholder'}}">
+          {{form.examType || '请选择考试类别'}}
+        </view>
+      </picker>
+      <view class="sub-text">河南高考报名时艺术类 / 体育类二选一，不可同时报考两类统考提前批。</view>
+    </view>
+
     <view class="form-item">
       <text class="label">高考分数 / 全省位次</text>
       <view class="inline-fields">
         <input class="input" type="number" placeholder="分数" value="{{form.score}}" data-field="score" bindinput="onInput" />
         <input class="input" type="number" placeholder="位次" value="{{form.rank}}" data-field="rank" bindinput="onInput" />
       </view>
+      <view wx:if="{{showArtSportsFields}}" class="sub-text art-sports-hint">艺体无官方综合分位次，请勿直接套用普通类文化课位次做对标。</view>
     </view>
+
+    <view wx:if="{{showArtSportsFields}}" class="card art-sports-card">
+      <view class="section-title">{{form.examType === '艺术类' ? '艺术类' : '体育类'}}报考信息</view>
+      <view class="form-item">
+        <text class="label">专业统考分 {{form.examType === '艺术类' ? 'Z（满分300）' : 'T（满分150）'}}</text>
+        <input class="input" type="digit" placeholder="请输入专业统考分" value="{{form.professionalScore}}" data-field="professionalScore" bindinput="onInput" />
+      </view>
+      <view class="form-item">
+        <text class="label">双过线参考线（选填，用于投档校验）</text>
+        <view class="inline-fields">
+          <input class="input" type="number" placeholder="文化课控制线" value="{{form.cultureCutoff}}" data-field="cultureCutoff" bindinput="onInput" />
+          <input class="input" type="number" placeholder="专业合格线" value="{{form.proCutoff}}" data-field="proCutoff" bindinput="onInput" />
+        </view>
+        <view class="sub-text">须同时过文化课控制线与专业统考合格线，才可投档对应本科志愿。</view>
+      </view>
+      <label class="checkbox-row">
+        <checkbox value="1" checked="{{form.waiveArtSports}}" bindchange="onWaiveArtSportsChange" /> 放弃艺体批次，仅用高考文化课走普通类批次
+      </label>
+      <view class="zone-link-row">
+        <button class="secondary-btn zone-link-btn" size="mini" data-track="{{form.examType === '艺术类' ? 'art' : 'sports'}}" bindtap="goArtSportsZone">进入{{form.examType === '艺术类' ? '艺术' : '体育'}}报考专区</button>
+      </view>
+    </view>
+
     <view class="form-item">
       <text class="label">目标批次</text>
       <picker mode="selector" range="{{targetBatchOptions}}" value="{{targetBatchIndex}}" bindchange="onTargetBatchChange">

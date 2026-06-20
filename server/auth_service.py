@@ -111,7 +111,9 @@ def login_or_create_user(
             '''
             SELECT u.user_id, u.openid, u.phone, u.role, u.name, s.student_id, s.province, s.city,
                    s.school_name, s.grade, s.class_name, s.exam_year, s.exam_type,
-                   s.subject_combination, s.score, s.rank, s.target_batch
+                   s.subject_combination, s.score, s.rank, s.target_batch,
+                   s.professional_score, s.art_sports_formula_id, s.waive_art_sports_batch,
+                   s.culture_cutoff, s.pro_cutoff
             FROM users u
             LEFT JOIN students s ON s.user_id = u.user_id
             WHERE u.user_id = ?

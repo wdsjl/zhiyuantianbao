@@ -75,6 +75,18 @@ Page({
   goProfile() {
     wx.navigateTo({ url: '/pages/profile/profile' });
   },
+  goProfileArt() {
+    wx.navigateTo({ url: '/pages/profile/profile?track=art' });
+  },
+  goProfileSports() {
+    wx.navigateTo({ url: '/pages/profile/profile?track=sports' });
+  },
+  goArtZone() {
+    wx.navigateTo({ url: '/pages/art-zone/art-zone' });
+  },
+  goSportsZone() {
+    wx.navigateTo({ url: '/pages/sports-zone/sports-zone' });
+  },
   goPersonality() {
     wx.navigateTo({ url: '/pages/personality/personality' });
   },

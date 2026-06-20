@@ -7,6 +7,8 @@
     "pages/volunteer/volunteer",
     "pages/mine/mine",
     "pages/profile/profile",
+    "pages/art-zone/art-zone",
+    "pages/sports-zone/sports-zone",
     "pages/eligible-pool/eligible-pool",
     "pages/drafts/drafts",
     "pages/membership/membership",

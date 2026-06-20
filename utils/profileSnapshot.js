@@ -18,7 +18,10 @@ function buildProfileSnapshot(profile) {
     profile.targetBatch || profile.target_batch || '',
     profile.subjectCombination || profile.subject_combination || '',
     String(profile.score ?? ''),
-    String(profile.rank ?? '')
+    String(profile.rank ?? ''),
+    profile.examType || profile.exam_type || '普通类',
+    String(profile.professionalScore ?? profile.professional_score ?? ''),
+    profile.waiveArtSports || profile.waive_art_sports_batch ? '1' : '0'
   ].join('|');
 }
 

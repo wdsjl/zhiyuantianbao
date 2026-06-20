@@ -53,6 +53,27 @@ class ProfileSaveRequest(BaseModel):
     score: int
     rank: int
     target_batch: str
+    professional_score: Optional[float] = None
+    art_sports_formula_id: Optional[int] = None
+    waive_art_sports_batch: Optional[bool] = False
+    culture_cutoff: Optional[int] = None
+    pro_cutoff: Optional[int] = None
+
+
+class HenanArtSportsCalculateRequest(BaseModel):
+    category: str
+    culture_score: Optional[float] = None
+    score: Optional[int] = None
+    professional_score: float = 0
+    formula_id: Optional[int] = None
+    batch_level: str = '本科'
+    culture_cutoff: Optional[float] = None
+    pro_cutoff: Optional[float] = None
+    waive_art_sports_batch: bool = False
+
+
+class HenanArtSportsMatchRequest(HenanArtSportsCalculateRequest):
+    pass
 
 
 class RecommendRequest(BaseModel):

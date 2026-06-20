@@ -1,0 +1,76 @@
+<view class="container">
+  <view class="card hero">
+    <view class="section-title">河南 · 体育报考专区</view>
+    <view class="sub-text">统考满分150分；本科默认公式③（0.5W+2.5T），专科统一公式③</view>
+    <view class="warn-box">艺体报名二选一；须双过线才可投档本科；无官方综合分位次，请用历年最低综合分对标。</view>
+  </view>
+
+  <view class="card" wx:if="{{meta}}">
+    <view class="section-title">核心规则</view>
+    <view class="rule-item">① 报考互斥：艺术类 / 体育类二选一</view>
+    <view class="rule-item">② 双过线：文化课控制线 + 专业统考合格线</view>
+    <view class="rule-item">③ 平行志愿：分数优先→遵循志愿→一次投档（{{meta.volunteer_slots}}个志愿）</view>
+    <view class="rhyme">{{meta.rhyme}}</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">综合分计算</view>
+    <view class="form-item">
+      <text class="label">文化课成绩 W</text>
+      <input class="input" type="digit" value="{{form.cultureScore}}" data-field="cultureScore" bindinput="onInput" placeholder="高考文化课分数" />
+    </view>
+    <view class="form-item">
+      <text class="label">专业统考分 T（满分150）</text>
+      <input class="input" type="digit" value="{{form.professionalScore}}" data-field="professionalScore" bindinput="onInput" placeholder="体育统考分" />
+    </view>
+    <view class="form-item">
+      <text class="label">文化课控制线 / 专业合格线（选填）</text>
+      <view class="inline-fields">
+        <input class="input" type="number" value="{{form.cultureCutoff}}" data-field="cultureCutoff" bindinput="onInput" placeholder="文化线" />
+        <input class="input" type="number" value="{{form.proCutoff}}" data-field="proCutoff" bindinput="onInput" placeholder="专业线" />
+      </view>
+    </view>
+    <view class="form-item">
+      <text class="label">批次</text>
+      <picker mode="selector" range="{{batchLevels}}" bindchange="onBatchChange">
+        <view class="picker">{{form.batchLevel}}</view>
+      </picker>
+    </view>
+    <view class="form-item">
+      <text class="label">院校公式编号</text>
+      <picker mode="selector" range="{{formulaOptions}}" value="{{form.formulaId - 1}}" bindchange="onFormulaChange">
+        <view class="picker">{{formulaOptions[form.formulaId - 1] || '公式3'}}</view>
+      </picker>
+    </view>
+    <label class="checkbox-row">
+      <checkbox value="1" checked="{{form.waive}}" bindchange="onWaiveChange" /> 放弃艺体批次，走普通类志愿
+    </label>
+    <view class="btn-row">
+      <button class="primary-btn" loading="{{loading}}" bindtap="calc">计算综合分</button>
+      <button class="secondary-btn" loading="{{loading}}" bindtap="match">冲稳保对标</button>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{result}}">
+    <view class="section-title">计算结果</view>
+    <view class="result-line">综合分：{{result.composite_score}}</view>
+    <view class="sub-text">{{result.formula_label}}</view>
+    <view class="warn-box" wx:if="{{result.dual_line}}">{{result.dual_line.message}}</view>
+  </view>
+
+  <view class="card" wx:if="{{matchResult && matchResult.groups}}">
+    <view class="section-title">冲稳保（历年最低综合分对标）</view>
+    <view wx:for="{{['rush','steady','safe']}}" wx:key="*this" wx:for-item="tierKey">
+      <view class="tier-title">{{tierKey === 'rush' ? '冲刺' : (tierKey === 'steady' ? '稳妥' : '保底')}}</view>
+      <view wx:for="{{matchResult.groups[tierKey]}}" wx:key="school_name" class="school-row">
+        <view>{{item.school_name}} · {{item.major_name}}</view>
+        <view class="sub-text">参考最低综合分 {{item.ref_min_composite}} · 分差 {{item.score_diff}}</view>
+      </view>
+      <view wx:if="{{!matchResult.groups[tierKey].length}}" class="sub-text">暂无</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <button class="primary-btn" bindtap="goProfile">完善体育类档案</button>
+  </view>
+</view>

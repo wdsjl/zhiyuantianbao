@@ -2,21 +2,26 @@ const { request, formatRequestError } = require('../../utils/request');
 const {
   SUBJECT_COMBINATIONS,
   TARGET_BATCHES,
+  EXAM_TYPES,
+  getTargetBatchesForExamType,
   findOptionIndex,
   normalizeSubjectCombination
 } = require('../../utils/profileOptions');
 const { getBatchMismatchWarning } = require('../../utils/batchHint');
 const { buildProfileSnapshot, clearDerivedArtifacts } = require('../../utils/profileSnapshot');
+const { isHenanArtSportsProvince, defaultFormulaId } = require('../../utils/henanArtSports');
 
 Page({
   data: {
     subjectOptions: SUBJECT_COMBINATIONS,
+    examTypeOptions: EXAM_TYPES,
     targetBatchOptions: TARGET_BATCHES,
     subjectIndex: -1,
     targetBatchIndex: -1,
-    batchDataSummary: '',
-    batchWarning: '',
-    availableBatches: [],
+    examTypeIndex: 0,
+    showArtSportsFields: false,
+    isHenan: false,
+    trackLabel: '',
     form: {
       role: '学生',
       name: '',
@@ -27,40 +32,92 @@ Page({
       score: '',
       rank: '',
       targetBatch: '',
+      examType: '普通类',
+      professionalScore: '',
+      cultureCutoff: '',
+      proCutoff: '',
+      formulaId: 5,
+      waiveArtSports: false,
       bindCode: '',
       studentId: '',
       userId: '',
       openid: ''
     }
   },
+  applyExamType(examType, form) {
+    const batches = getTargetBatchesForExamType(examType);
+    const isArtSports = examType === '艺术类' || examType === '体育类';
+    const formulaId = isArtSports ? defaultFormulaId(examType, '本科') : 5;
+    const nextForm = {
+      ...form,
+      examType,
+      targetBatch: batches.includes(form.targetBatch) ? form.targetBatch : batches[0],
+      formulaId: form.formulaId || formulaId
+    };
+    const examTypeIndex = Math.max(0, EXAM_TYPES.indexOf(examType));
+    const targetBatchIndex = findOptionIndex(batches, nextForm.targetBatch);
+    this.setData({
+      targetBatchOptions: batches,
+      showArtSportsFields: isArtSports,
+      examTypeIndex,
+      targetBatchIndex: targetBatchIndex >= 0 ? targetBatchIndex : 0,
+      'form.examType': examType,
+      'form.targetBatch': nextForm.targetBatch,
+      'form.formulaId': nextForm.formulaId
+    });
+  },
   syncPickerIndices(form) {
     const subjectIndex = findOptionIndex(SUBJECT_COMBINATIONS, form.subjectCombination);
-    const targetBatchIndex = findOptionIndex(TARGET_BATCHES, form.targetBatch);
+    const batches = this.data.targetBatchOptions || TARGET_BATCHES;
+    const targetBatchIndex = findOptionIndex(batches, form.targetBatch);
     this.setData({
       subjectIndex: subjectIndex >= 0 ? subjectIndex : 0,
       targetBatchIndex: targetBatchIndex >= 0 ? targetBatchIndex : 0,
       'form.subjectCombination': subjectIndex >= 0 ? SUBJECT_COMBINATIONS[subjectIndex] : form.subjectCombination
     });
   },
-  onLoad() {
+  onLoad(options) {
+    const track = (options && options.track) || '';
     const stored = wx.getStorageSync('studentProfile');
     const loginUser = wx.getStorageSync('loginUser') || {};
+    let trackExamType = '';
+    let trackLabel = '';
+    if (track === 'art') {
+      trackExamType = '艺术类';
+      trackLabel = '艺术报考';
+    } else if (track === 'sports') {
+      trackExamType = '体育类';
+      trackLabel = '体育报考';
+    }
     if (stored) {
       const form = {
         ...this.data.form,
         ...stored,
+        examType: stored.examType || trackExamType || stored.exam_type || '普通类',
+        professionalScore: stored.professionalScore || stored.professional_score || '',
+        cultureCutoff: stored.cultureCutoff || stored.culture_cutoff || '',
+        proCutoff: stored.proCutoff || stored.pro_cutoff || '',
+        formulaId: stored.formulaId || stored.art_sports_formula_id || 5,
+        waiveArtSports: !!(stored.waiveArtSports || stored.waive_art_sports_batch),
         subjectCombination: normalizeSubjectCombination(stored.subjectCombination) || stored.subjectCombination || '',
         openid: stored.openid || loginUser.openid,
         userId: stored.userId || loginUser.user_id
       };
-      this.setData({ form });
+      if (trackExamType) form.examType = trackExamType;
+      if (!form.province) form.province = '河南';
+      this.setData({ form, isHenan: isHenanArtSportsProvince(form.province), trackLabel });
+      this.applyExamType(form.examType, form);
       this.syncPickerIndices(form);
       this.refreshBatchHints(form);
       return;
     }
-    if (loginUser.openid) {
-      this.setData({ 'form.openid': loginUser.openid, 'form.userId': loginUser.user_id });
+    const form = { ...this.data.form, openid: loginUser.openid, userId: loginUser.user_id };
+    if (trackExamType) {
+      form.examType = trackExamType;
+      form.province = '河南';
     }
+    this.setData({ form, isHenan: isHenanArtSportsProvince(form.province), trackLabel });
+    if (trackExamType) this.applyExamType(trackExamType, form);
   },
   selectRole(event) {
     this.setData({ 'form.role': event.currentTarget.dataset.role });
@@ -69,6 +126,9 @@ Page({
     const field = event.currentTarget.dataset.field;
     const form = { ...this.data.form, [field]: event.detail.value };
     this.setData({ [`form.${field}`]: event.detail.value });
+    if (field === 'province') {
+      this.setData({ isHenan: isHenanArtSportsProvince(event.detail.value) });
+    }
     if (field === 'province' || field === 'score' || field === 'rank') {
       this.refreshBatchHints(form);
     } else if (field === 'targetBatch') {
@@ -113,12 +173,29 @@ Page({
   },
   onTargetBatchChange(event) {
     const index = Number(event.detail.value);
-    const form = { ...this.data.form, targetBatch: TARGET_BATCHES[index] };
+    const batch = this.data.targetBatchOptions[index];
+    const form = { ...this.data.form, targetBatch: batch };
     this.setData({
       targetBatchIndex: index,
-      'form.targetBatch': TARGET_BATCHES[index]
+      'form.targetBatch': batch
     });
     this.updateBatchWarning(form, this.data.availableBatches || []);
+  },
+  onExamTypeChange(event) {
+    const index = Number(event.detail.value);
+    const examType = EXAM_TYPES[index];
+    const form = { ...this.data.form, examType };
+    this.applyExamType(examType, form);
+    this.updateBatchWarning(form, this.data.availableBatches || []);
+  },
+  onWaiveArtSportsChange(event) {
+    this.setData({ 'form.waiveArtSports': event.detail.value.length > 0 });
+  },
+  goArtSportsZone(event) {
+    const track = (event && event.currentTarget && event.currentTarget.dataset.track)
+      || (this.data.form.examType === '体育类' ? 'sports' : 'art');
+    const url = track === 'sports' ? '/pages/sports-zone/sports-zone' : '/pages/art-zone/art-zone';
+    wx.navigateTo({ url });
   },
   isTempOpenid(openid) {
     return !openid || openid.startsWith('dev_') || openid.startsWith('local_') || openid.startsWith('test_');
@@ -165,7 +242,16 @@ Page({
           confirmText: profileChanged ? '查看可报院校' : '去检索',
           cancelText: '回首页',
           success: (modalRes) => {
+            const examType = saved.examType || '普通类';
             if (modalRes.confirm) {
+              if (examType === '艺术类' && !saved.waiveArtSports) {
+                wx.navigateTo({ url: '/pages/art-zone/art-zone' });
+                return;
+              }
+              if (examType === '体育类' && !saved.waiveArtSports) {
+                wx.navigateTo({ url: '/pages/sports-zone/sports-zone' });
+                return;
+              }
               wx.navigateTo({ url: '/pages/eligible-pool/eligible-pool' });
               return;
             }
@@ -214,24 +300,35 @@ Page({
       return;
     }
 
+    if (form.examType !== '普通类' && !form.waiveArtSports && !form.professionalScore) {
+      wx.showToast({ title: '请填写专业统考分', icon: 'none' });
+      return;
+    }
+
     const openid = this.buildLocalOpenid(form);
+    const payload = {
+      openid,
+      phone: form.phone,
+      role: form.role,
+      name: form.name,
+      province: form.province,
+      city: form.city,
+      exam_year: new Date().getFullYear(),
+      exam_type: form.examType || '普通类',
+      subject_combination: form.subjectCombination,
+      score,
+      rank,
+      target_batch: form.targetBatch,
+      professional_score: form.professionalScore ? Number(form.professionalScore) : null,
+      art_sports_formula_id: form.formulaId ? Number(form.formulaId) : null,
+      waive_art_sports_batch: !!form.waiveArtSports,
+      culture_cutoff: form.cultureCutoff ? Number(form.cultureCutoff) : null,
+      pro_cutoff: form.proCutoff ? Number(form.proCutoff) : null
+    };
     request({
       url: '/api/profile',
       method: 'POST',
-      data: {
-        openid,
-        phone: form.phone,
-        role: form.role,
-        name: form.name,
-        province: form.province,
-        city: form.city,
-        exam_year: new Date().getFullYear(),
-        exam_type: '普通类',
-        subject_combination: form.subjectCombination,
-        score,
-        rank,
-        target_batch: form.targetBatch
-      }
+      data: payload
     })
       .then((res) => {
         this.finishSave({

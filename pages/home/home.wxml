@@ -7,6 +7,25 @@
     <button class="profile-btn" bindtap="goProfile">完善信息</button>
   </view>
 
+  <view class="card henan-zone-card">
+    <view class="section-title">河南艺体报考专区</view>
+    <view class="sub-text">艺术类 / 体育类二选一；双过线投档；综合分五套公式院校自选；历年最低分对标冲稳保</view>
+    <view class="henan-zone-grid">
+      <view class="henan-zone-item art-zone-item" bindtap="goArtZone">
+        <view class="henan-zone-title">艺术报考专区</view>
+        <view class="sub-text">统考满分300 · 本科默认公式⑤</view>
+      </view>
+      <view class="henan-zone-item sports-zone-item" bindtap="goSportsZone">
+        <view class="henan-zone-title">体育报考专区</view>
+        <view class="sub-text">统考满分150 · 本科默认公式③</view>
+      </view>
+    </view>
+    <view class="henan-zone-actions">
+      <button class="secondary-btn henan-zone-btn" bindtap="goProfileArt">完善艺术类档案</button>
+      <button class="secondary-btn henan-zone-btn" bindtap="goProfileSports">完善体育类档案</button>
+    </view>
+  </view>
+
   <view class="card pay-banner" bindtap="goMembership">
     <view class="pay-banner-main">
       <view class="pay-banner-title">普通卡 / 白金卡 · 报考季会员</view>

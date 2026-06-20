@@ -20,6 +20,17 @@ const TARGET_BATCHES = [
   '专科提前批'
 ];
 
+const EXAM_TYPES = ['普通类', '艺术类', '体育类'];
+
+const ART_TARGET_BATCHES = ['艺术本科批', '艺术专科批'];
+const SPORTS_TARGET_BATCHES = ['体育本科批', '体育专科批'];
+
+function getTargetBatchesForExamType(examType) {
+  if (examType === '艺术类') return ART_TARGET_BATCHES;
+  if (examType === '体育类') return SPORTS_TARGET_BATCHES;
+  return TARGET_BATCHES;
+}
+
 const LEGACY_SUBJECT_MAP = {
   物理化学生物: '物理+化学+生物',
   物理化学地理: '物理+化学+地理',
@@ -55,6 +66,10 @@ function findOptionIndex(options, value) {
 module.exports = {
   SUBJECT_COMBINATIONS,
   TARGET_BATCHES,
+  EXAM_TYPES,
+  ART_TARGET_BATCHES,
+  SPORTS_TARGET_BATCHES,
+  getTargetBatchesForExamType,
   findOptionIndex,
   normalizeSubjectCombination
 };

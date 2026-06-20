@@ -11,6 +11,7 @@ from schemas import (
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
     ReferralAgentRegisterRequest, ReferralBindRequest, ReferralWithdrawRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
+    HenanArtSportsCalculateRequest, HenanArtSportsMatchRequest,
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
@@ -1336,7 +1337,9 @@ def get_profile(openid: str = '', phone: str = ''):
     sql = '''
     SELECT u.user_id, u.openid, u.phone, u.role, u.name, s.student_id, s.province, s.city,
            s.school_name, s.grade, s.class_name, s.exam_year, s.exam_type,
-           s.subject_combination, s.score, s.rank, s.target_batch
+           s.subject_combination, s.score, s.rank, s.target_batch,
+           s.professional_score, s.art_sports_formula_id, s.waive_art_sports_batch,
+           s.culture_cutoff, s.pro_cutoff
     FROM users u
     LEFT JOIN students s ON s.user_id = u.user_id
     WHERE 1=1
@@ -1358,6 +1361,8 @@ def get_profile(openid: str = '', phone: str = ''):
 
 @app.post('/api/profile')
 def save_profile(request: ProfileSaveRequest):
+    from henan_art_sports_service import ensure_student_art_sports_columns
+    ensure_student_art_sports_columns()
     openid = request.openid or f'local_{request.phone or request.name or "student"}'
     role = 'student' if request.role in ['学生', 'student'] else 'parent' if request.role in ['家长', 'parent'] else request.role
     with get_connection() as connection:
@@ -1399,7 +1404,12 @@ def save_profile(request: ProfileSaveRequest):
         values = [
             request.name, request.province, request.city, request.school_name, request.grade, request.class_name,
             request.exam_year, request.exam_type, request.subject_combination, request.score, request.rank,
-            request.target_batch
+            request.target_batch,
+            request.professional_score,
+            request.art_sports_formula_id,
+            1 if request.waive_art_sports_batch else 0,
+            request.culture_cutoff,
+            request.pro_cutoff,
         ]
         if student:
             if student.get('name') and request.name and student.get('name') != request.name:
@@ -1409,7 +1419,8 @@ def save_profile(request: ProfileSaveRequest):
                 '''
                 UPDATE students SET name = ?, province = ?, city = ?, school_name = ?, grade = ?, class_name = ?,
                   exam_year = ?, exam_type = ?, subject_combination = ?, score = ?, rank = ?, target_batch = ?,
-                  updated_at = CURRENT_TIMESTAMP
+                  professional_score = ?, art_sports_formula_id = ?, waive_art_sports_batch = ?,
+                  culture_cutoff = ?, pro_cutoff = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE student_id = ?
                 ''',
                 values + [student_id]
@@ -1419,8 +1430,9 @@ def save_profile(request: ProfileSaveRequest):
                 '''
                 INSERT INTO students (
                   user_id, name, province, city, school_name, grade, class_name, exam_year, exam_type,
-                  subject_combination, score, rank, target_batch
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  subject_combination, score, rank, target_batch,
+                  professional_score, art_sports_formula_id, waive_art_sports_batch, culture_cutoff, pro_cutoff
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 [user_id] + values
             )
@@ -1684,6 +1696,30 @@ def api_admission_data_batches(province: str):
         'batches': batches,
         'total_school_major': total,
     }
+
+
+@app.get('/api/henan-art-sports/meta')
+def api_henan_art_sports_meta():
+    from henan_art_sports_service import get_meta
+    return get_meta()
+
+
+@app.post('/api/henan-art-sports/calculate')
+def api_henan_art_sports_calculate(request: HenanArtSportsCalculateRequest):
+    from henan_art_sports_service import calculate_composite
+    try:
+        return calculate_composite(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/henan-art-sports/match')
+def api_henan_art_sports_match(request: HenanArtSportsMatchRequest):
+    from henan_art_sports_service import match_schools
+    try:
+        return match_schools(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post('/api/eligible-pool')
