@@ -45,17 +45,24 @@
       <view class="sub-text">河南高考报名时艺术类 / 体育类二选一，不可同时报考两类统考提前批。</view>
     </view>
 
-    <view class="form-item">
-      <text class="label">高考分数 / 全省位次</text>
-      <view class="inline-fields">
-        <input class="input" type="number" placeholder="分数" value="{{form.score}}" data-field="score" bindinput="onInput" />
-        <input class="input" type="number" placeholder="位次" value="{{form.rank}}" data-field="rank" bindinput="onInput" />
+      <view class="form-item">
+        <text class="label">高考分数 / 全省位次</text>
+        <view class="inline-fields">
+          <input class="input" type="number" placeholder="分数" value="{{form.score}}" data-field="score" bindinput="onInput" />
+          <input class="input" type="number" placeholder="{{showArtSportsFields ? '位次可填0' : '位次'}}" value="{{form.rank}}" data-field="rank" bindinput="onInput" />
+        </view>
+        <view wx:if="{{showArtSportsFields}}" class="sub-text art-sports-hint">艺体无官方综合分位次，位次可填0；请勿套用普通类文化课位次做对标。</view>
       </view>
-      <view wx:if="{{showArtSportsFields}}" class="sub-text art-sports-hint">艺体无官方综合分位次，请勿直接套用普通类文化课位次做对标。</view>
-    </view>
 
     <view wx:if="{{showArtSportsFields}}" class="card art-sports-card">
       <view class="section-title">{{form.examType === '艺术类' ? '艺术类' : '体育类'}}报考信息</view>
+      <view class="form-item">
+        <text class="label">院校综合分公式编号</text>
+        <picker mode="selector" range="{{formulaOptions}}" value="{{form.formulaId - 1}}" bindchange="onFormulaChange">
+          <view class="picker">{{formulaOptions[form.formulaId - 1] || ('公式' + form.formulaId)}}</view>
+        </picker>
+        <view class="sub-text">不同院校使用不同公式编号，此处为默认对标公式，可在专区按院校调整。</view>
+      </view>
       <view class="form-item">
         <text class="label">专业统考分 {{form.examType === '艺术类' ? 'Z（满分300）' : 'T（满分150）'}}</text>
         <input class="input" type="digit" placeholder="请输入专业统考分" value="{{form.professionalScore}}" data-field="professionalScore" bindinput="onInput" />

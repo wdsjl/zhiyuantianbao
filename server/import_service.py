@@ -283,3 +283,128 @@ def import_admission_rows(filename: str, rows: list[dict[str, Any]]) -> dict[str
         'fail_count': fail_count,
         'errors': errors[:20]
     }
+
+
+ART_SPORTS_REQUIRED_HEADERS = ['省份', '类别', '批次层次', '院校名称', '专业名称', '公式编号']
+ART_SPORTS_HEADER_MAP = {
+    '省份': 'province',
+    '类别': 'category',
+    '批次层次': 'batch_level',
+    '院校名称': 'school_name',
+    '专业名称': 'major_name',
+    '公式编号': 'formula_id',
+    '最低综合分2025': 'min_composite_2025',
+    '最低综合分2024': 'min_composite_2024',
+    '最低综合分2023': 'min_composite_2023',
+    '城市': 'city',
+}
+
+
+def validate_art_sports_headers(headers: list[str]) -> None:
+    missing = [header for header in ART_SPORTS_REQUIRED_HEADERS if header not in headers]
+    if missing:
+        raise ValueError(f'缺少必填字段：{", ".join(missing)}')
+
+
+def parse_art_sports_file(filename: str, content: bytes) -> list[dict[str, Any]]:
+    suffix = Path(filename).suffix.lower()
+    if suffix == '.csv':
+        text = content.decode('utf-8-sig')
+        reader = csv.DictReader(io.StringIO(text))
+        headers = reader.fieldnames or []
+        validate_art_sports_headers([str(h).strip() for h in headers])
+        return [normalize_art_sports_row(dict(row)) for row in reader]
+    if suffix in ('.xlsx', '.xls'):
+        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        worksheet = workbook.active
+        rows = list(worksheet.iter_rows(values_only=True))
+        if not rows:
+            return []
+        headers = [str(cell).strip() if cell is not None else '' for cell in rows[0]]
+        validate_art_sports_headers(headers)
+        result = []
+        for raw in rows[1:]:
+            if not any(raw):
+                continue
+            item = {headers[i]: raw[i] for i in range(len(headers)) if headers[i]}
+            result.append(normalize_art_sports_row(item))
+        return result
+    raise ValueError('仅支持 .csv 或 .xlsx 文件')
+
+
+def normalize_art_sports_row(raw: dict[str, Any]) -> dict[str, Any]:
+    row: dict[str, Any] = {}
+    for cn_key, value in raw.items():
+        if cn_key is None:
+            continue
+        key = ART_SPORTS_HEADER_MAP.get(str(cn_key).strip())
+        if not key:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        row[key] = value
+    row['province'] = str(row.get('province') or '河南').replace('省', '')
+    row['category'] = str(row.get('category') or '').strip()
+    row['batch_level'] = str(row.get('batch_level') or '').strip()
+    row['school_name'] = str(row.get('school_name') or '').strip()
+    row['major_name'] = str(row.get('major_name') or '').strip()
+    row['formula_id'] = to_int(row.get('formula_id'), 5)
+    for field in ('min_composite_2025', 'min_composite_2024', 'min_composite_2023'):
+        if field in row and row[field] not in (None, ''):
+            try:
+                row[field] = float(str(row[field]).strip())
+            except ValueError:
+                row[field] = None
+    row['city'] = str(row.get('city') or '').strip()
+    return row
+
+
+def import_art_sports_rows(filename: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    from henan_art_sports_service import ensure_art_sports_admissions_table
+
+    ensure_art_sports_admissions_table()
+    success_count = 0
+    errors: list[str] = []
+    with get_connection() as connection:
+        for index, row in enumerate(rows, start=2):
+            try:
+                for field in ['province', 'category', 'batch_level', 'school_name', 'major_name', 'formula_id']:
+                    if not row.get(field):
+                        raise ValueError(f'第 {index} 行缺少字段：{field}')
+                if row['category'] not in ('艺术类', '体育类'):
+                    raise ValueError(f'第 {index} 行类别须为艺术类或体育类')
+                if row['batch_level'] not in ('本科', '专科'):
+                    raise ValueError(f'第 {index} 行批次层次须为本科或专科')
+                connection.execute(
+                    '''
+                    INSERT INTO art_sports_admissions (
+                      province, category, batch_level, school_name, major_name, formula_id,
+                      min_composite_2025, min_composite_2024, min_composite_2023, city
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(province, category, batch_level, school_name, major_name, formula_id) DO UPDATE SET
+                      min_composite_2025 = excluded.min_composite_2025,
+                      min_composite_2024 = excluded.min_composite_2024,
+                      min_composite_2023 = excluded.min_composite_2023,
+                      city = excluded.city
+                    ''',
+                    [
+                        row['province'], row['category'], row['batch_level'], row['school_name'], row['major_name'],
+                        int(row['formula_id']),
+                        row.get('min_composite_2025'), row.get('min_composite_2024'), row.get('min_composite_2023'),
+                        row.get('city') or '',
+                    ],
+                )
+                success_count += 1
+            except Exception as exc:
+                errors.append(str(exc))
+        fail_count = len(errors)
+        error_message = '\n'.join(errors[:20]) if errors else None
+        log_id = insert_import_log(connection, 'art_sports_admissions', filename, len(rows), success_count, fail_count, error_message)
+        connection.commit()
+    return {
+        'log_id': log_id,
+        'total_count': len(rows),
+        'success_count': success_count,
+        'fail_count': fail_count,
+        'errors': errors[:20],
+    }

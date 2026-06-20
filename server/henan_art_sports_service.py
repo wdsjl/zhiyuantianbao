@@ -319,7 +319,7 @@ def ensure_art_sports_admissions_table() -> None:
         )
         count = connection.execute('SELECT COUNT(*) AS count FROM art_sports_admissions').fetchone()['count']
         if not count:
-            for school in SAMPLE_SCHOOLS:
+            for school in EXTENDED_SAMPLE_SCHOOLS:
                 connection.execute(
                     '''
                     INSERT INTO art_sports_admissions (
@@ -357,13 +357,93 @@ def load_art_sports_admissions(category: str, batch_level: str, formula_id: int)
     if rows:
         return [dict(row) for row in rows]
     return [
-        s for s in SAMPLE_SCHOOLS
+        s for s in EXTENDED_SAMPLE_SCHOOLS
         if s['category'] == category and s['batch_level'] == batch_level and int(s['formula_id']) == int(formula_id)
     ]
 
 
 def _pseudo_id(prefix: str, name: str) -> int:
     return abs(hash(f'{prefix}:{name}')) % 900000 + 100000
+
+
+def resolve_school_major_ids(school_name: str, major_name: str, category: str = '') -> tuple[int, int]:
+    """为艺体志愿草稿解析或创建院校/专业 ID，避免外键约束失败。"""
+    with get_connection() as connection:
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS schools (
+              school_id INTEGER PRIMARY KEY AUTOINCREMENT,
+              school_code TEXT NOT NULL UNIQUE,
+              school_name TEXT NOT NULL,
+              province TEXT,
+              city TEXT,
+              school_type TEXT,
+              education_level TEXT,
+              is_985 INTEGER NOT NULL DEFAULT 0,
+              is_211 INTEGER NOT NULL DEFAULT 0,
+              is_double_first_class INTEGER NOT NULL DEFAULT 0,
+              is_public INTEGER NOT NULL DEFAULT 1,
+              authority TEXT,
+              website TEXT,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            '''
+        )
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS majors (
+              major_id INTEGER PRIMARY KEY AUTOINCREMENT,
+              major_code TEXT NOT NULL UNIQUE,
+              major_name TEXT NOT NULL,
+              major_category TEXT,
+              major_type TEXT,
+              degree_type TEXT,
+              duration TEXT,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            '''
+        )
+        school = connection.execute(
+            'SELECT school_id FROM schools WHERE school_name = ? LIMIT 1', [school_name]
+        ).fetchone()
+        if school:
+            school_id = school['school_id']
+        else:
+            code = f'AS{abs(hash(school_name)) % 100000:05d}'
+            school_id = connection.execute(
+                'INSERT INTO schools (school_code, school_name, province) VALUES (?, ?, ?)',
+                [code, school_name, PROVINCE],
+            ).lastrowid
+        major = connection.execute(
+            'SELECT major_id FROM majors WHERE major_name = ? LIMIT 1', [major_name]
+        ).fetchone()
+        if major:
+            major_id = major['major_id']
+        else:
+            code = f'AM{abs(hash(major_name)) % 100000:05d}'
+            major_id = connection.execute(
+                'INSERT INTO majors (major_code, major_name, major_type) VALUES (?, ?, ?)',
+                [code, major_name, category or '艺体'],
+            ).lastrowid
+        connection.commit()
+    return int(school_id), int(major_id)
+
+
+EXTENDED_SAMPLE_SCHOOLS: list[dict[str, Any]] = SAMPLE_SCHOOLS + [
+    {'school_name': '河南工业大学', 'major_name': '环境设计', 'category': '艺术类', 'batch_level': '本科', 'formula_id': 5, 'min_composite_2025': 468.0, 'min_composite_2024': 464.0, 'min_composite_2023': 460.0, 'city': '郑州'},
+    {'school_name': '中原工学院', 'major_name': '服装与服饰设计', 'category': '艺术类', 'batch_level': '本科', 'formula_id': 5, 'min_composite_2025': 455.0, 'min_composite_2024': 450.0, 'min_composite_2023': 446.0, 'city': '郑州'},
+    {'school_name': '河南科技大学', 'major_name': '产品设计', 'category': '艺术类', 'batch_level': '本科', 'formula_id': 5, 'min_composite_2025': 462.0, 'min_composite_2024': 458.0, 'min_composite_2023': 454.0, 'city': '洛阳'},
+    {'school_name': '南阳师范学院', 'major_name': '播音与主持艺术', 'category': '艺术类', 'batch_level': '本科', 'formula_id': 5, 'min_composite_2025': 445.0, 'min_composite_2024': 440.0, 'min_composite_2023': 436.0, 'city': '南阳'},
+    {'school_name': '安阳师范学院', 'major_name': '书法学', 'category': '艺术类', 'batch_level': '本科', 'formula_id': 4, 'min_composite_2025': 438.0, 'min_composite_2024': 434.0, 'min_composite_2023': 430.0, 'city': '安阳'},
+    {'school_name': '周口师范学院', 'major_name': '美术学', 'category': '艺术类', 'batch_level': '专科', 'formula_id': 5, 'min_composite_2025': 405.0, 'min_composite_2024': 400.0, 'min_composite_2023': 395.0, 'city': '周口'},
+    {'school_name': '河南检察职业学院', 'major_name': '数字媒体艺术设计', 'category': '艺术类', 'batch_level': '专科', 'formula_id': 5, 'min_composite_2025': 390.0, 'min_composite_2024': 385.0, 'min_composite_2023': 380.0, 'city': '郑州'},
+    {'school_name': '河南农业大学', 'major_name': '体育教育', 'category': '体育类', 'batch_level': '本科', 'formula_id': 3, 'min_composite_2025': 615.0, 'min_composite_2024': 610.0, 'min_composite_2023': 605.0, 'city': '郑州'},
+    {'school_name': '河南师范大学', 'major_name': '体育教育', 'category': '体育类', 'batch_level': '本科', 'formula_id': 3, 'min_composite_2025': 600.0, 'min_composite_2024': 595.0, 'min_composite_2023': 590.0, 'city': '新乡'},
+    {'school_name': '洛阳师范学院', 'major_name': '运动康复', 'category': '体育类', 'batch_level': '本科', 'formula_id': 3, 'min_composite_2025': 585.0, 'min_composite_2024': 580.0, 'min_composite_2023': 575.0, 'city': '洛阳'},
+    {'school_name': '平顶山学院', 'major_name': '社会体育', 'category': '体育类', 'batch_level': '专科', 'formula_id': 3, 'min_composite_2025': 565.0, 'min_composite_2024': 560.0, 'min_composite_2023': 555.0, 'city': '平顶山'},
+]
 
 
 def _classify_tier(score_diff: float) -> tuple[str, str]:
@@ -422,13 +502,15 @@ def _build_match_context(data: dict[str, Any]) -> dict[str, Any]:
 def _pool_item_from_ranked(row: dict[str, Any], *, accept_adjustment: bool) -> dict[str, Any]:
     school_name = row.get('school_name') or ''
     major_name = row.get('major_name') or ''
+    category = row.get('category') or ''
+    school_id, major_id = resolve_school_major_ids(school_name, major_name, category)
     gradient = row.get('gradient_type') or TIER_TO_GRADIENT.get(row.get('tier') or '', '稳')
     return {
         'gradient_type': gradient,
-        'school_id': _pseudo_id('school', school_name),
+        'school_id': school_id,
         'school_name': school_name,
         'school_code': '',
-        'major_id': _pseudo_id('major', f'{school_name}:{major_name}'),
+        'major_id': major_id,
         'major_name': major_name,
         'major_code': '',
         'major_type': row.get('category') or '',

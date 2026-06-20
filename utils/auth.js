@@ -1,5 +1,6 @@
 const { request } = require('./request');
 const { getPendingInviteCode, clearPendingInviteCode } = require('./referral');
+const { isArtSportsActive } = require('./henanArtSports');
 
 function isTempOpenid(openid) {
   return !openid || /^(dev_|local_|test_)/.test(openid);
@@ -42,7 +43,11 @@ function mergeLoginProfile(loginRes) {
 }
 
 function syncProfileToServer(profile, openid) {
-  if (!profile || !profile.province || !profile.score || !profile.rank) {
+  const artSports = isArtSportsActive(profile);
+  if (!profile || !profile.province || !profile.score) {
+    return Promise.resolve(null);
+  }
+  if (!artSports && !profile.rank) {
     return Promise.resolve(null);
   }
   return request({
@@ -59,7 +64,7 @@ function syncProfileToServer(profile, openid) {
       exam_type: profile.examType || profile.exam_type || '普通类',
       subject_combination: profile.subjectCombination,
       score: Number(profile.score),
-      rank: Number(profile.rank),
+      rank: Number(profile.rank || 0),
       target_batch: profile.targetBatch,
       professional_score: profile.professionalScore ? Number(profile.professionalScore) : null,
       art_sports_formula_id: profile.formulaId ? Number(profile.formulaId) : null,

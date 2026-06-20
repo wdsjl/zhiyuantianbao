@@ -30,6 +30,7 @@ from import_service import parse_import_file, import_admission_rows
 from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
+    admin_art_sports_admissions,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
     admin_referrals, admin_referral_withdrawals,
@@ -309,6 +310,25 @@ async def admin_import_submit(file: UploadFile = File(...)):
         return admin_import(f'导入失败：{exc}')
 
 
+@app.post('/admin/import/art-sports')
+async def admin_import_art_sports_submit(file: UploadFile = File(...)):
+    from import_service import import_art_sports_rows, parse_art_sports_file
+
+    content = await file.read()
+    try:
+        rows = parse_art_sports_file(file.filename or 'upload', content)
+        result = import_art_sports_rows(file.filename or 'upload', rows)
+        message = f"艺体数据导入完成：共 {result['total_count']} 条，成功 {result['success_count']} 条，失败 {result['fail_count']} 条"
+        return admin_import(message)
+    except ValueError as exc:
+        return admin_import(f'艺体导入失败：{exc}')
+
+
+@app.get('/admin/art-sports-admissions')
+def admin_art_sports_admissions_page(keyword: str = '', category: str = '', page: int = 1, message: str = ''):
+    return admin_art_sports_admissions(keyword, category, page, message)
+
+
 @app.get('/admin/import/logs')
 def admin_import_logs_page(log_id: int | None = None, message: str = ''):
     return admin_logs(log_id, message)
@@ -413,14 +433,21 @@ def admin_students_page(keyword: str = '', page: int = 1, edit_id: int | None = 
 def admin_student_update(
     student_id: int, name: str = Form(...), phone: str = Form(''), province: str = Form(...),
     city: str = Form(''), school_name: str = Form(''), grade: str = Form(''), class_name: str = Form(''),
-    exam_year: str = Form(...), subject_combination: str = Form(...), score: str = Form(...),
-    rank: str = Form(...), target_batch: str = Form(...)
+    exam_year: str = Form(...), exam_type: str = Form('普通类'), subject_combination: str = Form(...),
+    score: str = Form(...), rank: str = Form('0'), target_batch: str = Form(...),
+    professional_score: str = Form(''), art_sports_formula_id: str = Form(''),
+    waive_art_sports_batch: str = Form(''), culture_cutoff: str = Form(''), pro_cutoff: str = Form('')
 ):
     try:
         save_student(student_id, {
             'name': name, 'phone': phone, 'province': province, 'city': city, 'school_name': school_name,
-            'grade': grade, 'class_name': class_name, 'exam_year': exam_year,
-            'subject_combination': subject_combination, 'score': score, 'rank': rank, 'target_batch': target_batch
+            'grade': grade, 'class_name': class_name, 'exam_year': exam_year, 'exam_type': exam_type,
+            'subject_combination': subject_combination, 'score': score, 'rank': rank or '0', 'target_batch': target_batch,
+            'professional_score': professional_score or None,
+            'art_sports_formula_id': art_sports_formula_id or None,
+            'waive_art_sports_batch': waive_art_sports_batch in ('1', 'true', 'on', 'yes'),
+            'culture_cutoff': culture_cutoff or None,
+            'pro_cutoff': pro_cutoff or None,
         })
         return RedirectResponse('/admin/students?message=学生档案已更新', status_code=303)
     except Exception as exc:
@@ -1500,8 +1527,10 @@ def list_parent_binds(parent_user_id: int):
     with get_connection() as connection:
         rows = connection.execute(
             '''
-            SELECT b.bind_id, b.bind_status, b.created_at, s.student_id, s.name, s.province, s.school_name, s.class_name,
-                   s.score, s.rank, s.target_batch
+            SELECT b.bind_id, b.bind_status, b.created_at, s.student_id, s.name, s.province, s.city, s.school_name, s.class_name,
+                   s.exam_type, s.subject_combination, s.score, s.rank, s.target_batch,
+                   s.professional_score, s.art_sports_formula_id, s.waive_art_sports_batch,
+                   s.culture_cutoff, s.pro_cutoff
             FROM parent_student_binds b
             JOIN students s ON s.student_id = b.student_id
             WHERE b.parent_user_id = ? AND b.bind_status = 'active'
@@ -1920,7 +1949,37 @@ def ai_plan_explain(request: PlanExplainRequest):
             f"风险：{item.get('risk_level') or item.get('riskLevel', '')}，"
             f"调剂：{'是' if item.get('is_adjustable', item.get('isAdjustable', True)) else '否'}"
         )
-    prompt = f'''
+    exam_type = profile.get('examType') or profile.get('exam_type') or '普通类'
+    art_sports = exam_type in ('艺术类', '体育类') and not profile.get('waiveArtSports') and not profile.get('waive_art_sports_batch')
+    if art_sports:
+        prompt = f'''
+请作为河南省高考艺体类志愿填报顾问，基于以下信息生成简洁、谨慎、可执行的志愿方案解读。
+要求：
+1. 不承诺录取，不使用“保证”“一定”等词。
+2. 分为：整体评价、综合分与公式说明、冲稳保结构、双过线提醒、下一步建议。
+3. 语言面向学生和家长，控制在 500 字以内。
+4. 强调：河南省无艺体综合分官方位次，对标的是院校历年最低综合分；最终以考试院和高校招生章程为准。
+
+学生信息：
+省份：{profile.get('province', '')}
+考试类别：{exam_type}
+批次：{profile.get('targetBatch', profile.get('batch', ''))}
+文化课分数：{profile.get('score', '')}
+专业统考分：{profile.get('professionalScore', profile.get('professional_score', ''))}
+公式编号：{profile.get('formulaId', profile.get('art_sports_formula_id', ''))}
+
+霍兰德职业兴趣测评（供专业适配参考）：
+{build_personality_ai_context(personality)}
+
+风险结果：
+综合风险：{risk.get('level', '未排查')}
+冲：{risk.get('chong', '')} 稳：{risk.get('wen', '')} 保：{risk.get('bao', '')}
+
+志愿样例：
+{chr(10).join(item_lines)}
+'''
+    else:
+        prompt = f'''
 请作为高考志愿填报顾问，基于以下信息生成一份简洁、谨慎、可执行的志愿方案解读。
 要求：
 1. 不承诺录取，不使用“保证”“一定”等词。

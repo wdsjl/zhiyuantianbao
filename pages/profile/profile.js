@@ -9,7 +9,7 @@ const {
 } = require('../../utils/profileOptions');
 const { getBatchMismatchWarning } = require('../../utils/batchHint');
 const { buildProfileSnapshot, clearDerivedArtifacts } = require('../../utils/profileSnapshot');
-const { isHenanArtSportsProvince, defaultFormulaId } = require('../../utils/henanArtSports');
+const { isHenanArtSportsProvince, defaultFormulaId, isArtSportsActive } = require('../../utils/henanArtSports');
 
 Page({
   data: {
@@ -36,8 +36,9 @@ Page({
       professionalScore: '',
       cultureCutoff: '',
       proCutoff: '',
-      formulaId: 5,
-      waiveArtSports: false,
+    formulaId: 5,
+    waiveArtSports: false,
+    formulaOptions: [],
       bindCode: '',
       studentId: '',
       userId: '',
@@ -107,6 +108,7 @@ Page({
       if (!form.province) form.province = '河南';
       this.setData({ form, isHenan: isHenanArtSportsProvince(form.province), trackLabel });
       this.applyExamType(form.examType, form);
+      this.loadFormulaOptions(form.examType);
       this.syncPickerIndices(form);
       this.refreshBatchHints(form);
       return;
@@ -118,6 +120,22 @@ Page({
     }
     this.setData({ form, isHenan: isHenanArtSportsProvince(form.province), trackLabel });
     if (trackExamType) this.applyExamType(trackExamType, form);
+    if (trackExamType) this.loadFormulaOptions(trackExamType);
+  },
+  loadFormulaOptions(examType) {
+    if (examType !== '艺术类' && examType !== '体育类') {
+      this.setData({ formulaOptions: [] });
+      return;
+    }
+    request({ url: '/api/henan-art-sports/meta' })
+      .then((meta) => {
+        const list = examType === '体育类' ? (meta.sports_formulas || []) : (meta.art_formulas || []);
+        this.setData({ formulaOptions: list.map((item) => `${item.id}. ${item.label}`) });
+      })
+      .catch(() => {});
+  },
+  onFormulaChange(event) {
+    this.setData({ 'form.formulaId': Number(event.detail.value) + 1 });
   },
   selectRole(event) {
     this.setData({ 'form.role': event.currentTarget.dataset.role });
@@ -186,6 +204,7 @@ Page({
     const examType = EXAM_TYPES[index];
     const form = { ...this.data.form, examType };
     this.applyExamType(examType, form);
+    this.loadFormulaOptions(examType);
     this.updateBatchWarning(form, this.data.availableBatches || []);
   },
   onWaiveArtSportsChange(event) {
@@ -283,8 +302,10 @@ Page({
   },
   saveProfile() {
     const { form } = this.data;
-    const required = ['role', 'province', 'subjectCombination', 'score', 'rank', 'targetBatch'];
-    const missing = required.some((field) => !form[field]);
+    const artSportsActive = isArtSportsActive({ ...form, province: form.province });
+    const required = ['role', 'province', 'subjectCombination', 'score', 'targetBatch'];
+    if (!artSportsActive) required.push('rank');
+    const missing = required.some((field) => !form[field] && form[field] !== 0);
     if (missing) {
       wx.showToast({ title: '请完善必填信息', icon: 'none' });
       return;
@@ -294,9 +315,9 @@ Page({
       return;
     }
     const score = Number(form.score);
-    const rank = Number(form.rank);
-    if (!Number.isFinite(score) || !Number.isFinite(rank)) {
-      wx.showToast({ title: '分数和位次需为有效数字', icon: 'none' });
+    const rank = artSportsActive ? Number(form.rank || 0) : Number(form.rank);
+    if (!Number.isFinite(score) || (!artSportsActive && !Number.isFinite(rank))) {
+      wx.showToast({ title: artSportsActive ? '分数需为有效数字' : '分数和位次需为有效数字', icon: 'none' });
       return;
     }
 

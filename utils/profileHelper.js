@@ -12,7 +12,7 @@ function mapBoundStudent(bound, stored) {
     score: bound.score,
     rank: bound.rank,
     targetBatch: bound.target_batch || stored.targetBatch,
-    subjectCombination: stored.subjectCombination,
+    subjectCombination: bound.subject_combination || stored.subjectCombination,
     examType: bound.exam_type || stored.examType,
     professionalScore: bound.professional_score ?? stored.professionalScore,
     formulaId: bound.art_sports_formula_id ?? stored.formulaId,

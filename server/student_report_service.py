@@ -81,18 +81,30 @@ def _join_list(value: Any) -> str:
 
 
 def build_student_profile_block(profile: dict[str, Any]) -> str:
-    return '\n'.join([
+    exam_type = profile.get('examType') or profile.get('exam_type') or '普通类'
+    lines = [
         f"姓名：{profile.get('name') or profile.get('studentName') or '未填写'}",
         f"省份：{profile.get('province', '')}",
         f"城市：{profile.get('city', '')}",
         f"高中：{profile.get('school') or profile.get('school_name', '')}",
         f"年级班级：{profile.get('grade', '')} {profile.get('className') or profile.get('class_name', '')}",
+        f"考试类别：{exam_type}",
         f"选科组合：{profile.get('subjectCombination') or profile.get('subject_combination', '')}",
-        f"高考分数：{profile.get('score', '')}",
-        f"全省位次：{profile.get('rank', '')}",
+        f"高考文化课分数：{profile.get('score', '')}",
         f"目标批次：{profile.get('targetBatch') or profile.get('target_batch', '')}",
         f"考试年份：{profile.get('examYear') or profile.get('exam_year', '')}",
-    ])
+    ]
+    if exam_type in ('艺术类', '体育类') and not profile.get('waiveArtSports') and not profile.get('waive_art_sports_batch'):
+        lines.extend([
+            f"专业统考分：{profile.get('professionalScore') or profile.get('professional_score', '')}",
+            f"综合分公式编号：{profile.get('formulaId') or profile.get('art_sports_formula_id', '')}",
+            f"文化课控制线参考：{profile.get('cultureCutoff') or profile.get('culture_cutoff', '未填')}",
+            f"专业合格线参考：{profile.get('proCutoff') or profile.get('pro_cutoff', '未填')}",
+            '说明：河南省不发布艺体综合分官方一分一段位次，请用院校历年最低综合分对标冲稳保。',
+        ])
+    else:
+        lines.append(f"全省位次：{profile.get('rank', '')}")
+    return '\n'.join(lines)
 
 
 def build_preferences_block(preferences: dict[str, Any]) -> str:
@@ -118,6 +130,16 @@ def build_student_report_prompt(
 ) -> str:
     personality_block = build_personality_ai_context(personality)
     volunteer_block = volunteer_summary or '尚未生成志愿方案，请主要依据分数位次与兴趣测评给出策略。'
+    exam_type = profile.get('examType') or profile.get('exam_type') or '普通类'
+    strategy_note = ''
+    if exam_type in ('艺术类', '体育类') and not profile.get('waiveArtSports') and not profile.get('waive_art_sports_batch'):
+        volunteer_block = volunteer_summary or '尚未生成艺体志愿方案，请主要依据综合分与院校历年最低综合分对标给出策略。'
+        strategy_note = '''
+艺体考生特别说明：
+- 河南省不发布艺体综合分官方一分一段位次，勿套用普通类文化课位次。
+- 须满足双过线（文化课控制线+专业统考合格线）才可投档对应本科志愿。
+- 平行志愿最多64个，按院校对应公式计算综合分，用历年最低综合分划分冲稳保。
+'''
     student_name = (profile.get('name') or profile.get('studentName') or '同学').strip() or '同学'
     greeting = (
         f'{student_name}同学、{student_name}同学家长，您好：'
@@ -153,4 +175,5 @@ def build_student_report_prompt(
 
 【当前志愿方案概况】
 {volunteer_block}
+{strategy_note}
 '''

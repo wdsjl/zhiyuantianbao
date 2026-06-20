@@ -21,6 +21,9 @@ function buildProfileSnapshot(profile) {
     String(profile.rank ?? ''),
     profile.examType || profile.exam_type || '普通类',
     String(profile.professionalScore ?? profile.professional_score ?? ''),
+    String(profile.formulaId ?? profile.art_sports_formula_id ?? ''),
+    String(profile.cultureCutoff ?? profile.culture_cutoff ?? ''),
+    String(profile.proCutoff ?? profile.pro_cutoff ?? ''),
     profile.waiveArtSports || profile.waive_art_sports_batch ? '1' : '0'
   ].join('|');
 }

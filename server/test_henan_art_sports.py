@@ -111,6 +111,25 @@ class HenanArtSportsTests(unittest.TestCase):
         self.assertTrue(plan['art_sports_mode'])
         self.assertGreater(len(plan['items']), 0)
 
+    def test_import_art_sports_rows(self) -> None:
+        try:
+            from import_service import import_art_sports_rows
+        except ModuleNotFoundError:
+            self.skipTest('openpyxl not installed')
+        result = import_art_sports_rows('test.csv', [{
+            'province': '河南',
+            'category': '艺术类',
+            'batch_level': '本科',
+            'school_name': '测试艺术大学',
+            'major_name': '测试专业',
+            'formula_id': 5,
+            'min_composite_2025': 500.0,
+            'min_composite_2024': 495.0,
+            'min_composite_2023': 490.0,
+            'city': '郑州',
+        }])
+        self.assertGreaterEqual(result['success_count'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

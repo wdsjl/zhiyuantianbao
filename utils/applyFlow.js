@@ -31,14 +31,13 @@ function isProfileComplete(profile) {
     profile.province &&
     profile.subjectCombination &&
     profile.score &&
-    profile.rank &&
     profile.targetBatch
   );
   if (!base) return false;
   if (isArtSportsActive(profile)) {
     return Boolean(profile.professionalScore || profile.professional_score);
   }
-  return true;
+  return Boolean(profile.rank);
 }
 
 function isArtSportsPoolDone() {

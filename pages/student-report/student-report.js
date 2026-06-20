@@ -128,10 +128,30 @@ Page({
   },
   validateBeforeGenerate() {
     const { profile, personality } = this.data;
-    if (!profile.province || !profile.score || !profile.rank || !profile.subjectCombination || !profile.targetBatch) {
+    const { isArtSportsActive } = require('../../utils/henanArtSports');
+    const artSports = isArtSportsActive(profile);
+    if (!profile.province || !profile.score || !profile.subjectCombination || !profile.targetBatch) {
       wx.showModal({
         title: '请先完善档案',
-        content: '生成报告需要省份、分数、位次、选科和批次信息。',
+        content: '生成报告需要省份、分数、选科和批次信息。',
+        confirmText: '去完善',
+        success: (res) => { if (res.confirm) this.goProfile(); }
+      });
+      return false;
+    }
+    if (artSports && !(profile.professionalScore || profile.professional_score)) {
+      wx.showModal({
+        title: '请填写专业统考分',
+        content: '艺体考生生成报告需要专业统考分。',
+        confirmText: '去完善',
+        success: (res) => { if (res.confirm) this.goProfile(); }
+      });
+      return false;
+    }
+    if (!artSports && !profile.rank) {
+      wx.showModal({
+        title: '请先完善档案',
+        content: '生成报告需要全省位次。',
         confirmText: '去完善',
         success: (res) => { if (res.confirm) this.goProfile(); }
       });

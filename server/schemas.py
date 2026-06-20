@@ -51,7 +51,7 @@ class ProfileSaveRequest(BaseModel):
     exam_type: Optional[str] = '普通类'
     subject_combination: str
     score: int
-    rank: int
+    rank: int = 0
     target_batch: str
     professional_score: Optional[float] = None
     art_sports_formula_id: Optional[int] = None

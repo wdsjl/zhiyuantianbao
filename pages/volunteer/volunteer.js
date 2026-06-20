@@ -49,7 +49,9 @@ function normalizePlan(items) {
     schoolType: item.school_type,
     isAdjustable: item.is_adjustable,
     riskLevel: item.risk_level,
-    riskReason: item.risk_reason
+    riskReason: item.risk_reason,
+    refMinComposite: item.ref_min_composite,
+    scoreDiff: item.score_diff
   }));
 }
 
@@ -79,6 +81,12 @@ const PLAN_STYLE_OPTIONS = [
   { value: 'conservative', label: '保守稳上岸', desc: '冲1 稳5 保3' }
 ];
 
+const ART_SPORTS_PLAN_STYLE_OPTIONS = [
+  { value: 'balanced', label: '均衡方案', desc: '冲16 稳24 保24' },
+  { value: 'aggressive', label: '激进冲刺', desc: '冲24 稳24 保16' },
+  { value: 'conservative', label: '保守稳妥', desc: '冲12 稳20 保32' }
+];
+
 Page({
   data: {
     profile: {},
@@ -93,6 +101,8 @@ Page({
     planStyleOptions: PLAN_STYLE_OPTIONS,
     strategyMeta: null,
     provinceRule: null,
+    artSportsMode: false,
+    compositeScore: '',
     pdfReady: false,
     pdfFileName: ''
   },
@@ -101,11 +111,18 @@ Page({
     this.setData({ planStyle: savedStyle });
     refreshActiveProfile().then((profile) => {
       const resolvedProfile = profile || loadActiveProfileSync();
-      this.setData({ profile: resolvedProfile });
+      const artSportsMode = isArtSportsActive(resolvedProfile);
+      this.setData({
+        profile: resolvedProfile,
+        artSportsMode,
+        planStyleOptions: artSportsMode ? ART_SPORTS_PLAN_STYLE_OPTIONS : PLAN_STYLE_OPTIONS
+      });
       this.loadProvinceRule(resolvedProfile);
       this.consumePendingPlanAppend();
     });
     let personality = wx.getStorageSync('personalityResult') || null;
+    const profile = this.data.profile || loadActiveProfileSync();
+    const artSportsMode = isArtSportsActive(profile);
     if (personality) {
       const { migrateLegacyResult } = require('../../utils/personality');
       personality = migrateLegacyResult(personality);
@@ -113,8 +130,7 @@ Page({
       const aiCareerReport = studentAiReport || wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
       if (aiCareerReport) personality = { ...personality, aiCareerReport };
     }
-    if (!personality) {
-      const profile = this.data.profile || loadActiveProfileSync();
+    if (!personality && !artSportsMode) {
       const flow = getFlowStatus(profile);
       wx.showModal({
         title: '请先完成前置流程',
@@ -127,7 +143,7 @@ Page({
       });
       return;
     }
-    this.setData({ personality });
+    this.setData({ personality: personality || {} });
     const currentPlan = wx.getStorageSync('currentPlan') || [];
     if (currentPlan.length) {
       const plan = currentPlan.map((item) => ({
@@ -187,11 +203,41 @@ Page({
       });
   },
   ensureProfile() {
-    const { profile } = this.data;
-    if (!profile.province || !profile.subjectCombination || !profile.score || !profile.rank || !profile.targetBatch) {
+    const { profile, artSportsMode } = this.data;
+    if (!profile.province || !profile.subjectCombination || !profile.score || !profile.targetBatch) {
       wx.showModal({
         title: '请先完善信息',
-        content: '智能生成志愿需要高考省份、选科组合、分数、位次和目标批次。',
+        content: artSportsMode
+          ? '智能生成志愿需要省份、选科、文化课分数、专业统考分和目标批次。'
+          : '智能生成志愿需要高考省份、选科组合、分数、位次和目标批次。',
+        confirmText: '去完善',
+        success: (res) => {
+          if (res.confirm) {
+            const track = profile.examType === '体育类' ? 'sports' : (profile.examType === '艺术类' ? 'art' : '');
+            wx.navigateTo({ url: track ? `/pages/profile/profile?track=${track}` : '/pages/profile/profile' });
+          }
+        }
+      });
+      return false;
+    }
+    if (artSportsMode && !(profile.professionalScore || profile.professional_score)) {
+      wx.showModal({
+        title: '请填写专业统考分',
+        content: '河南艺体考生须填写专业统考分，才能计算综合分并生成志愿方案。',
+        confirmText: '去完善',
+        success: (res) => {
+          if (res.confirm) {
+            const track = profile.examType === '体育类' ? 'sports' : 'art';
+            wx.navigateTo({ url: `/pages/profile/profile?track=${track}` });
+          }
+        }
+      });
+      return false;
+    }
+    if (!artSportsMode && !profile.rank) {
+      wx.showModal({
+        title: '请先完善信息',
+        content: '智能生成志愿需要全省位次。',
         confirmText: '去完善',
         success: (res) => {
           if (res.confirm) wx.navigateTo({ url: '/pages/profile/profile' });
@@ -246,12 +292,13 @@ Page({
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
         const strategyMeta = res.strategy || null;
         const provinceRule = (strategyMeta && strategyMeta.volunteer_rule) || this.data.provinceRule;
+        const compositeScore = (strategyMeta && strategyMeta.composite_score) || res.composite_score || '';
         const targetCount = (res.generation && res.generation.target_slots)
           || (provinceRule && (provinceRule.total_slots || provinceRule.school_count));
         const toastTitle = targetCount
           ? `已生成 ${plan.length}/${targetCount} 个志愿`
           : `已生成 ${plan.length} 个志愿`;
-        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule });
+        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule, compositeScore });
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
