@@ -65,6 +65,46 @@ def get_wechat_session(code: str) -> dict[str, Any] | None:
     return data
 
 
+def resolve_payment_openid(user_id: int, session: dict[str, Any]) -> str:
+    """支付前将临时 openid 升级为微信真实 openid。"""
+    session_openid = (session.get('openid') or '').strip()
+    if not session_openid or is_temp_openid(session_openid):
+        raise ValueError('请先使用微信登录后再支付')
+
+    unionid = session.get('unionid')
+    with get_connection() as connection:
+        user = row_to_dict(connection.execute(
+            'SELECT user_id, openid FROM users WHERE user_id = ?',
+            [user_id],
+        ).fetchone())
+        if not user:
+            raise ValueError('用户不存在')
+
+        db_openid = (user.get('openid') or '').strip()
+        if not is_temp_openid(db_openid):
+            if db_openid == session_openid:
+                return db_openid
+            raise ValueError('当前微信与账号绑定不一致，请重新登录后再支付')
+
+        conflict = row_to_dict(connection.execute(
+            'SELECT user_id FROM users WHERE openid = ? AND user_id != ?',
+            [session_openid, user_id],
+        ).fetchone())
+        if conflict:
+            raise ValueError('该微信已绑定其他账号，请使用原账号登录')
+
+        connection.execute(
+            '''
+            UPDATE users SET openid = ?, unionid = COALESCE(?, unionid),
+              updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+            ''',
+            [session_openid, unionid, user_id],
+        )
+        connection.commit()
+    return session_openid
+
+
 def login_or_create_user(
     code: str | None,
     openid: str | None,

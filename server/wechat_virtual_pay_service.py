@@ -8,7 +8,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from auth_service import get_wechat_session
+from auth_service import get_wechat_session, resolve_payment_openid
 from db import get_connection, row_to_dict
 from membership_service import list_plans
 from payment_service import create_pending_order, fulfill_wechat_order, get_order_by_order_no
@@ -305,9 +305,10 @@ def create_virtual_payment(user_id: int, plan_code: str, order_type: str = 'open
     if not session or not session.get('session_key'):
         raise ValueError('微信登录态失效，请重新进入小程序后再支付')
 
+    resolve_payment_openid(user_id, session)
+
     product = _get_plan_product(plan_code)
     plan = product['plan']
-    openid = _get_user_openid(user_id)
     config = get_virtual_pay_config()
 
     order_no, order_id = create_pending_order(

@@ -1,6 +1,7 @@
 const { request, formatRequestError, BASE_URL } = require('../../utils/request');
 const { getCurrentUserId, syncUserIdentity, fetchEntitlements } = require('../../utils/membership');
 const { requestVirtualPayment, getLoginCode } = require('../../utils/virtualPayment');
+const { ensureWechatLogin } = require('../../utils/auth');
 
 const { enrichPlan, getPlanDisplayName, SEASON_EXPIRE_LABEL } = require('../../utils/planCatalog');
 
@@ -213,7 +214,18 @@ Page({
       confirmText: '立即支付',
       success: (res) => {
         if (!res.confirm) return;
-        this.createAndPay(userId, plan, isRenewal);
+        ensureWechatLogin()
+          .then((loginRes) => {
+            const resolvedUserId = loginRes.user_id || userId;
+            this.createAndPay(resolvedUserId, plan, isRenewal);
+          })
+          .catch((error) => {
+            wx.showModal({
+              title: '请先微信登录',
+              content: (error && error.message) || '支付前需要完成微信登录，请关闭小程序后重试。',
+              showCancel: false
+            });
+          });
       }
     });
   },
