@@ -13,6 +13,17 @@ const GRADIENT_TABS = [
   { value: '垫', label: '垫' }
 ];
 
+function normalizeSummary(summary) {
+  const raw = summary || {};
+  return {
+    total: raw.total || 0,
+    rush: raw['冲'] || raw.rush || 0,
+    steady: raw['稳'] || raw.steady || 0,
+    safe: raw['保'] || raw.safe || 0,
+    cushion: raw['垫'] || raw.cushion || 0
+  };
+}
+
 const ART_SPORTS_GRADIENT_TABS = [
   { value: '', label: '全部' },
   { value: '冲', label: '冲' },
@@ -24,7 +35,7 @@ Page({
   data: {
     profile: {},
     items: [],
-    summary: { total: 0, 冲: 0, 稳: 0, 保: 0, 垫: 0 },
+    summary: { total: 0, rush: 0, steady: 0, safe: 0, cushion: 0 },
     strategy: null,
     gradientTabs: GRADIENT_TABS,
     activeGradient: '',
@@ -130,7 +141,7 @@ Page({
         wx.setStorageSync('eligiblePoolSummary', res.summary || {});
         this.setData({
           items,
-          summary: res.summary || {},
+          summary: normalizeSummary(res.summary),
           strategy: res.strategy || null,
           total: res.total || 0,
           userRank: res.user_rank || profile.rank,

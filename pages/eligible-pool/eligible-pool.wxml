@@ -16,10 +16,10 @@
     </view>
     <view class="summary-row">
       <text>共 {{summary.total || 0}} 条</text>
-      <text>冲 {{summary.冲 || 0}}</text>
-      <text>稳 {{summary.稳 || 0}}</text>
-      <text>保 {{summary.保 || 0}}</text>
-      <text>垫 {{summary.垫 || 0}}</text>
+      <text>冲 {{summary.rush || 0}}</text>
+      <text>稳 {{summary.steady || 0}}</text>
+      <text>保 {{summary.safe || 0}}</text>
+      <text>垫 {{summary.cushion || 0}}</text>
     </view>
   </view>
 
