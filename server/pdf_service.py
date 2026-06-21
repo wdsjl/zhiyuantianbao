@@ -232,7 +232,64 @@ def build_pdf(lines: list[str]) -> bytes:
     return bytes(output)
 
 
+def is_art_sports_student(student: dict, draft: dict) -> bool:
+    if student.get('waive_art_sports_batch'):
+        return False
+    exam_type = str(student.get('exam_type') or '')
+    if exam_type in ('艺术类', '体育类'):
+        return True
+    batch = str(draft.get('batch') or student.get('target_batch') or '')
+    return ('艺术' in batch) or ('体育' in batch)
+
+
+def format_draft_item_lines(item: dict, *, art_sports: bool) -> list[str]:
+    """每条志愿独立成块，避免长专业名挤乱单行表格。"""
+    lines: list[str] = []
+    order = pdf_text(item.get('sort_order'))
+    gradient = pdf_text(item.get('gradient_type'))
+    lines.append(f'【志愿 {order}】梯度：{gradient}')
+
+    school_code = pdf_text(item.get('school_code'))
+    school_name = pdf_text(item.get('school_name'))
+    if school_code:
+        lines.extend(wrap_text(f'院校：{school_code} / {school_name}', 52))
+    else:
+        lines.extend(wrap_text(f'院校：{school_name}', 52))
+
+    major_code = pdf_text(item.get('major_code'))
+    major_name = pdf_text(item.get('major_name'))
+    if major_code:
+        lines.extend(wrap_text(f'专业：{major_code} / {major_name}', 52))
+    else:
+        lines.extend(wrap_text(f'专业：{major_name}', 52))
+
+    detail_parts: list[str] = []
+    city = pdf_text(item.get('city'))
+    if city:
+        detail_parts.append(f'城市：{city}')
+    tuition = item.get('tuition')
+    if tuition not in (None, ''):
+        detail_parts.append(f'学费：{tuition}')
+    duration = pdf_text(item.get('duration'))
+    if duration:
+        detail_parts.append(f'学制：{duration}')
+    detail_parts.append(f'调剂：{"是" if item.get("is_adjustable") else "否"}')
+    risk_level = pdf_text(item.get('risk_level'))
+    if risk_level:
+        detail_parts.append(f'风险：{risk_level}')
+    if detail_parts:
+        lines.extend(wrap_text('    '.join(detail_parts), 52))
+
+    reason = pdf_text(item.get('risk_reason'))
+    if reason:
+        prefix = '对标说明' if art_sports and '综合分' in reason else '风险说明'
+        lines.extend(wrap_text(f'{prefix}：{reason}', 52))
+    lines.append('')
+    return lines
+
+
 def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
+    art_sports = is_art_sports_student(student, draft)
     lines: list[str] = []
     lines.extend([
         '智愿填报志愿方案',
@@ -244,27 +301,31 @@ def build_draft_pdf(draft: dict, student: dict, items: list[dict]) -> bytes:
         '一、学生信息',
         f'姓名：{student.get("name", "")}    省份：{student.get("province", "")}    城市：{student.get("city", "")}',
         f'学校：{student.get("school_name", "")}    年级：{student.get("grade", "")}    班级：{student.get("class_name", "")}',
-        f'年份：{student.get("exam_year", "")}    选科：{student.get("subject_combination", "")}    批次：{student.get("target_batch", "")}',
-        f'分数：{draft.get("score", student.get("score", ""))}    位次：{draft.get("rank", student.get("rank", ""))}',
+        f'年份：{student.get("exam_year", "")}    选科：{student.get("subject_combination", "")}    批次：{draft.get("batch", student.get("target_batch", ""))}',
+    ])
+    if art_sports:
+        lines.append(
+            f'文化分：{draft.get("score", student.get("score", ""))}    '
+            f'专业统考分：{student.get("professional_score", "")}    '
+            f'考试类别：{student.get("exam_type", "")}'
+        )
+        lines.append('说明：艺体批次无官方综合分位次，方案按历年最低综合分对标生成。')
+    else:
+        lines.append(
+            f'分数：{draft.get("score", student.get("score", ""))}    位次：{draft.get("rank", student.get("rank", ""))}'
+        )
+    lines.extend([
         '',
         '二、方案概览',
         f'方案名称：{draft.get("draft_name", "")}    风险等级：{draft.get("risk_level", "未排查")}',
         f'省份：{draft.get("province", "")}    年份：{draft.get("year", "")}    批次：{draft.get("batch", "")}',
         '',
         '三、志愿明细',
-        '序号  梯度  院校代码/院校名称  专业代码/专业名称  城市  学费  学制  调剂  风险',
     ])
+    if not items:
+        lines.append('（暂无志愿）')
     for item in items:
-        main = (
-            f'{item.get("sort_order", "")}  {item.get("gradient_type", "")}  '
-            f'{item.get("school_code", "")}/{item.get("school_name", "")}  '
-            f'{item.get("major_code", "")}/{item.get("major_name", "")}  '
-            f'{item.get("city", "")}  {item.get("tuition", "")}  {item.get("duration", "")}  '
-            f'{"是" if item.get("is_adjustable") else "否"}  {item.get("risk_level", "")}'
-        )
-        lines.extend(wrap_text(main, 48))
-        if item.get('risk_reason'):
-            lines.extend(wrap_text(f'    风险说明：{item.get("risk_reason")}', 52))
+        lines.extend(format_draft_item_lines(item, art_sports=art_sports))
     if draft.get('ai_explain'):
         lines.extend(['', '四、AI 志愿方案解读'])
         for paragraph in append_ai_generated_notice(str(draft.get('ai_explain') or '')).splitlines():

@@ -574,6 +574,20 @@ def _build_match_context(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _art_sports_risk_reason(gradient: str, is_adjustable: bool, ref_composite: Any) -> str:
+    ref_text = f'参考最低综合分 {ref_composite}' if ref_composite not in (None, '') else ''
+    if gradient == '冲' and not is_adjustable:
+        return f'当前志愿为冲刺档，且未选择服从调剂，存在较高退档风险。{ref_text}'.strip()
+    if gradient == '冲':
+        base = '院校参考最低综合分偏高，建议保留稳妥志愿兜底。'
+        return f'{base} {ref_text}'.strip() if ref_text else base
+    if not is_adjustable:
+        return '未选择服从调剂，达到院校投档线后仍可能因专业未录取而退档。'
+    if gradient == '保':
+        return f'当前志愿结构相对稳妥，仍需以考试院和高校官方信息为准。{ref_text}'.strip()
+    return f'当前志愿结构相对稳妥，仍需以考试院和高校官方信息为准。{ref_text}'.strip()
+
+
 def _pool_item_from_ranked(row: dict[str, Any], *, accept_adjustment: bool) -> dict[str, Any]:
     school_name = row.get('school_name') or ''
     major_name = row.get('major_name') or ''
@@ -606,7 +620,11 @@ def _pool_item_from_ranked(row: dict[str, Any], *, accept_adjustment: bool) -> d
         'personality_matched': False,
         'is_adjustable': accept_adjustment,
         'risk_level': '低' if gradient == '保' else ('中' if gradient == '稳' else '高'),
-        'risk_reason': f'{row.get("tier_label")}档：参考最低综合分 {row.get("ref_min_composite")}',
+        'risk_reason': _art_sports_risk_reason(
+            gradient,
+            accept_adjustment,
+            row.get('ref_min_composite'),
+        ),
         'ref_min_composite': row.get('ref_min_composite'),
         'score_diff': row.get('score_diff'),
         'formula_id': row.get('formula_id'),

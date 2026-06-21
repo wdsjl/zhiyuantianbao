@@ -71,15 +71,15 @@
       </view>
       <text class="{{item.riskLevel === '高' ? 'risk-high' : item.riskLevel === '中' ? 'risk-mid' : 'risk-low'}}">{{item.riskLevel}}风险</text>
     </view>
-    <view class="sub-text" wx:if="{{artSportsMode}}">
-      专业：{{item.majorName}}
-      <text wx:if="{{item.ref_min_composite || item.refMinComposite}}"> · 参考最低综合分 {{item.ref_min_composite || item.refMinComposite}}</text>
+    <view class="sub-text">{{item.city || '—'}} · {{item.schoolType || '—'}} · {{item.duration || '—'}} · {{item.tuition || '—'}}元/年</view>
+    <view class="major-line">专业：{{item.majorName}}<text wx:if="{{item.majorCode}}">（{{item.majorCode}}）</text></view>
+    <view wx:if="{{artSportsMode && (item.refMinComposite || item.ref_min_composite)}}" class="sub-text">
+      参考最低综合分：{{item.refMinComposite || item.ref_min_composite}}
+      <text wx:if="{{item.scoreDiff || item.score_diff}}"> · 分差 {{item.scoreDiff || item.score_diff}}</text>
     </view>
-    <view class="sub-text" wx:else>{{item.city}} · {{item.schoolType}} · {{item.duration}} · {{item.tuition}}元/年</view>
-    <view class="major-line" wx:if="{{!artSportsMode}}">专业：{{item.majorName}}（{{item.majorCode}}）</view>
     <view wx:if="{{item.admissionProbability}}" class="sub-text">录取参考：{{item.admissionProbability}}</view>
     <view wx:if="{{item.personalityMatched}}" class="match-badge">与性格测评推荐专业大类匹配：{{item.majorType}}</view>
-    <view class="adjust-row" wx:if="{{!artSportsMode}}">
+    <view class="adjust-row">
       <view>
         <view class="label adjust-label">是否服从专业调剂</view>
         <view class="sub-text">{{item.isAdjustable ? '降低退档风险，但可能录取到非首选专业' : '若专业未录取，可能导致退档'}}</view>
