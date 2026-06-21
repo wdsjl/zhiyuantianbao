@@ -10,7 +10,11 @@
 .inline-fields .input { flex: 1; }
 .btn-row { display: flex; gap: 16rpx; margin-top: 16rpx; }
 .btn-row button { flex: 1; }
-.checkbox-row { display: flex; align-items: center; font-size: 26rpx; margin: 16rpx 0; }
+.checkbox-row { display: flex; align-items: center; font-size: 26rpx; margin: 0; }
+.formula-field { margin-bottom: 8rpx; }
+.picker-short { font-size: 28rpx; line-height: 1.5; }
+.formula-hint { font-size: 24rpx; color: #888; margin-top: 8rpx; line-height: 1.5; word-break: break-all; }
+.checkbox-row-wrap { margin-top: 20rpx; padding-top: 20rpx; border-top: 1rpx solid #f0f0f0; }
 .result-line { font-size: 40rpx; font-weight: 600; color: #6b4ce6; }
 .tier-title { font-weight: 600; margin: 16rpx 0 8rpx; color: #333; }
 .school-row { padding: 12rpx 0; border-bottom: 1px solid #f0f0f0; }

@@ -1,6 +1,18 @@
 const { request } = require('../../utils/request');
 const { isHenanArtSportsProvince } = require('../../utils/henanArtSports');
 
+function buildFormulaPickerData(formulas) {
+  const list = formulas || [];
+  return {
+    formulaOptions: list.map((item) => `公式 ${item.id}`),
+    formulaHints: list.map((item) => {
+      const label = String(item.label || '');
+      const splitAt = label.indexOf('：');
+      return splitAt >= 0 ? label.slice(splitAt + 1) : label;
+    })
+  };
+}
+
 Page({
   data: {
     meta: null,
@@ -15,6 +27,7 @@ Page({
     },
     batchLevels: ['本科', '专科'],
     formulaOptions: [],
+    formulaHints: [],
     result: null,
     matchResult: null,
     loading: false
@@ -41,9 +54,11 @@ Page({
   loadMeta() {
     request({ url: '/api/henan-art-sports/meta' })
       .then((meta) => {
+        const picker = buildFormulaPickerData(meta.art_formulas);
         this.setData({
           meta,
-          formulaOptions: (meta.art_formulas || []).map((item) => `${item.id}. ${item.label}`)
+          formulaOptions: picker.formulaOptions,
+          formulaHints: picker.formulaHints
         });
       })
       .catch(() => {

@@ -36,15 +36,18 @@
         <view class="picker">{{form.batchLevel}}</view>
       </picker>
     </view>
-    <view class="form-item">
+    <view class="form-item formula-field">
       <text class="label">院校公式编号</text>
       <picker mode="selector" range="{{formulaOptions}}" value="{{form.formulaId - 1}}" bindchange="onFormulaChange">
-        <view class="picker">{{formulaOptions[form.formulaId - 1] || '公式5'}}</view>
+        <view class="picker picker-short">{{formulaOptions[form.formulaId - 1] || '公式 5'}}</view>
       </picker>
+      <view class="formula-hint" wx:if="{{formulaHints.length}}">{{formulaHints[form.formulaId - 1]}}</view>
     </view>
-    <label class="checkbox-row">
-      <checkbox value="1" checked="{{form.waive}}" bindchange="onWaiveChange" /> 放弃艺体批次，走普通类志愿
-    </label>
+    <view class="checkbox-row-wrap">
+      <label class="checkbox-row">
+        <checkbox value="1" checked="{{form.waive}}" bindchange="onWaiveChange" /> 放弃艺体批次，走普通类志愿
+      </label>
+    </view>
     <view class="btn-row">
       <button class="primary-btn" loading="{{loading}}" bindtap="calc">计算综合分</button>
       <button class="secondary-btn" loading="{{loading}}" bindtap="match">冲稳保对标</button>

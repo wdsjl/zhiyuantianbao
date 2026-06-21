@@ -1,5 +1,17 @@
 const { request } = require('../../utils/request');
 
+function buildFormulaPickerData(formulas) {
+  const list = formulas || [];
+  return {
+    formulaOptions: list.map((item) => `公式 ${item.id}`),
+    formulaHints: list.map((item) => {
+      const label = String(item.label || '');
+      const splitAt = label.indexOf('：');
+      return splitAt >= 0 ? label.slice(splitAt + 1) : label;
+    })
+  };
+}
+
 Page({
   data: {
     meta: null,
@@ -14,6 +26,7 @@ Page({
     },
     batchLevels: ['本科', '专科'],
     formulaOptions: [],
+    formulaHints: [],
     result: null,
     matchResult: null,
     loading: false
@@ -40,9 +53,11 @@ Page({
   loadMeta() {
     request({ url: '/api/henan-art-sports/meta' })
       .then((meta) => {
+        const picker = buildFormulaPickerData(meta.sports_formulas);
         this.setData({
           meta,
-          formulaOptions: (meta.sports_formulas || []).map((item) => `${item.id}. ${item.label}`)
+          formulaOptions: picker.formulaOptions,
+          formulaHints: picker.formulaHints
         });
       })
       .catch(() => wx.showToast({ title: '规则加载失败', icon: 'none' }));

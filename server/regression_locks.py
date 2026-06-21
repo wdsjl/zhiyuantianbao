@@ -20,6 +20,14 @@ PDF_EXPORT_PERMISSION = 'pdf_export'
 # —— 虚拟支付发货 ——
 VIRTUAL_PAY_WX_ORDER_PREFIX = 'VPO'
 
+# —— 虚拟支付道具（与微信后台现网一致，勿改）——
+VIRTUAL_PAY_TRIAL_PRODUCT_ID = 'xdptk'
+VIRTUAL_PAY_PREMIUM_PRODUCT_ID = 'xdbjk'
+VIRTUAL_PAY_TRIAL_PRICE_FEN = 1990
+VIRTUAL_PAY_PREMIUM_PRICE_FEN = 29800
+VIRTUAL_PAY_OFFER_ID = '1450554502'
+VIRTUAL_PAY_ENV_PRODUCTION = 0
+
 # 源码中必须存在 / 不得出现的片段（防回归）
 LOCKED_SOURCE_SNIPPETS: dict[str, dict[str, list[str]]] = {
     'pages/volunteer/volunteer.js': {
@@ -73,10 +81,34 @@ LOCKED_SOURCE_SNIPPETS: dict[str, dict[str, list[str]]] = {
             "notify_id.startswith('VPO')",
             'assume_paid',
             '_xpay_env_candidates',
+            "'product_id': 'xdptk'",
+            "'product_id': 'xdbjk'",
+            "'goods_price_fen': 1990",
+            "'goods_price_fen': 29800",
+            "_calc_pay_sig('requestVirtualPayment'",
         ],
         'must_not_contain': [
             "remote_order.get('wxpay_order_id') or remote_order.get('wx_order_id')",
         ],
+    },
+    'ecosystem.config.js': {
+        'must_contain': [
+            "WECHAT_VIRTUAL_PAY_ENV: '0'",
+            "WECHAT_VIRTUAL_PAY_OFFER_ID: '1450554502'",
+            "WECHAT_VIRTUAL_PRODUCT_TRIAL: 'xdptk'",
+            "WECHAT_VIRTUAL_PRODUCT_PREMIUM: 'xdbjk'",
+            "WECHAT_VIRTUAL_GOODS_PRICE_PREMIUM: '29800'",
+            "require('./ecosystem.secrets.js')",
+        ],
+        'must_not_contain': [],
+    },
+    'pages/membership/membership.js': {
+        'must_contain': [
+            'requestVirtualPayment',
+            'virtualPay.signData',
+            'virtualPay.paySig',
+        ],
+        'must_not_contain': [],
     },
     'server/province_rules_service.py': {
         'must_contain': [

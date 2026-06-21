@@ -25,5 +25,11 @@ $pdf = curl.exe -s -m 10 "$ApiBase/api/membership/permissions/pdf_export/check?u
 Write-Host "pdf_export/check: $pdf"
 if ($pdf -notmatch '"allowed":true') { Write-Host 'WARN: user 95 pdf_export not allowed (check membership)' }
 
+$pay = curl.exe -s -m 10 "$ApiBase/api/payments/wechat/status"
+Write-Host "payments/wechat/status: $pay"
+if ($pay -notmatch '"enabled":true') { throw 'virtual pay must be enabled' }
+if ($pay -notmatch '"product_id":"xdptk"') { throw 'trial product_id must be xdptk' }
+if ($pay -notmatch '"product_id":"xdbjk"') { throw 'premium product_id must be xdbjk' }
+
 Write-Host ''
 Write-Host 'ALL REGRESSION LOCKS PASSED'

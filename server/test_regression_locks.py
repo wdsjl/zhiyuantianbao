@@ -22,10 +22,14 @@ from regression_locks import (
     LEGACY_DEMO_VOLUNTEER_COUNT,
     PDF_EXPORT_PERMISSION,
     PREMIUM_PLAN_CODE,
+    VIRTUAL_PAY_PREMIUM_PRICE_FEN,
+    VIRTUAL_PAY_PREMIUM_PRODUCT_ID,
+    VIRTUAL_PAY_TRIAL_PRICE_FEN,
+    VIRTUAL_PAY_TRIAL_PRODUCT_ID,
     VIRTUAL_PAY_WX_ORDER_PREFIX,
     check_locked_source_files,
 )
-from wechat_virtual_pay_service import _split_virtual_pay_ids
+from wechat_virtual_pay_service import PLAN_VIRTUAL_PRODUCTS, _split_virtual_pay_ids
 
 
 class RegressionLockTests(unittest.TestCase):
@@ -63,6 +67,14 @@ class RegressionLockTests(unittest.TestCase):
             }
             result = check_permission(95, PDF_EXPORT_PERMISSION)
         self.assertTrue(result['allowed'], result)
+
+    def test_virtual_pay_product_catalog_locked(self) -> None:
+        trial = PLAN_VIRTUAL_PRODUCTS['trial']
+        premium = PLAN_VIRTUAL_PRODUCTS['premium']
+        self.assertEqual(trial['product_id'], VIRTUAL_PAY_TRIAL_PRODUCT_ID)
+        self.assertEqual(premium['product_id'], VIRTUAL_PAY_PREMIUM_PRODUCT_ID)
+        self.assertEqual(trial['goods_price_fen'], VIRTUAL_PAY_TRIAL_PRICE_FEN)
+        self.assertEqual(premium['goods_price_fen'], VIRTUAL_PAY_PREMIUM_PRICE_FEN)
 
     def test_virtual_pay_notify_uses_vpo_not_wxpay_txn(self) -> None:
         virtual_id, txn_id = _split_virtual_pay_ids({
