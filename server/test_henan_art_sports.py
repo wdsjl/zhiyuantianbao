@@ -154,6 +154,15 @@ class HenanArtSportsTests(unittest.TestCase):
         self.assertGreater(chong_end, 0)
         self.assertGreater(wen_end, chong_end)
 
+    def test_is_art_sports_request_by_batch(self) -> None:
+        from henan_art_sports_service import is_art_sports_request
+        self.assertTrue(is_art_sports_request({
+            'province': '河南',
+            'exam_type': '普通类',
+            'batch': '艺术本科批',
+            'waive_art_sports_batch': False,
+        }))
+
     def test_load_from_admission_records(self) -> None:
         school_name = '单元测试艺术大学AS'
         major_name = '单元测试专业AS'

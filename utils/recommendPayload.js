@@ -1,4 +1,4 @@
-const { isArtSportsActive, resolveArtSportsTargetBatch } = require('./henanArtSports');
+const { isArtSportsActive, inferExamTypeFromBatch } = require('./henanArtSports');
 
 function splitText(value) {
   if (!value || !String(value).trim()) return [];
@@ -48,7 +48,8 @@ function buildRecommendPayload(profile, options) {
     volunteer_count: opts.volunteerCount || 0
   };
   if (isArtSportsActive(profile)) {
-    payload.exam_type = profile.examType || profile.exam_type;
+    const resolvedExamType = inferExamTypeFromBatch(profile.targetBatch, profile.examType || profile.exam_type);
+    payload.exam_type = resolvedExamType;
     payload.professional_score = Number(profile.professionalScore || profile.professional_score || 0);
     payload.art_sports_formula_id = Number(profile.formulaId || profile.art_sports_formula_id || 0) || null;
     payload.waive_art_sports_batch = false;

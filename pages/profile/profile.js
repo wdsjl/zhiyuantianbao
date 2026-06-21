@@ -192,7 +192,19 @@ Page({
   onTargetBatchChange(event) {
     const index = Number(event.detail.value);
     const batch = this.data.targetBatchOptions[index];
-    const form = { ...this.data.form, targetBatch: batch };
+    let form = { ...this.data.form, targetBatch: batch };
+    if (batch.includes('艺术') && form.examType !== '艺术类') {
+      this.applyExamType('艺术类', form);
+      this.loadFormulaOptions('艺术类');
+      this.updateBatchWarning({ ...form, examType: '艺术类' }, this.data.availableBatches || []);
+      return;
+    }
+    if (batch.includes('体育') && form.examType !== '体育类') {
+      this.applyExamType('体育类', form);
+      this.loadFormulaOptions('体育类');
+      this.updateBatchWarning({ ...form, examType: '体育类' }, this.data.availableBatches || []);
+      return;
+    }
     this.setData({
       targetBatchIndex: index,
       'form.targetBatch': batch

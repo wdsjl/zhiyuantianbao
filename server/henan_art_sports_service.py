@@ -345,13 +345,25 @@ def _normalize_province(province: str) -> str:
     return str(province or '').replace('省', '').replace(' ', '')
 
 
+def _infer_exam_type(data: dict[str, Any]) -> str:
+    exam_type = str(data.get('exam_type') or '普通类')
+    batch = str(data.get('batch') or '')
+    if exam_type in ('艺术类', '体育类'):
+        return exam_type
+    if '艺术' in batch:
+        return '艺术类'
+    if '体育' in batch:
+        return '体育类'
+    return exam_type
+
+
 def is_art_sports_request(data: dict[str, Any]) -> bool:
-    exam_type = data.get('exam_type') or '普通类'
-    if exam_type not in ('艺术类', '体育类'):
-        return False
     if bool(data.get('waive_art_sports_batch')):
         return False
-    return _normalize_province(data.get('province') or '') == PROVINCE
+    if _normalize_province(data.get('province') or '') != PROVINCE:
+        return False
+    exam_type = _infer_exam_type(data)
+    return exam_type in ('艺术类', '体育类')
 
 
 def batch_level_from_target_batch(batch: str) -> str:
@@ -367,7 +379,7 @@ def category_from_exam_type(exam_type: str) -> str:
 
 
 def request_to_match_payload(data: dict[str, Any]) -> dict[str, Any]:
-    exam_type = data.get('exam_type') or '普通类'
+    exam_type = _infer_exam_type(data)
     batch_level = batch_level_from_target_batch(data.get('batch') or '')
     formula_id = data.get('art_sports_formula_id') or data.get('formula_id')
     if formula_id in (None, ''):

@@ -6,7 +6,7 @@ const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
 const { formatAiContent } = require('../../utils/reportFormat');
 const { buildRecommendPayload } = require('../../utils/recommendPayload');
-const { isArtSportsActive, resolveArtSportsTargetBatch } = require('../../utils/henanArtSports');
+const { isArtSportsActive, getExamType, resolveArtSportsTargetBatch } = require('../../utils/henanArtSports');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -119,6 +119,7 @@ Page({
       });
       this.loadProvinceRule(resolvedProfile);
       this.consumePendingPlanAppend();
+      this.warnArtSportsProfileMismatch(resolvedProfile);
     });
     let personality = wx.getStorageSync('personalityResult') || null;
     const profile = this.data.profile || loadActiveProfileSync();
@@ -153,6 +154,22 @@ Page({
       this.setData({ plan, aiExplain: formatAiContent(wx.getStorageSync('currentAiExplain') || '') });
     }
     fetchEntitlements();
+  },
+  warnArtSportsProfileMismatch(profile) {
+    if (!profile || !profile.province) return;
+    const proScore = profile.professionalScore || profile.professional_score;
+    const examType = getExamType(profile);
+    const batch = profile.targetBatch || '';
+    if (proScore && examType === '普通类' && !profile.waiveArtSports && !batch.match(/艺术|体育/)) {
+      wx.showModal({
+        title: '请切换为艺术类档案',
+        content: '您已填写专业统考分，但考试类别仍是「普通类」，当前只能生成48个普通本科志愿。要生成64个艺术平行志愿，请将考试类别改为「艺术类」，批次选「艺术本科批」。',
+        confirmText: '去修改',
+        success: (res) => {
+          if (res.confirm) wx.navigateTo({ url: '/pages/profile/profile?track=art' });
+        }
+      });
+    }
   },
   consumePendingPlanAppend() {
     const pending = wx.getStorageSync('pendingPlanAppend');

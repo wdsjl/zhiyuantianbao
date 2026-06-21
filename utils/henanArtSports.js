@@ -55,11 +55,23 @@ function isWaivedArtSports(profile) {
   return !!(profile && (profile.waiveArtSports || profile.waive_art_sports_batch));
 }
 
+function inferExamTypeFromBatch(batch, examType) {
+  const type = examType || '普通类';
+  const text = String(batch || '');
+  if (type === '艺术类' || type === '体育类') return type;
+  if (text.includes('艺术')) return '艺术类';
+  if (text.includes('体育')) return '体育类';
+  return type;
+}
+
 function isArtSportsActive(profile) {
-  const examType = getExamType(profile);
-  return (examType === '艺术类' || examType === '体育类')
-    && !isWaivedArtSports(profile)
-    && isHenanArtSportsProvince(profile.province);
+  if (!profile || !isHenanArtSportsProvince(profile.province)) return false;
+  if (isWaivedArtSports(profile)) return false;
+  const examType = inferExamTypeFromBatch(
+    profile.targetBatch || profile.target_batch,
+    getExamType(profile)
+  );
+  return examType === '艺术类' || examType === '体育类';
 }
 
 function batchLevelFromTargetBatch(targetBatch) {
@@ -73,7 +85,10 @@ function categoryFromExamType(examType) {
 }
 
 function resolveArtSportsTargetBatch(profile) {
-  const examType = getExamType(profile);
+  const examType = inferExamTypeFromBatch(
+    profile.targetBatch || profile.target_batch,
+    getExamType(profile)
+  );
   const batch = String(profile.targetBatch || profile.target_batch || '');
   if (examType === '艺术类') {
     if (batch.includes('艺术')) return batch;
@@ -97,7 +112,9 @@ module.exports = {
   getExamType,
   isWaivedArtSports,
   isArtSportsActive,
+  inferExamTypeFromBatch,
   batchLevelFromTargetBatch,
   categoryFromExamType,
+  inferExamTypeFromBatch,
   resolveArtSportsTargetBatch
 };
