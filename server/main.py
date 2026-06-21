@@ -153,6 +153,8 @@ ensure_referral_p1_tables()
 ensure_province_rules_seeded()
 sync_plan_catalog()
 expire_overdue_memberships()
+from henan_art_sports_service import ensure_student_art_sports_columns
+ensure_student_art_sports_columns()
 
 
 @app.get('/health')
@@ -1359,6 +1361,8 @@ def api_referral_trace(keyword: str = Query(...)):
 
 @app.get('/api/profile')
 def get_profile(openid: str = '', phone: str = ''):
+    from henan_art_sports_service import ensure_student_art_sports_columns
+    ensure_student_art_sports_columns()
     if not openid and not phone:
         raise HTTPException(status_code=400, detail='openid 和 phone 至少提供一个')
     sql = '''
@@ -1524,6 +1528,8 @@ def bind_parent_student(request: ParentBindRequest):
 
 @app.get('/api/parent-bind')
 def list_parent_binds(parent_user_id: int):
+    from henan_art_sports_service import ensure_student_art_sports_columns
+    ensure_student_art_sports_columns()
     with get_connection() as connection:
         rows = connection.execute(
             '''

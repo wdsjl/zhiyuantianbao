@@ -107,6 +107,8 @@ def login_or_create_user(
             )
             user_id = cursor.lastrowid
 
+        from henan_art_sports_service import ensure_student_art_sports_columns
+        ensure_student_art_sports_columns()
         profile = row_to_dict(connection.execute(
             '''
             SELECT u.user_id, u.openid, u.phone, u.role, u.name, s.student_id, s.province, s.city,
