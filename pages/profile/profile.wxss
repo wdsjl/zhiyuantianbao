@@ -23,10 +23,20 @@
 
 .checkbox-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12rpx;
   font-size: 26rpx;
   color: #344054;
   margin: 12rpx 0;
+}
+
+.checkbox-label {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.waive-row {
+  margin-top: 8rpx;
 }
 
 .zone-link-row {

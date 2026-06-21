@@ -7,7 +7,7 @@ const {
   findOptionIndex,
   normalizeSubjectCombination
 } = require('../../utils/profileOptions');
-const { getBatchMismatchWarning } = require('../../utils/batchHint');
+const { getBatchMismatchWarning, isArtSportsProfile, isArtSportsBatch } = require('../../utils/batchHint');
 const { buildProfileSnapshot, clearDerivedArtifacts } = require('../../utils/profileSnapshot');
 const { isHenanArtSportsProvince, defaultFormulaId, isArtSportsActive } = require('../../utils/henanArtSports');
 
@@ -53,7 +53,8 @@ Page({
       ...form,
       examType,
       targetBatch: batches.includes(form.targetBatch) ? form.targetBatch : batches[0],
-      formulaId: form.formulaId || formulaId
+      formulaId: form.formulaId || formulaId,
+      waiveArtSports: isArtSports ? false : !!form.waiveArtSports
     };
     const examTypeIndex = Math.max(0, EXAM_TYPES.indexOf(examType));
     const targetBatchIndex = findOptionIndex(batches, nextForm.targetBatch);
@@ -64,7 +65,8 @@ Page({
       targetBatchIndex: targetBatchIndex >= 0 ? targetBatchIndex : 0,
       'form.examType': examType,
       'form.targetBatch': nextForm.targetBatch,
-      'form.formulaId': nextForm.formulaId
+      'form.formulaId': nextForm.formulaId,
+      'form.waiveArtSports': nextForm.waiveArtSports
     });
   },
   syncPickerIndices(form) {
@@ -162,12 +164,15 @@ Page({
     request({ url: '/api/admission-data/batches', data: { province } })
       .then((res) => {
         const batches = res.batches || [];
-        const summary = batches.length
-          ? batches.slice(0, 4).map((item) => `${item.batch}(${item.school_major_count || item.record_count || 0}条)`).join('、')
-          : '暂无录取数据';
+        const artSports = isArtSportsProfile(form) && isArtSportsBatch(form.targetBatch);
+        const summary = artSports
+          ? '艺体志愿按综合分对标生成；可在后台「录取数据导入」上传艺考/体育批次以扩充院校池。'
+          : (batches.length
+            ? batches.slice(0, 4).map((item) => `${item.batch}(${item.school_major_count || item.record_count || 0}条)`).join('、')
+            : '暂无录取数据');
         this.setData({
           availableBatches: batches,
-          batchDataSummary: `库内批次：${summary}`,
+          batchDataSummary: artSports ? summary : `库内批次：${summary}`,
           batchWarning: getBatchMismatchWarning(form, batches)
         });
       })
@@ -220,7 +225,12 @@ Page({
     this.updateBatchWarning(form, this.data.availableBatches || []);
   },
   onWaiveArtSportsChange(event) {
-    this.setData({ 'form.waiveArtSports': event.detail.value.length > 0 });
+    const checked = event.detail.value.length > 0;
+    this.setData({ 'form.waiveArtSports': checked });
+    this.updateBatchWarning(this.data.form, this.data.availableBatches || []);
+    if (checked && (this.data.form.examType === '艺术类' || this.data.form.examType === '体育类')) {
+      wx.showToast({ title: '将按普通类48志愿生成', icon: 'none', duration: 2500 });
+    }
   },
   goArtSportsZone(event) {
     const track = (event && event.currentTarget && event.currentTarget.dataset.track)

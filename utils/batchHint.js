@@ -8,10 +8,28 @@ function isUndergraduateBatch(batch) {
   return /本科|一段|二段|一批|二批/.test(String(batch || '')) && !isJuniorBatch(batch);
 }
 
+function isArtSportsBatch(batch) {
+  return /艺术|体育|艺考|体考/.test(String(batch || ''));
+}
+
+function isArtSportsProfile(form) {
+  const examType = (form && form.examType) || '';
+  const waive = !!(form && form.waiveArtSports);
+  return (examType === '艺术类' || examType === '体育类') && !waive;
+}
+
 function getBatchMismatchWarning(form, availableBatches) {
   const score = Number(form && form.score);
   const batch = (form && form.targetBatch) || '';
   if (!batch) return '';
+
+  if (form && form.waiveArtSports && isArtSportsBatch(batch)) {
+    return '您已勾选「放弃艺体批次」，将按普通类本科生成约48个志愿，而非艺术64个「专业+院校」平行志愿。报艺考请取消该勾选。';
+  }
+
+  if (isArtSportsProfile(form) && isArtSportsBatch(batch)) {
+    return '';
+  }
 
   if (Number.isFinite(score) && score >= UNDERGRADUATE_HINT_SCORE && isJuniorBatch(batch)) {
     return `当前分数 ${score} 分较高，目标批次为「${batch}」可能填错。本科考生通常应选择「本科批」。`;
@@ -40,5 +58,7 @@ module.exports = {
   UNDERGRADUATE_HINT_SCORE,
   getBatchMismatchWarning,
   isJuniorBatch,
-  isUndergraduateBatch
+  isUndergraduateBatch,
+  isArtSportsBatch,
+  isArtSportsProfile
 };

@@ -75,9 +75,13 @@
         </view>
         <view class="sub-text">须同时过文化课控制线与专业统考合格线，才可投档对应本科志愿。</view>
       </view>
-      <label class="checkbox-row">
-        <checkbox value="1" checked="{{form.waiveArtSports}}" bindchange="onWaiveArtSportsChange" /> 放弃艺体批次，仅用高考文化课走普通类批次
+      <label class="checkbox-row waive-row">
+        <checkbox value="1" checked="{{form.waiveArtSports}}" bindchange="onWaiveArtSportsChange" />
+        <text class="checkbox-label">放弃艺体批次，仅用高考文化课走普通类批次</text>
       </label>
+      <view wx:if="{{form.waiveArtSports}}" class="warn-box">
+        已勾选放弃艺体：志愿填报将按普通类本科约48个院校专业组，不是艺术64个「专业+院校」平行志愿。
+      </view>
       <view class="zone-link-row">
         <button class="secondary-btn zone-link-btn" size="mini" data-track="{{form.examType === '艺术类' ? 'art' : 'sports'}}" bindtap="goArtSportsZone">进入{{form.examType === '艺术类' ? '艺术' : '体育'}}报考专区</button>
       </view>
