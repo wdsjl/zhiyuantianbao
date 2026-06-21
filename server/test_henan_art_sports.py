@@ -9,6 +9,7 @@ from henan_art_sports_service import (
     calculate_composite,
     check_dual_line,
     default_formula_id,
+    get_meta,
     load_from_admission_records,
     match_schools,
     resolve_school_major_ids,
@@ -27,6 +28,13 @@ class HenanArtSportsTests(unittest.TestCase):
     def test_default_formula_ids(self) -> None:
         self.assertEqual(default_formula_id('艺术类', '本科'), 5)
         self.assertEqual(default_formula_id('体育类', '专科'), 3)
+
+    def test_meta_volunteer_rule_art_undergrad(self) -> None:
+        meta = get_meta()
+        self.assertEqual(meta['volunteer_slots'], 64)
+        self.assertEqual(meta['volunteer_mode'], '专业+院校')
+        self.assertIn('艺术本科批', meta['volunteer_rule_description'])
+        self.assertIn('专业+院校', meta['volunteer_rule_description'])
 
     def test_dual_line_check(self) -> None:
         ok = check_dual_line(420, 200, 400, 180, '艺术类')

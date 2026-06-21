@@ -9,7 +9,7 @@
     <view class="section-title">核心规则</view>
     <view class="rule-item">① 报考互斥：艺术类 / 体育类二选一</view>
     <view class="rule-item">② 双过线：文化课控制线 + 专业统考合格线</view>
-    <view class="rule-item">③ 平行志愿：分数优先→遵循志愿→一次投档（{{meta.volunteer_slots}}个志愿）</view>
+    <view class="rule-item">③ 艺术本科批（统考专业）：64个「专业+院校」平行志愿，投档规则与往年一致（分数优先→遵循志愿→一次投档）</view>
     <view class="rhyme">{{meta.rhyme}}</view>
   </view>
 

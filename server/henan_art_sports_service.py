@@ -10,6 +10,11 @@ PROVINCE = '河南'
 ART_PRO_MAX = 300
 SPORTS_PRO_MAX = 150
 VOLUNTEER_SLOTS = 64
+VOLUNTEER_MODE = '专业+院校'
+VOLUNTEER_RULE_DESCRIPTION = (
+    '艺术本科批使用统考成绩的专业采用64个「专业+院校」平行志愿填报模式，投档规则与往年一致'
+    '（分数优先、遵循志愿、一次投档，同分先比专业分）。'
+)
 
 ART_FORMULA_LABELS: dict[int, str] = {
     1: '仅文化：综合分=W',
@@ -132,6 +137,8 @@ def get_meta() -> dict[str, Any]:
         'default_formula': {'艺术类本科': 5, '艺术类专科': 5, '体育类本科': 3, '体育类专科': 3},
         'rank_notice': '河南省不发布艺体综合分官方一分一段位次；优先使用已导入录取库（艺考批次最低分）对标冲稳保，勿套用普通类文化课位次。',
         'volunteer_slots': VOLUNTEER_SLOTS,
+        'volunteer_mode': VOLUNTEER_MODE,
+        'volunteer_rule_description': VOLUNTEER_RULE_DESCRIPTION,
         'rhyme': RHYME,
         'art_batches': ART_TARGET_BATCHES,
         'sports_batches': SPORTS_TARGET_BATCHES,
@@ -745,10 +752,10 @@ def build_art_sports_recommendation(data: dict[str, Any]) -> dict[str, Any]:
                 'total_slots': VOLUNTEER_SLOTS,
                 'school_count': VOLUNTEER_SLOTS,
                 'batch': data.get('batch'),
-                'volunteer_mode': '专业平行志愿',
+                'volunteer_mode': VOLUNTEER_MODE,
                 'matched': True,
                 'source': 'henan_art_sports',
-                'rule_description': '河南艺体批次平行志愿，最多64个志愿；按综合分与历年最低分对标生成冲稳保方案。',
+                'rule_description': VOLUNTEER_RULE_DESCRIPTION,
             },
             'quotas': quotas,
         },

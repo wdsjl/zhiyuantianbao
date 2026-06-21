@@ -9,7 +9,7 @@
 
   <view class="card henan-zone-card">
     <view class="section-title">河南艺体报考专区</view>
-    <view class="sub-text">艺术类 / 体育类二选一；双过线投档；综合分五套公式院校自选；历年最低分对标冲稳保</view>
+    <view class="sub-text">艺术类 / 体育类二选一；双过线投档；艺术本科批64个「专业+院校」平行志愿；综合分公式院校自选</view>
     <view class="henan-zone-grid">
       <view class="henan-zone-item art-zone-item" bindtap="goArtZone">
         <view class="henan-zone-title">艺术报考专区</view>

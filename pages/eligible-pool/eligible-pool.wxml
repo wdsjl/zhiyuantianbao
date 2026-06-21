@@ -75,7 +75,7 @@
 
   <view class="card flow-card">
     <view class="section-title">下一步</view>
-    <view class="sub-text" wx:if="{{artSportsMode}}">1. 确认综合分与冲稳保对标结果；2. 可选完成霍兰德测评；3. 智能生成64个平行志愿方案。</view>
+    <view class="sub-text" wx:if="{{artSportsMode}}">1. 确认综合分与冲稳保对标结果；2. 可选完成霍兰德测评；3. 智能生成64个「专业+院校」平行志愿方案。</view>
     <view class="sub-text" wx:else>1. 完成霍兰德测评，明确专业方向；2. 填写个性化需求；3. 智能生成最终志愿方案。</view>
     <view class="button-row">
       <button wx:if="{{!artSportsMode}}" class="secondary-btn" bindtap="goPersonality">去做测评</button>

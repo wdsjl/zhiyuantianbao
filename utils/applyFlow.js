@@ -13,7 +13,7 @@ const ART_SPORTS_STEPS = [
   { key: 'profile', title: '完善艺体档案', desc: '填写文化课、专业统考分与双过线信息' },
   { key: 'artSportsPool', title: '综合分对标', desc: '按历年最低综合分检索冲稳保院校' },
   { key: 'personality', title: '霍兰德测评', desc: '完成 30 题职业兴趣测评（可选）' },
-  { key: 'volunteer', title: '填报志愿', desc: '按综合分生成64个平行志愿方案' }
+  { key: 'volunteer', title: '填报志愿', desc: '按综合分生成64个「专业+院校」平行志愿方案' }
 ];
 
 const ROUTES = {
