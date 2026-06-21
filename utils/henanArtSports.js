@@ -101,6 +101,18 @@ function resolveArtSportsTargetBatch(profile) {
   return batch;
 }
 
+function buildFormulaPickerData(formulas) {
+  const list = formulas || [];
+  return {
+    formulaOptions: list.map((item) => `公式 ${item.id}`),
+    formulaHints: list.map((item) => {
+      const label = String(item.label || '');
+      const splitAt = label.indexOf('：');
+      return splitAt >= 0 ? label.slice(splitAt + 1) : label;
+    })
+  };
+}
+
 module.exports = {
   ART_FORMULAS,
   SPORTS_FORMULAS,
@@ -116,5 +128,6 @@ module.exports = {
   batchLevelFromTargetBatch,
   categoryFromExamType,
   inferExamTypeFromBatch,
-  resolveArtSportsTargetBatch
+  resolveArtSportsTargetBatch,
+  buildFormulaPickerData
 };

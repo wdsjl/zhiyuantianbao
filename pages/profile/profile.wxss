@@ -70,3 +70,28 @@
 .picker-placeholder {
   color: #98a2b3;
 }
+
+.formula-field {
+  margin-bottom: 8rpx;
+}
+
+.picker-formula {
+  height: auto;
+  min-height: 72rpx;
+  line-height: 1.5;
+  padding: 20rpx 24rpx;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.formula-hint {
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: #475467;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.formula-desc {
+  margin-top: 12rpx;
+}

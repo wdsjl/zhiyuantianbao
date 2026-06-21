@@ -56,12 +56,13 @@
 
     <view wx:if="{{showArtSportsFields}}" class="card art-sports-card">
       <view class="section-title">{{form.examType === '艺术类' ? '艺术类' : '体育类'}}报考信息</view>
-      <view class="form-item">
+      <view class="form-item formula-field">
         <text class="label">院校综合分公式编号</text>
         <picker mode="selector" range="{{formulaOptions}}" value="{{form.formulaId - 1}}" bindchange="onFormulaChange">
-          <view class="picker">{{formulaOptions[form.formulaId - 1] || ('公式' + form.formulaId)}}</view>
+          <view class="picker picker-formula">{{formulaOptions[form.formulaId - 1] || ('公式' + form.formulaId)}}</view>
         </picker>
-        <view class="sub-text">不同院校使用不同公式编号，此处为默认对标公式，可在专区按院校调整。</view>
+        <view class="formula-hint" wx:if="{{formulaHints.length}}">{{formulaHints[form.formulaId - 1]}}</view>
+        <view class="sub-text formula-desc">不同院校使用不同公式编号，此处为默认对标公式，可在专区按院校调整。</view>
       </view>
       <view class="form-item">
         <text class="label">专业统考分 {{form.examType === '艺术类' ? 'Z（满分300）' : 'T（满分150）'}}</text>

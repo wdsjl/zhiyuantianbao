@@ -9,7 +9,7 @@ const {
 } = require('../../utils/profileOptions');
 const { getBatchMismatchWarning, isArtSportsProfile, isArtSportsBatch } = require('../../utils/batchHint');
 const { buildProfileSnapshot, clearDerivedArtifacts } = require('../../utils/profileSnapshot');
-const { isHenanArtSportsProvince, defaultFormulaId, isArtSportsActive } = require('../../utils/henanArtSports');
+const { isHenanArtSportsProvince, defaultFormulaId, isArtSportsActive, buildFormulaPickerData } = require('../../utils/henanArtSports');
 
 Page({
   data: {
@@ -39,6 +39,7 @@ Page({
     formulaId: 5,
     waiveArtSports: false,
     formulaOptions: [],
+    formulaHints: [],
       bindCode: '',
       studentId: '',
       userId: '',
@@ -126,13 +127,17 @@ Page({
   },
   loadFormulaOptions(examType) {
     if (examType !== '艺术类' && examType !== '体育类') {
-      this.setData({ formulaOptions: [] });
+      this.setData({ formulaOptions: [], formulaHints: [] });
       return;
     }
     request({ url: '/api/henan-art-sports/meta' })
       .then((meta) => {
         const list = examType === '体育类' ? (meta.sports_formulas || []) : (meta.art_formulas || []);
-        this.setData({ formulaOptions: list.map((item) => `${item.id}. ${item.label}`) });
+        const picker = buildFormulaPickerData(list);
+        this.setData({
+          formulaOptions: picker.formulaOptions,
+          formulaHints: picker.formulaHints
+        });
       })
       .catch(() => {});
   },
