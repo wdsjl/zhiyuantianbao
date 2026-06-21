@@ -16,6 +16,7 @@ from province_rules_service import (
     ensure_province_rules_seeded,
     normalize_volunteer_override,
     resolve_volunteer_slots,
+    _score_rule_match,
 )
 from regression_locks import (
     HENAN_BENKE_VOLUNTEER_SLOTS,
@@ -46,6 +47,14 @@ class RegressionLockTests(unittest.TestCase):
         resolved = resolve_volunteer_slots('河南', '本科批')
         self.assertEqual(resolved['total_slots'], HENAN_BENKE_VOLUNTEER_SLOTS)
         self.assertTrue((resolved.get('rule') or {}).get('matched'))
+
+    def test_henan_art_undergrad_volunteer_slots_is_64(self) -> None:
+        resolved = resolve_volunteer_slots('河南', '艺术本科批')
+        self.assertEqual(resolved['total_slots'], 64)
+
+    def test_art_batch_does_not_match_generic_benke_rule(self) -> None:
+        self.assertEqual(_score_rule_match('艺术本科批', '本科批'), 0)
+        self.assertEqual(_score_rule_match('艺术本科批', '艺术本科批'), 100)
 
     def test_legacy_volunteer_count_9_means_use_province_rules(self) -> None:
         self.assertIsNone(normalize_volunteer_override(0))

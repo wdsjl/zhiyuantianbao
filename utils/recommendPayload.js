@@ -1,4 +1,4 @@
-const { isArtSportsActive } = require('./henanArtSports');
+const { isArtSportsActive, resolveArtSportsTargetBatch } = require('./henanArtSports');
 
 function splitText(value) {
   if (!value || !String(value).trim()) return [];
@@ -35,7 +35,7 @@ function buildRecommendPayload(profile, options) {
   const majorTypes = (personality.majorTypes || []);
   const payload = {
     province: profile.province,
-    batch: profile.targetBatch,
+    batch: isArtSportsActive(profile) ? resolveArtSportsTargetBatch(profile) : profile.targetBatch,
     score: Number(profile.score),
     rank: Number(profile.rank),
     subject_combination: profile.subjectCombination,

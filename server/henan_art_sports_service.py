@@ -695,6 +695,66 @@ def query_art_sports_eligible_pool(
     }
 
 
+PARALLEL_LAYOUT_NOTE = '平行志愿按志愿序号有序排布：前段冲、中段稳、后段保（分数优先、遵循志愿）。'
+
+
+def get_art_sports_quotas(plan_style: str) -> dict[str, int]:
+    quotas = {'冲': 16, '稳': 24, '保': 24}
+    if plan_style == 'aggressive':
+        quotas = {'冲': 24, '稳': 24, '保': 16}
+    elif plan_style == 'conservative':
+        quotas = {'冲': 12, '稳': 20, '保': 32}
+    return quotas
+
+
+def assemble_art_sports_parallel_plan(
+    all_items: list[dict[str, Any]],
+    plan_style: str,
+    *,
+    total_slots: int = VOLUNTEER_SLOTS,
+) -> list[dict[str, Any]]:
+    """64个「专业+院校」平行志愿：高位冲、中位稳、低位保，同档按参考综合分从高到低。"""
+    order = {'冲': 0, '稳': 1, '保': 2}
+    ranked = sorted(
+        all_items,
+        key=lambda row: (
+            order.get(row.get('gradient_type') or '稳', 9),
+            -(row.get('ref_min_composite') or 0),
+            row.get('school_name') or '',
+            row.get('major_name') or '',
+        ),
+    )
+    quotas = get_art_sports_quotas(plan_style)
+    buckets: dict[str, list[dict[str, Any]]] = {'冲': [], '稳': [], '保': []}
+    for item in ranked:
+        gradient = item.get('gradient_type') or '稳'
+        if gradient not in buckets:
+            continue
+        if len(buckets[gradient]) >= quotas.get(gradient, 0):
+            continue
+        buckets[gradient].append(item)
+
+    selected: list[dict[str, Any]] = []
+    for gradient in ('冲', '稳', '保'):
+        selected.extend(buckets[gradient])
+
+    if len(selected) < total_slots:
+        used = {(item['school_name'], item['major_name']) for item in selected}
+        for item in ranked:
+            key = (item['school_name'], item['major_name'])
+            if key in used:
+                continue
+            selected.append(item)
+            used.add(key)
+            if len(selected) >= total_slots:
+                break
+
+    selected = selected[:total_slots]
+    for index, item in enumerate(selected, start=1):
+        item['sort_order'] = index
+    return selected
+
+
 def build_art_sports_recommendation(data: dict[str, Any]) -> dict[str, Any]:
     pool_result = query_art_sports_eligible_pool(data, page=1, page_size=500)
     if not pool_result.get('strategy', {}).get('eligible'):
@@ -705,35 +765,9 @@ def build_art_sports_recommendation(data: dict[str, Any]) -> dict[str, Any]:
             'generation': {'target_slots': VOLUNTEER_SLOTS, 'generated_count': 0, 'candidate_pool': 0},
             'art_sports_mode': True,
         }
-    order = {'冲': 0, '稳': 1, '保': 2, '垫': 3}
     all_items = query_art_sports_eligible_pool(data, page=1, page_size=500)['items']
-    all_items.sort(key=lambda row: (order.get(row.get('gradient_type') or '稳', 9), -(row.get('ref_min_composite') or 0)))
-    quotas = {'冲': 16, '稳': 24, '保': 24}
-    if data.get('plan_style') == 'aggressive':
-        quotas = {'冲': 24, '稳': 24, '保': 16}
-    elif data.get('plan_style') == 'conservative':
-        quotas = {'冲': 12, '稳': 20, '保': 32}
-    selected: list[dict[str, Any]] = []
-    buckets: dict[str, list[dict[str, Any]]] = {'冲': [], '稳': [], '保': []}
-    for item in all_items:
-        gradient = item.get('gradient_type') or '稳'
-        if gradient in buckets:
-            buckets[gradient].append(item)
-    for gradient in ('冲', '稳', '保'):
-        selected.extend(buckets[gradient][:quotas.get(gradient, 0)])
-    if len(selected) < VOLUNTEER_SLOTS:
-        used = {(item['school_name'], item['major_name']) for item in selected}
-        for item in all_items:
-            key = (item['school_name'], item['major_name'])
-            if key in used:
-                continue
-            selected.append(item)
-            used.add(key)
-            if len(selected) >= VOLUNTEER_SLOTS:
-                break
-    selected = selected[:VOLUNTEER_SLOTS]
-    for index, item in enumerate(selected, start=1):
-        item['sort_order'] = index
+    quotas = get_art_sports_quotas(data.get('plan_style') or 'balanced')
+    selected = assemble_art_sports_parallel_plan(all_items, data.get('plan_style') or 'balanced')
     warnings = []
     if len(selected) < VOLUNTEER_SLOTS and pool_result.get('strategy', {}).get('data_source') == 'admission_records':
         warnings.append(f'已使用导入录取库 {pool_result.get("strategy", {}).get("candidate_count", 0)} 条候选，当前生成 {len(selected)}/{VOLUNTEER_SLOTS} 个志愿。')
@@ -758,6 +792,7 @@ def build_art_sports_recommendation(data: dict[str, Any]) -> dict[str, Any]:
                 'rule_description': VOLUNTEER_RULE_DESCRIPTION,
             },
             'quotas': quotas,
+            'parallel_layout': PARALLEL_LAYOUT_NOTE,
         },
         'generation': {
             'target_slots': VOLUNTEER_SLOTS,

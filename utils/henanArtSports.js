@@ -72,6 +72,20 @@ function categoryFromExamType(examType) {
   return '';
 }
 
+function resolveArtSportsTargetBatch(profile) {
+  const examType = getExamType(profile);
+  const batch = String(profile.targetBatch || profile.target_batch || '');
+  if (examType === '艺术类') {
+    if (batch.includes('艺术')) return batch;
+    return batch.includes('专科') ? '艺术专科批' : '艺术本科批';
+  }
+  if (examType === '体育类') {
+    if (batch.includes('体育')) return batch;
+    return batch.includes('专科') ? '体育专科批' : '体育本科批';
+  }
+  return batch;
+}
+
 module.exports = {
   ART_FORMULAS,
   SPORTS_FORMULAS,
@@ -84,5 +98,6 @@ module.exports = {
   isWaivedArtSports,
   isArtSportsActive,
   batchLevelFromTargetBatch,
-  categoryFromExamType
+  categoryFromExamType,
+  resolveArtSportsTargetBatch
 };

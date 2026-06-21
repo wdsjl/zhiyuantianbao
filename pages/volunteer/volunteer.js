@@ -6,7 +6,7 @@ const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
 const { formatAiContent } = require('../../utils/reportFormat');
 const { buildRecommendPayload } = require('../../utils/recommendPayload');
-const { isArtSportsActive } = require('../../utils/henanArtSports');
+const { isArtSportsActive, resolveArtSportsTargetBatch } = require('../../utils/henanArtSports');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -188,11 +188,13 @@ Page({
       this.setData({ provinceRule: null });
       return;
     }
+    const artSportsMode = isArtSportsActive(current);
+    const batch = artSportsMode ? resolveArtSportsTargetBatch(current) : (current.targetBatch || '');
     request({
       url: '/api/province-rules/resolve',
       data: {
         province: current.province,
-        batch: current.targetBatch || ''
+        batch
       }
     })
       .then((res) => {

@@ -88,7 +88,9 @@ except ImportError:
             return {'total_slots': int(override_count), 'rule': {}, 'source': 'override'}
         province_text = (province or '').replace('省', '').replace('市', '')
         batch_text = batch or ''
-        if province_text == '河南' and ('本科' in batch_text or not batch_text):
+        if province_text == '河南' and ('艺术' in batch_text or '体育' in batch_text):
+            total = 64
+        elif province_text == '河南' and ('本科' in batch_text or not batch_text):
             total = 48
         elif province_text in ('山东', '河北', '重庆', '贵州', '青海') and '本科' in batch_text:
             total = 96

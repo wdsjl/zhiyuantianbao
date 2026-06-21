@@ -120,7 +120,39 @@ class HenanArtSportsTests(unittest.TestCase):
             'subject_combination': '物理+化学+生物',
         })
         self.assertTrue(plan['art_sports_mode'])
+        self.assertEqual(plan['generation']['target_slots'], 64)
         self.assertGreater(len(plan['items']), 0)
+        order_map = {'冲': 0, '稳': 1, '保': 2}
+        prev = -1
+        for item in plan['items']:
+            rank = order_map.get(item.get('gradient_type'), 9)
+            self.assertGreaterEqual(rank, prev)
+            prev = rank
+
+    def test_assemble_art_sports_parallel_plan_order(self) -> None:
+        from henan_art_sports_service import assemble_art_sports_parallel_plan
+        items = []
+        for index in range(80):
+            if index < 25:
+                gradient = '冲'
+            elif index < 50:
+                gradient = '稳'
+            else:
+                gradient = '保'
+            items.append({
+                'school_name': f'学校{index}',
+                'major_name': f'专业{index}',
+                'gradient_type': gradient,
+                'ref_min_composite': 600 - index,
+            })
+        selected = assemble_art_sports_parallel_plan(items, 'balanced')
+        self.assertEqual(len(selected), 64)
+        self.assertEqual(selected[0]['gradient_type'], '冲')
+        self.assertEqual(selected[-1]['gradient_type'], '保')
+        chong_end = next((i for i, item in enumerate(selected) if item['gradient_type'] != '冲'), 0)
+        wen_end = next((i for i, item in enumerate(selected) if item['gradient_type'] == '保'), len(selected))
+        self.assertGreater(chong_end, 0)
+        self.assertGreater(wen_end, chong_end)
 
     def test_load_from_admission_records(self) -> None:
         school_name = '单元测试艺术大学AS'

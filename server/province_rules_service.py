@@ -155,9 +155,15 @@ def _score_rule_match(user_batch: str, rule_batch: str) -> int:
     rule_batch = (rule_batch or '').strip()
     if user_batch == rule_batch:
         return 100
+    # 艺体批次不得误匹配普通本科/专科批（否则艺术本科批会落到河南48个院校专业组）
+    if ('艺术' in user_batch or '体育' in user_batch) and '艺术' not in rule_batch and '体育' not in rule_batch:
+        if rule_batch in ('本科批', '专科批'):
+            return 0
     if user_batch and user_batch in rule_batch:
         return 80
     if rule_batch and rule_batch in user_batch:
+        if ('艺术' in user_batch or '体育' in user_batch) and '艺术' not in rule_batch and '体育' not in rule_batch:
+            return 0
         return 75
     user_cat = _batch_category(user_batch)
     rule_cat = _rule_category(rule_batch)
