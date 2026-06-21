@@ -87,6 +87,17 @@
   margin-bottom: 12rpx;
 }
 
+.sort-badge {
+  display: inline-block;
+  margin-right: 10rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 12rpx;
+  background: #f0f5ff;
+  color: #1677ff;
+  font-size: 22rpx;
+  font-weight: 600;
+}
+
 .gradient {
   display: inline-flex;
   align-items: center;

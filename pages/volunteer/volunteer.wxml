@@ -67,6 +67,7 @@
   <view wx:for="{{plan}}" wx:key="id" class="card volunteer-card">
     <view class="volunteer-head">
       <view>
+        <text wx:if="{{artSportsMode}}" class="sort-badge">志愿{{item.sortOrder || index + 1}}</text>
         <text class="gradient gradient-{{item.gradientClass}}">{{item.gradientType}}</text>
         <text class="school-name">{{item.schoolName}}</text>
       </view>
