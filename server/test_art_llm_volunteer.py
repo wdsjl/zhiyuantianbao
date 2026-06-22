@@ -12,6 +12,7 @@ from art_llm_volunteer_service import (
     extract_json_payload,
     generate_art_volunteer_plan_via_llm,
     try_build_art_llm_recommendation,
+    try_build_art_sports_llm_recommendation,
 )
 from db import get_connection
 
@@ -115,13 +116,14 @@ class ArtLlmVolunteerTests(unittest.TestCase):
         self.assertEqual(result['strategy']['data_source'], 'llm_art_2025')
 
     @patch('art_llm_volunteer_service.is_llm_available', return_value=False)
-    def test_try_build_returns_none_when_llm_disabled(self, _mock_available) -> None:
-        result = try_build_art_llm_recommendation({
+    def test_try_build_returns_error_when_llm_disabled(self, _mock_available) -> None:
+        plan, error = try_build_art_sports_llm_recommendation({
             'province': '河南',
             'exam_type': '艺术类',
             'batch': '艺术本科批',
         })
-        self.assertIsNone(result)
+        self.assertIsNone(plan)
+        self.assertIn('大模型未启用', error or '')
 
 
 if __name__ == '__main__':

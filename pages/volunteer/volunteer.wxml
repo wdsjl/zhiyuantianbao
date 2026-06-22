@@ -2,7 +2,7 @@
   <view class="card">
     <view class="section-title">{{artSportsMode ? '河南艺体「专业+院校」志愿方案' : '智能梯度志愿'}}</view>
     <view class="sub-text" wx:if="{{artSportsMode}}">
-      艺术本科批（统考专业）64个「专业+院校」平行志愿：大模型采集2025年河南艺术录取最低综合分，按考生综合分匹配冲稳保；无官方综合分位次。
+      艺体本科批 64个「专业+院校」平行志愿：大模型采集2025年河南录取最低综合分，按考生综合分匹配冲稳保；无官方综合分位次。
     </view>
     <view class="sub-text" wx:else>仅按全省位次 X 划分冲稳保：冲 0.90X~0.95X、稳 0.95X~1.05X、保 1.15X~1.25X。</view>
     <view wx:if="{{artSportsMode && compositeScore}}" class="sub-text">当前综合分：{{compositeScore}}</view>

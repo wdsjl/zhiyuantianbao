@@ -2254,6 +2254,9 @@ def export_career_report_pdf_post(request: ReportPdfExportRequest):
 
 @app.post('/api/risk-inspect')
 def risk_inspect(request: RiskInspectRequest):
+    if request.art_sports_mode or any(item.get('art_sports_mode') for item in request.items):
+        from services import inspect_art_sports_plan_risk
+        return inspect_art_sports_plan_risk(request.items)
     return inspect_plan_risk(request.items)
 
 

@@ -15,9 +15,13 @@ function getLocalRiskLevel(gradientType, isAdjustable) {
   return '低';
 }
 
-function getLocalRiskReason(gradientType, isAdjustable) {
+function getLocalRiskReason(gradientType, isAdjustable, artSportsMode) {
   if (gradientType === '冲' && !isAdjustable) return '当前志愿为冲刺档，且未选择服从调剂，若专业分数不足，存在较高退档风险。';
-  if (gradientType === '冲') return '院校往年录取位次高于当前位次，建议保留稳妥志愿兜底。';
+  if (gradientType === '冲') {
+    return artSportsMode
+      ? '院校2025年参考最低综合分偏高，建议保留稳妥志愿兜底。'
+      : '院校往年录取位次高于当前位次，建议保留稳妥志愿兜底。';
+  }
   if (!isAdjustable) return '未选择服从调剂，达到院校投档线后仍可能因专业未录取而退档。';
   return '当前志愿结构相对稳妥，仍需以考试院和高校官方信息为准。';
 }
@@ -322,7 +326,15 @@ Page({
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
-        wx.showToast({ title: toastTitle, icon: 'success' });
+        if (!plan.length && riskResult.warnings && riskResult.warnings.length) {
+          wx.showModal({
+            title: '志愿生成提示',
+            content: riskResult.warnings.join('\n'),
+            showCancel: false
+          });
+        } else {
+          wx.showToast({ title: toastTitle, icon: plan.length ? 'success' : 'none' });
+        }
         if (res.generation && res.generation.generated_count < res.generation.target_slots) {
           wx.showModal({
             title: '志愿数量提示',
@@ -346,7 +358,14 @@ Page({
   },
   doInspectRisk() {
     const items = this.data.plan.map(toApiItem);
-    request({ url: '/api/risk-inspect', method: 'POST', data: { items } })
+    request({
+      url: '/api/risk-inspect',
+      method: 'POST',
+      data: {
+        items,
+        art_sports_mode: !!this.data.artSportsMode
+      }
+    })
       .then((res) => {
         const riskResult = normalizeRisk(res);
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
@@ -381,7 +400,7 @@ Page({
     const plan = [...this.data.plan];
     plan[index].isAdjustable = checked;
     plan[index].riskLevel = getLocalRiskLevel(plan[index].gradientType, checked);
-    plan[index].riskReason = getLocalRiskReason(plan[index].gradientType, checked);
+    plan[index].riskReason = getLocalRiskReason(plan[index].gradientType, checked, this.data.artSportsMode);
     this.setData({ plan, riskResult: null, aiExplain: '' });
     wx.setStorageSync('currentPlan', plan);
     wx.removeStorageSync('currentAiExplain');

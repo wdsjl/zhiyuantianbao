@@ -768,17 +768,22 @@ def assemble_art_sports_parallel_plan(
 
 
 def build_art_sports_recommendation(data: dict[str, Any]) -> dict[str, Any]:
-    from art_llm_volunteer_service import try_build_art_llm_recommendation
+    from art_llm_volunteer_service import try_build_art_sports_llm_recommendation
 
-    llm_plan = try_build_art_llm_recommendation(data)
+    llm_plan, llm_error = try_build_art_sports_llm_recommendation(data)
     if llm_plan:
         return llm_plan
 
     pool_result = query_art_sports_eligible_pool(data, page=1, page_size=500)
+    warnings: list[str] = []
+    if llm_error:
+        warnings.append(llm_error)
     if not pool_result.get('strategy', {}).get('eligible'):
+        message = pool_result.get('strategy', {}).get('message') or '暂无推荐'
+        warnings.append(message)
         return {
             'items': [],
-            'risk': {'level': '高', 'count': {}, 'warnings': [pool_result.get('strategy', {}).get('message') or '暂无推荐']},
+            'risk': {'level': '高', 'count': {'冲': 0, '稳': 0, '保': 0}, 'warnings': warnings},
             'strategy': pool_result.get('strategy'),
             'generation': {'target_slots': VOLUNTEER_SLOTS, 'generated_count': 0, 'candidate_pool': 0},
             'art_sports_mode': True,
@@ -786,9 +791,12 @@ def build_art_sports_recommendation(data: dict[str, Any]) -> dict[str, Any]:
     all_items = query_art_sports_eligible_pool(data, page=1, page_size=500)['items']
     quotas = get_art_sports_quotas(data.get('plan_style') or 'balanced')
     selected = assemble_art_sports_parallel_plan(all_items, data.get('plan_style') or 'balanced')
-    warnings = []
-    if _infer_exam_type(data) == '艺术类':
-        warnings.append('大模型未启用或调用失败，已回退为历年最低综合分规则生成；建议在管理后台启用大模型后重新生成。')
+    exam_type = _infer_exam_type(data)
+    if exam_type in ('艺术类', '体育类'):
+        warnings.append(
+            f'大模型未成功生成，已回退为数据库/示例最低综合分规则生成（{exam_type}）。'
+            '请在管理后台启用大模型后重新点击「智能生成」。'
+        )
     if len(selected) < VOLUNTEER_SLOTS and pool_result.get('strategy', {}).get('data_source') == 'admission_records':
         warnings.append(f'已使用导入录取库 {pool_result.get("strategy", {}).get("candidate_count", 0)} 条候选，当前生成 {len(selected)}/{VOLUNTEER_SLOTS} 个志愿。')
     elif len(selected) < VOLUNTEER_SLOTS:

@@ -108,6 +108,7 @@ class EligiblePoolRequest(RecommendRequest):
 
 class RiskInspectRequest(BaseModel):
     items: list[dict]
+    art_sports_mode: bool = False
 
 
 class DraftItem(BaseModel):
