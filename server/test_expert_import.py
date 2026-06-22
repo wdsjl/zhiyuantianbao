@@ -1,9 +1,21 @@
 """河南专家版表格导入映射测试。"""
 from __future__ import annotations
 
+import io
 import unittest
+import zipfile
 
-from import_service import find_header_row_index, normalize_row, resolve_import_header, sync_school_profiles_from_expert_rows
+from openpyxl import Workbook
+
+from import_service import (
+    _extract_hyperlinks_by_row,
+    find_header_row_index,
+    normalize_expert_profile_row,
+    normalize_row,
+    parse_expert_school_profiles_only,
+    resolve_import_header,
+    sync_school_profiles_from_expert_rows,
+)
 
 
 class ExpertImportTests(unittest.TestCase):
@@ -60,6 +72,54 @@ class ExpertImportTests(unittest.TestCase):
         ])
         self.assertEqual(result['total_count'], 1)
         self.assertEqual(result['schools_with_regulation'], 1)
+
+    def test_normalize_expert_profile_row(self) -> None:
+        row = normalize_expert_profile_row({
+            '院校代码': '1115',
+            '院校名称': '清华大学',
+            '保研率': '61.2',
+            '2025招生章程': 'https://gaokao.chsi.com.cn/zsgs/zhangcheng/listZszc--schId-1.dhtml',
+            '专业全称': '应忽略',
+        })
+        self.assertEqual(row['school_code'], '1115')
+        self.assertEqual(row['postgraduate_rate'], '61.2%')
+        self.assertEqual(row['regulation_year'], 2026)
+        self.assertNotIn('major_name', row)
+
+    def test_parse_expert_school_profiles_only_dedup(self) -> None:
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(['标题行'])
+        sheet.append([
+            '年份', '生源地', '批次', '院校代码', '院校名称', '专业代码', '专业全称', '保研率', '2025招生章程',
+        ])
+        sheet.append([
+            2025, '河南', '本科批', '1115', '清华大学', '01', '电子信息类', '61.2',
+            'https://gaokao.chsi.com.cn/zsgs/zhangcheng/listZszc--schId-1.dhtml',
+        ])
+        sheet.append([
+            2025, '河南', '本科批', '1115', '清华大学', '02', '计算机类', '61.2', '',
+        ])
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        rows = parse_expert_school_profiles_only(buffer.getvalue())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['school_name'], '清华大学')
+        self.assertEqual(rows[0]['postgraduate_rate'], '61.2%')
+
+    def test_extract_hyperlinks_by_row(self) -> None:
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(['院校名称', '2025招生章程'])
+        sheet['B2'].hyperlink = 'https://gaokao.chsi.com.cn/demo'
+        sheet['B2'].value = '章程'
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        content = buffer.getvalue()
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            sheet_path = next(name for name in zf.namelist() if name.startswith('xl/worksheets/sheet') and name.endswith('.xml'))
+        links = _extract_hyperlinks_by_row(content, sheet_path)
+        self.assertEqual(links.get(2), 'https://gaokao.chsi.com.cn/demo')
 
 
 if __name__ == '__main__':

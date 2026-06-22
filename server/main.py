@@ -357,21 +357,43 @@ async def admin_import_school_profiles_submit(file: UploadFile = File(...)):
 
 
 @app.post('/admin/import/sync-expert-school-profiles')
-async def admin_sync_expert_school_profiles_submit(file: UploadFile = File(...)):
-    """从河南专家版表格（物理.xlsx/历史.xlsx）仅同步保研率与招生章程，不重复导入录取数据。"""
-    from import_service import parse_import_file, sync_school_profiles_from_expert_rows
+async def admin_sync_expert_school_profiles_submit(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
+    """从河南专家版表格（物理.xlsx/历史.xlsx）仅同步保研率与招生章程，后台执行避免 504。"""
+    from import_service import run_sync_expert_school_profiles
 
     content = await file.read()
-    try:
-        rows = parse_import_file(file.filename or 'upload', content)
-        result = sync_school_profiles_from_expert_rows(file.filename or 'upload', rows)
-        message = (
-            f"专家版院校信息同步完成：院校 {result['total_count']} 所，成功 {result['success_count']} 所；"
-            f"含招生章程 {result.get('schools_with_regulation', 0)} 所，含保研率 {result.get('schools_with_postgraduate_rate', 0)} 所"
-        )
-        return admin_import(message)
-    except ValueError as exc:
-        return admin_import(f'专家版院校信息同步失败：{exc}')
+    filename = file.filename or 'upload.xlsx'
+
+    def job() -> None:
+        try:
+            run_sync_expert_school_profiles(filename, content)
+        except Exception as exc:
+            try:
+                from import_service import insert_import_log
+                with get_connection() as connection:
+                    insert_import_log(
+                        connection,
+                        'school_profiles_from_expert',
+                        filename,
+                        0,
+                        0,
+                        1,
+                        str(exc),
+                    )
+                    connection.commit()
+            except Exception:
+                pass
+
+    background_tasks.add_task(job)
+    message = (
+        f'已提交专家版院校信息同步任务：{filename}。'
+        '系统正在后台解析并更新保研率/招生章程，约 1～3 分钟完成，请稍后到「导入日志」查看结果。'
+        '同步期间后台登录与其它操作不受影响。'
+    )
+    return admin_import(message)
 
 
 @app.get('/admin/art-sports-admissions')

@@ -1,9 +1,12 @@
 import csv
 import io
+import zipfile
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree as ET
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 from db import get_connection, row_to_dict
 
@@ -245,6 +248,205 @@ def parse_import_file(filename: str, content: bytes) -> list[dict[str, Any]]:
     if suffix == '.csv':
         return parse_csv(content)
     raise ValueError('仅支持 .xlsx 或 .csv 文件')
+
+
+_XLSX_NS = {
+    'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
+    'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+}
+
+
+def _active_sheet_path(content: bytes) -> str:
+    with zipfile.ZipFile(io.BytesIO(content)) as zf:
+        workbook = ET.fromstring(zf.read('xl/workbook.xml'))
+        rels = ET.fromstring(zf.read('xl/_rels/workbook.xml.rels'))
+        rel_map = {rel.get('Id'): rel.get('Target', '') for rel in rels}
+        sheets = workbook.findall('main:sheet', _XLSX_NS)
+        if not sheets:
+            return 'xl/worksheets/sheet1.xml'
+        rid = sheets[0].get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+        target = rel_map.get(rid, 'worksheets/sheet1.xml')
+        if target.startswith('/'):
+            return 'xl' + target
+        if not target.startswith('xl/'):
+            return 'xl/' + target
+        return target
+
+
+def _extract_hyperlinks_by_row(content: bytes, sheet_path: str | None = None) -> dict[int, str]:
+    sheet_path = sheet_path or _active_sheet_path(content)
+    rels_path = sheet_path.replace('worksheets/', 'worksheets/_rels/').replace('.xml', '.xml.rels')
+    result: dict[int, str] = {}
+    with zipfile.ZipFile(io.BytesIO(content)) as zf:
+        if sheet_path not in zf.namelist():
+            return result
+        rel_targets: dict[str, str] = {}
+        if rels_path in zf.namelist():
+            rel_root = ET.fromstring(zf.read(rels_path))
+            for rel in rel_root:
+                rel_type = rel.get('Type', '')
+                if 'hyperlink' in rel_type:
+                    rel_targets[rel.get('Id', '')] = rel.get('Target', '')
+        root = ET.fromstring(zf.read(sheet_path))
+        hyperlinks = root.find('main:hyperlinks', _XLSX_NS)
+        if hyperlinks is None:
+            return result
+        for hyperlink in hyperlinks.findall('main:hyperlink', _XLSX_NS):
+            ref = hyperlink.get('ref', '')
+            rid = hyperlink.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+            if not ref or not rid:
+                continue
+            url = str(rel_targets.get(rid, '')).strip()
+            if not url:
+                continue
+            cell = ref.split(':')[0]
+            digits = ''.join(char for char in cell if char.isdigit())
+            if digits:
+                result[int(digits)] = url
+    return result
+
+
+def _profile_column_indices(headers: list[str]) -> tuple[dict[str, int], str | None]:
+    indices: dict[str, int] = {}
+    regulation_header: str | None = None
+    for index, header in enumerate(headers):
+        if not header:
+            continue
+        field = resolve_import_header(header)
+        if field in ('school_code', 'school_name', 'postgraduate_rate', 'regulation_url'):
+            indices[field] = index
+            if field == 'regulation_url':
+                regulation_header = header
+    return indices, regulation_header
+
+
+def normalize_expert_profile_row(raw: dict[str, Any]) -> dict[str, Any]:
+    from school_profile_service import infer_regulation_year, normalize_postgraduate_rate
+
+    row: dict[str, Any] = {}
+    regulation_year = None
+    for cn_key, value in raw.items():
+        if cn_key is None or value in (None, ''):
+            continue
+        key = resolve_import_header(str(cn_key))
+        if key not in ('school_code', 'school_name', 'postgraduate_rate', 'regulation_url'):
+            continue
+        if key == 'regulation_url':
+            regulation_year = infer_regulation_year(str(cn_key))
+        if isinstance(value, str):
+            value = value.strip()
+        if value:
+            row[key] = value
+    if row.get('regulation_url') and regulation_year:
+        row['regulation_year'] = regulation_year
+    if row.get('postgraduate_rate'):
+        row['postgraduate_rate'] = normalize_postgraduate_rate(row['postgraduate_rate'])
+    return row
+
+
+def _merge_expert_profile_row(deduped: dict[str, dict[str, Any]], row: dict[str, Any]) -> None:
+    code = str(row.get('school_code') or '').strip()
+    name = str(row.get('school_name') or '').strip()
+    key = code or name
+    if not key:
+        return
+    current = deduped.get(key)
+    if not current:
+        deduped[key] = row
+        return
+    merged = {**current}
+    for field, value in row.items():
+        if value not in (None, '') and (not merged.get(field) or field == 'regulation_url'):
+            merged[field] = value
+    deduped[key] = merged
+
+
+def _process_expert_profile_row(
+    deduped: dict[str, dict[str, Any]],
+    row_values: tuple[Any, ...],
+    headers: list[str],
+    col_indices: dict[str, int],
+    regulation_header: str | None,
+    regulation_url: str | None,
+) -> None:
+    raw: dict[str, Any] = {}
+    for field, index in col_indices.items():
+        if field == 'regulation_url':
+            continue
+        if index < len(row_values) and row_values[index] not in (None, ''):
+            raw[headers[index]] = row_values[index]
+    if regulation_url and regulation_header:
+        raw[regulation_header] = regulation_url
+    elif 'regulation_url' in col_indices:
+        index = col_indices['regulation_url']
+        if index < len(row_values) and row_values[index] not in (None, ''):
+            raw[regulation_header or headers[index]] = row_values[index]
+    normalized = normalize_expert_profile_row(raw)
+    if not normalized.get('school_name') and not normalized.get('school_code'):
+        return
+    _merge_expert_profile_row(deduped, normalized)
+
+
+def parse_expert_school_profiles_only(content: bytes) -> list[dict[str, Any]]:
+    """快速解析专家版物理/历史表，仅提取院校保研率与招生章程（流式读取，按院校去重）。"""
+    sheet_path = _active_sheet_path(content)
+    hyperlink_rows = _extract_hyperlinks_by_row(content, sheet_path)
+    workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    deduped: dict[str, dict[str, Any]] = {}
+    header_idx: int | None = None
+    headers: list[str] = []
+    col_indices: dict[str, int] = {}
+    regulation_header: str | None = None
+    buffer: list[tuple[Any, ...]] = []
+
+    try:
+        worksheet = workbook.active
+        for excel_row_num, row_values in enumerate(worksheet.iter_rows(values_only=True), start=1):
+            if header_idx is None:
+                buffer.append(row_values)
+                labels = [str(cell).strip() if cell is not None else '' for cell in row_values]
+                if len(buffer) < 25 and '院校名称' not in labels:
+                    continue
+                header_idx = find_header_row_index(buffer)
+                headers = [str(cell).strip() if cell is not None else '' for cell in buffer[header_idx]]
+                col_indices, regulation_header = _profile_column_indices(headers)
+                if 'school_name' not in col_indices:
+                    if len(buffer) < 25:
+                        continue
+                    raise ValueError('未找到院校名称列，请确认是河南专家版物理/历史表')
+                for data_row_num in range(header_idx + 2, len(buffer) + 1):
+                    data_index = data_row_num - 1
+                    _process_expert_profile_row(
+                        deduped,
+                        buffer[data_index],
+                        headers,
+                        col_indices,
+                        regulation_header,
+                        hyperlink_rows.get(data_row_num),
+                    )
+                continue
+
+            if excel_row_num <= header_idx + 1:
+                continue
+            _process_expert_profile_row(
+                deduped,
+                row_values,
+                headers,
+                col_indices,
+                regulation_header,
+                hyperlink_rows.get(excel_row_num),
+            )
+    finally:
+        workbook.close()
+
+    return list(deduped.values())
+
+
+def run_sync_expert_school_profiles(filename: str, content: bytes) -> dict[str, Any]:
+    rows = parse_expert_school_profiles_only(content)
+    if not rows:
+        raise ValueError('未解析到院校保研率或招生章程数据，请检查文件列名')
+    return sync_school_profiles_from_expert_rows(filename, rows)
 
 
 def get_or_create_school(connection, row: dict[str, Any]) -> int:
