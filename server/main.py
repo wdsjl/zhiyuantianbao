@@ -1,7 +1,8 @@
 from urllib.parse import quote
+from pathlib import Path
 
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
-from fastapi.responses import Response, RedirectResponse, JSONResponse
+from fastapi.responses import Response, RedirectResponse, JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -107,6 +108,8 @@ except ImportError:
         }
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
+PUBLIC_ROOT = Path(__file__).resolve().parent.parent / 'public'
+PUBLIC_ROOT.mkdir(parents=True, exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -162,6 +165,17 @@ ensure_student_art_sports_columns()
 @app.get('/health')
 def health():
     return {'status': 'ok'}
+
+
+@app.get('/{verify_name}.txt', include_in_schema=False)
+def serve_domain_verify_file(verify_name: str):
+    """微信公众平台域名验证文件，放在项目 public/ 目录根下。"""
+    if not verify_name or any(char in verify_name for char in '/\\. '):
+        raise HTTPException(status_code=404, detail='Not Found')
+    file_path = PUBLIC_ROOT / f'{verify_name}.txt'
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail='Not Found')
+    return PlainTextResponse(file_path.read_text(encoding='utf-8'))
 
 
 @app.get('/admin/login')
