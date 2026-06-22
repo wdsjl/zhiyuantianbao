@@ -2,7 +2,7 @@
   <view class="card">
     <view class="section-title">{{artSportsMode ? '河南艺体「专业+院校」志愿方案' : '智能梯度志愿'}}</view>
     <view class="sub-text" wx:if="{{artSportsMode}}">
-      艺术本科批（统考专业）64个「专业+院校」平行志愿：按序号前段冲、中段稳、后段保有序排布；投档规则与往年一致。
+      艺术本科批（统考专业）64个「专业+院校」平行志愿：大模型采集2025年河南艺术录取最低综合分，按考生综合分匹配冲稳保；无官方综合分位次。
     </view>
     <view class="sub-text" wx:else>仅按全省位次 X 划分冲稳保：冲 0.90X~0.95X、稳 0.95X~1.05X、保 1.15X~1.25X。</view>
     <view wx:if="{{artSportsMode && compositeScore}}" class="sub-text">当前综合分：{{compositeScore}}</view>
@@ -75,8 +75,8 @@
     </view>
     <view class="sub-text">{{item.city || '—'}} · {{item.schoolType || '—'}} · {{item.duration || '—'}} · {{item.tuition || '—'}}元/年</view>
     <view class="major-line">专业：{{item.majorName}}<text wx:if="{{item.majorCode}}">（{{item.majorCode}}）</text></view>
-    <view wx:if="{{artSportsMode && (item.refMinComposite || item.ref_min_composite)}}" class="sub-text">
-      参考最低综合分：{{item.refMinComposite || item.ref_min_composite}}
+    <view wx:if="{{artSportsMode && (item.refMinComposite || item.ref_min_composite || item.minComposite2025)}}" class="sub-text">
+      2025年河南录取最低综合分：{{item.minComposite2025 || item.refMinComposite || item.ref_min_composite}}
       <text wx:if="{{item.scoreDiff || item.score_diff}}"> · 分差 {{item.scoreDiff || item.score_diff}}</text>
     </view>
     <view wx:if="{{item.admissionProbability}}" class="sub-text">录取参考：{{item.admissionProbability}}</view>
@@ -93,7 +93,7 @@
   </view>
 
   <view wx:if="{{!plan.length}}" class="card muted-card">
-    <view class="sub-text">{{artSportsMode ? '请先完善艺体档案并点击「智能生成」，系统将按综合分生成最多64个「专业+院校」平行志愿。' : '完善档案并完成测评后，可智能生成冲稳保志愿方案。'}}</view>
+    <view class="sub-text">{{artSportsMode ? '请先完善艺体档案并点击「智能生成」；艺术类由大模型采集2025录取线并匹配64个平行志愿。' : '完善档案并完成测评后，可智能生成冲稳保志愿方案。'}}</view>
   </view>
 
   <view wx:if="{{pdfFileName}}" class="sub-text" style="padding:0 24rpx 12rpx">PDF 文件名：{{pdfFileName}}</view>

@@ -11,6 +11,7 @@ $ServerFiles = @(
   'server/main.py',
   'server/auth_service.py',
   'server/henan_art_sports_service.py',
+  'server/art_llm_volunteer_service.py',
   'server/payment_service.py',
   'server/pdf_service.py',
   'server/province_rules_service.py',

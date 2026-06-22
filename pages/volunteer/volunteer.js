@@ -51,6 +51,7 @@ function normalizePlan(items) {
     riskLevel: item.risk_level,
     riskReason: item.risk_reason,
     refMinComposite: item.ref_min_composite,
+    minComposite2025: item.min_composite_2025 || item.ref_min_composite,
     scoreDiff: item.score_diff
   }));
 }
@@ -314,9 +315,9 @@ Page({
         const compositeScore = (strategyMeta && strategyMeta.composite_score) || res.composite_score || '';
         const targetCount = (res.generation && res.generation.target_slots)
           || (provinceRule && (provinceRule.total_slots || provinceRule.school_count));
-        const toastTitle = targetCount
-          ? `已生成 ${plan.length}/${targetCount} 个志愿`
-          : `已生成 ${plan.length} 个志愿`;
+        const toastTitle = (res.generation && res.generation.generation_mode === 'llm')
+          ? `AI已生成 ${plan.length}/${targetCount || 64} 个志愿`
+          : (targetCount ? `已生成 ${plan.length}/${targetCount} 个志愿` : `已生成 ${plan.length} 个志愿`);
         this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule, compositeScore });
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
