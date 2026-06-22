@@ -1,14 +1,14 @@
 const { request, formatRequestError, BASE_URL } = require('../../utils/request');
 const { getCurrentUserId, syncUserIdentity, fetchEntitlements } = require('../../utils/membership');
 const { requestVirtualPayment, getLoginCode } = require('../../utils/virtualPayment');
+const { ensureWechatLogin } = require('../../utils/auth');
 
-const { enrichPlan, getPlanDisplayName, PLAN_BEAN_GRANT } = require('../../utils/planCatalog');
+const { enrichPlan, getPlanDisplayName, SEASON_EXPIRE_LABEL } = require('../../utils/planCatalog');
 
 const PLAN_FEATURES = {
   free: ['完整测评流程', '基础院校专业查询', '近2年分数线', '手动志愿模拟'],
-  trial: ['到账 2000 星鼎豆', '完整历年分数线', '深度测评报告', '智能推荐', 'AI 解读', 'PDF 导出'],
-  standard: ['到账 12000 星鼎豆', '智能推荐不限次', '风险检测不限次', 'AI 解读', '草稿保存', 'PDF 导出'],
-  premium: ['到账 24000 星鼎豆', '金卡全部功能', '同分段往届参考', '院校深度对比', '地域就业规划', '专属答疑通道']
+  trial: ['基础性格测评', '院校/专业基础查询', '近2年分数线', '手动志愿模拟', '不含智能推荐与 PDF 导出'],
+  premium: ['智能志愿推荐不限次', '志愿风险检测不限次', 'AI 志愿解读与报告', 'PDF 导出不限次', '完整历年分数线', '院校对比与深度分析']
 };
 
 const ORDER_STATUS_TEXT = {
@@ -29,29 +29,28 @@ Page({
     currentPlanName: '免费版',
     orders: [],
     membershipNotice: null,
-    beanBalance: 0,
-    loadError: ''
+    loadError: '',
+    seasonExpireLabel: SEASON_EXPIRE_LABEL
   },
   onShow() {
     syncUserIdentity();
     this.loadData();
   },
   mapPlans(list) {
-    return (list || []).map((rawPlan) => {
-      const plan = enrichPlan(rawPlan);
-      const price = Number(plan.price) || 0;
-      const beanGrant = plan.beanGrant || PLAN_BEAN_GRANT[plan.plan_code] || 0;
-      return {
-        ...plan,
-        priceText: price === 0 ? '免费' : `¥${price}`,
-        beanGrant,
-        beanPriceText: beanGrant > 0 ? `${beanGrant}星鼎豆` : '免费',
-        displayPriceText: beanGrant > 0 ? `¥${price} · ${beanGrant}星鼎豆` : '免费',
-        durationText: Number(plan.duration_days) > 0 ? `${plan.duration_days}天` : '长期',
-        features: PLAN_FEATURES[plan.plan_code] || [],
-        canPay: price > 0
-      };
-    });
+    return (list || [])
+      .filter((rawPlan) => rawPlan.plan_code !== 'standard')
+      .map((rawPlan) => {
+        const plan = enrichPlan(rawPlan);
+        const price = Number(plan.price) || 0;
+        return {
+          ...plan,
+          priceText: price === 0 ? '免费' : `¥${price}`,
+          displayPriceText: price === 0 ? '免费' : `¥${price}`,
+          durationText: price > 0 ? SEASON_EXPIRE_LABEL : '长期',
+          features: PLAN_FEATURES[plan.plan_code] || [],
+          canPay: price > 0
+        };
+      });
   },
   loadData() {
     this.setData({ loading: true, loadError: '' });
@@ -62,13 +61,10 @@ Page({
       request({ url: '/api/payments/wechat/status' }).catch(() => ({ enabled: false })),
       userId
         ? request({ url: '/api/membership/my-status', data: { user_id: Number(userId) } }).catch(() => ({}))
-        : Promise.resolve({}),
-      userId
-        ? request({ url: '/api/membership/beans', data: { user_id: Number(userId) } }).catch(() => ({ balance: 0 }))
-        : Promise.resolve({ balance: 0 })
+        : Promise.resolve({})
     ];
     Promise.all(tasks)
-      .then(([plansRes, entitlementsRes, payStatus, statusRes, beanRes]) => {
+      .then(([plansRes, entitlementsRes, payStatus, statusRes]) => {
         const errors = [];
         if (plansRes && plansRes.error) errors.push(`套餐列表：${formatRequestError(plansRes.error)}`);
         if (entitlementsRes && entitlementsRes.error) errors.push(`会员状态：${formatRequestError(entitlementsRes.error)}`);
@@ -80,9 +76,8 @@ Page({
           ? this.mapPlans(plansRes.list)
           : this.mapPlans([
             { plan_code: 'free', plan_name: '免费版', price: 0, duration_days: 0, description: '基础永久免费，引流体验' },
-            { plan_code: 'trial', plan_name: '普通卡', price: 19.9, duration_days: 30, description: '一次充值 ¥19.9，到账 2000 星鼎豆' },
-            { plan_code: 'standard', plan_name: '金卡', price: 99, duration_days: 365, description: '起充 ¥99，到账 12000 星鼎豆' },
-            { plan_code: 'premium', plan_name: '白金卡', price: 168, duration_days: 365, description: '起充 ¥168，到账 24000 星鼎豆' }
+            { plan_code: 'trial', plan_name: '普通卡', price: 19.9, duration_days: 1, description: '引流体验卡' },
+            { plan_code: 'premium', plan_name: '白金卡', price: 298, duration_days: 1, description: '报考季全功能畅享' }
           ]);
 
         const currentPlanCode = entitlements.plan ? entitlements.plan.plan_code : 'free';
@@ -109,7 +104,6 @@ Page({
             amountText: `¥${item.amount || 0}`
           })),
           membershipNotice: this.buildMembershipNotice(entitlements, plans),
-          beanBalance: Number(beanRes.balance) || 0,
           loadError
         });
       })
@@ -118,9 +112,8 @@ Page({
         this.setData({
           loadError: `${message}。请确认接口地址为 ${BASE_URL}`,
           plans: this.mapPlans([
-            { plan_code: 'trial', plan_name: '普通卡', price: 19.9, duration_days: 30, description: '一次充值 ¥19.9，到账 2000 星鼎豆' },
-            { plan_code: 'standard', plan_name: '金卡', price: 99, duration_days: 365, description: '起充 ¥99，到账 12000 星鼎豆' },
-            { plan_code: 'premium', plan_name: '白金卡', price: 168, duration_days: 365, description: '起充 ¥168，到账 24000 星鼎豆' }
+            { plan_code: 'trial', plan_name: '普通卡', price: 19.9, duration_days: 1, description: '引流体验卡' },
+            { plan_code: 'premium', plan_name: '白金卡', price: 298, duration_days: 1, description: '报考季全功能畅享' }
           ]),
           entitlements: { plan: { plan_name: '免费版', plan_code: 'free' }, membership: null, permissions: {} }
         });
@@ -142,7 +135,7 @@ Page({
           type: 'warning',
           planCode: membership.plan_code,
           planName: membership.plan_name || '会员',
-          text: `您的${membership.plan_name || '会员'}将在${diffDays}天后到期，建议及时续费。`,
+          text: `您的${membership.plan_name || '会员'}将在${diffDays}天后到期（${SEASON_EXPIRE_LABEL}），建议及时续费。`,
           priceText: plan ? plan.displayPriceText : ''
         };
       }
@@ -189,9 +182,11 @@ Page({
   },
 
   startPay(eventOrPlan, isRenewal) {
-    const plan = eventOrPlan && eventOrPlan.currentTarget
-      ? this.data.plans[eventOrPlan.currentTarget.dataset.index]
-      : eventOrPlan;
+    let plan = eventOrPlan;
+    if (eventOrPlan && eventOrPlan.currentTarget) {
+      const planCode = eventOrPlan.currentTarget.dataset.planCode;
+      plan = (this.data.plans || []).find((item) => item.plan_code === planCode);
+    }
     if (!plan || this.data.paying) return;
 
     const userId = this.ensureUserReady();
@@ -215,11 +210,22 @@ Page({
 
     wx.showModal({
       title: isRenewal ? '确认续费' : '确认支付',
-      content: `将支付 ${plan.displayPriceText} 开通「${plan.plan_name}」，有效期 ${plan.durationText}。`,
+      content: `将支付 ${plan.displayPriceText} 开通「${plan.plan_name}」，${SEASON_EXPIRE_LABEL}。`,
       confirmText: '立即支付',
       success: (res) => {
         if (!res.confirm) return;
-        this.createAndPay(userId, plan, isRenewal);
+        ensureWechatLogin()
+          .then((loginRes) => {
+            const resolvedUserId = loginRes.user_id || userId;
+            this.createAndPay(resolvedUserId, plan, isRenewal);
+          })
+          .catch((error) => {
+            wx.showModal({
+              title: '请先微信登录',
+              content: (error && error.message) || '支付前需要完成微信登录，请关闭小程序后重试。',
+              showCancel: false
+            });
+          });
       }
     });
   },
@@ -274,7 +280,7 @@ Page({
         if (order.pay_status === 'paid') {
           wx.showModal({
             title: '支付成功',
-            content: '会员已开通，相关功能现在可以使用了。',
+            content: `会员已开通，${SEASON_EXPIRE_LABEL}。`,
             showCancel: false,
             success: () => {
               fetchEntitlements();

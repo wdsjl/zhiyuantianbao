@@ -8,7 +8,7 @@ const {
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
 const { formatReportContent } = require('../../utils/reportFormat');
-const { confirmReportBeanDeduction, consumeReportBeans } = require('../../utils/reportBean');
+const { confirmReportPermission } = require('../../utils/reportBean');
 const { loadActiveProfileSync, resolveStudentId } = require('../../utils/profileHelper');
 
 function buildQuestions(answers = {}) {
@@ -135,17 +135,9 @@ Page({
       wx.showToast({ title: '请先完成测评', icon: 'none' });
       return;
     }
-    confirmReportBeanDeduction('AI 深度职业报告').then((confirmed) => {
-      if (!confirmed) return;
-      consumeReportBeans('AI 深度职业报告')
-        .then(() => requirePermission('personality_deep', '深度职业兴趣报告', { consume: false }))
-        .then((allowed) => {
-          if (!allowed) return;
-          this.doGenerateAiReport();
-        })
-        .catch((error) => {
-          wx.showToast({ title: error.message || '星鼎豆扣除失败', icon: 'none' });
-        });
+    confirmReportPermission('AI 深度职业报告', 'personality_deep').then((allowed) => {
+      if (!allowed) return;
+      this.doGenerateAiReport();
     });
   },
   doGenerateAiReport() {
@@ -207,7 +199,7 @@ Page({
       wx.showToast({ title: '请先保存学生档案', icon: 'none' });
       return;
     }
-    requirePermission('personality_deep', '深度职业兴趣报告', { consume: false }).then((allowed) => {
+    requirePermission('pdf_export', 'PDF 报告导出', { consume: false }).then((allowed) => {
       if (!allowed) return;
       const report = formatReportContent(this.data.aiCareerReport, profile);
       preparePdfFromPost('/api/ai/career-report/pdf', {
@@ -247,7 +239,7 @@ Page({
       wx.showToast({ title: '请先保存学生档案', icon: 'none' });
       return;
     }
-    requirePermission('personality_deep', '深度职业兴趣报告', { consume: false }).then((allowed) => {
+    requirePermission('pdf_export', 'PDF 报告导出', { consume: false }).then((allowed) => {
       if (!allowed) return;
       openPdfFromPost('/api/ai/career-report/pdf', {
         student_id: studentId,

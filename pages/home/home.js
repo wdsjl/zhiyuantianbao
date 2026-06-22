@@ -1,6 +1,6 @@
 const { refreshActiveProfile } = require('../../utils/profileHelper');
 const { getFlowStatus, goNextStep, navigateToStep } = require('../../utils/applyFlow');
-const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode } = require('../../utils/referral');
+const { captureInviteFromLaunch, getPendingInviteCode, clearPendingInviteCode, cleanupInvalidInviteCode } = require('../../utils/referral');
 const { request } = require('../../utils/request');
 const { getCurrentUserId } = require('../../utils/membership');
 
@@ -18,6 +18,7 @@ Page({
     }
   },
   onLoad(options) {
+    cleanupInvalidInviteCode();
     captureInviteFromLaunch({ query: options || {}, scene: options && options.scene });
     this.tryBindInvite();
   },
@@ -51,6 +52,7 @@ Page({
     });
   },
   onShow() {
+    cleanupInvalidInviteCode();
     this.tryBindInvite();
     refreshActiveProfile().then((profile) => {
       const savedProfile = profile || wx.getStorageSync('studentProfile') || {};
@@ -72,6 +74,18 @@ Page({
   },
   goProfile() {
     wx.navigateTo({ url: '/pages/profile/profile' });
+  },
+  goProfileArt() {
+    wx.navigateTo({ url: '/pages/profile/profile?track=art' });
+  },
+  goProfileSports() {
+    wx.navigateTo({ url: '/pages/profile/profile?track=sports' });
+  },
+  goArtZone() {
+    wx.navigateTo({ url: '/pages/art-zone/art-zone' });
+  },
+  goSportsZone() {
+    wx.navigateTo({ url: '/pages/sports-zone/sports-zone' });
   },
   goPersonality() {
     wx.navigateTo({ url: '/pages/personality/personality' });
@@ -96,6 +110,34 @@ Page({
   },
   goSchools() {
     wx.switchTab({ url: '/pages/schools/schools' });
+  },
+  goEligiblePool() {
+    const profile = this.data.profile || {};
+    if (!profile.province || !profile.score || !profile.targetBatch) {
+      wx.showModal({
+        title: '请先完善档案',
+        content: '检索可报院校需要分数、省份和批次。',
+        confirmText: '去完善',
+        success: (res) => {
+          if (res.confirm) wx.navigateTo({ url: '/pages/profile/profile' });
+        }
+      });
+      return;
+    }
+    const { isArtSportsActive } = require('../../utils/henanArtSports');
+    if (isArtSportsActive(profile) && !(profile.professionalScore || profile.professional_score)) {
+      const track = profile.examType === '体育类' ? 'sports' : 'art';
+      wx.showModal({
+        title: '请填写专业统考分',
+        content: '河南艺体考生须先填写专业统考分。',
+        confirmText: '去完善',
+        success: (res) => {
+          if (res.confirm) wx.navigateTo({ url: `/pages/profile/profile?track=${track}` });
+        }
+      });
+      return;
+    }
+    wx.navigateTo({ url: '/pages/eligible-pool/eligible-pool' });
   },
   goMembership() {
     const { goMembershipPage } = require('../../utils/membership');

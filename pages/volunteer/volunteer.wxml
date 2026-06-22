@@ -1,7 +1,15 @@
 <view class="container">
   <view class="card">
-    <view class="section-title">智能梯度志愿</view>
-    <view class="sub-text">仅按全省位次 X 划分冲稳保：冲 0.90X~0.95X、稳 0.95X~1.05X、保 1.15X~1.25X。</view>
+    <view class="section-title">{{artSportsMode ? '河南艺体「专业+院校」志愿方案' : '智能梯度志愿'}}</view>
+    <view class="sub-text" wx:if="{{artSportsMode}}">
+      艺术本科批（统考专业）64个「专业+院校」平行志愿：
+      <text wx:if="{{strategyMeta && strategyMeta.data_source === 'art_crawler_db'}}">✅ 基于真实采集的2025年河南艺术录取最低综合分匹配生成。</text>
+      <text wx:elif="{{strategyMeta}}">⚠️ 大模型估算的2025录取线（非真实采集），建议联系管理员采集真实数据。</text>
+      <text wx:else>请先点击「智能生成」来生成志愿方案。</text>
+      <text>无官方综合分位次。</text>
+    </view>
+    <view class="sub-text" wx:else>仅按全省位次 X 划分冲稳保：冲 0.90X~0.95X、稳 0.95X~1.05X、保 1.15X~1.25X。</view>
+    <view wx:if="{{artSportsMode && compositeScore}}" class="sub-text">当前综合分：{{compositeScore}}</view>
     <view class="section-title strategy-title">填报策略</view>
     <view class="tag-row strategy-row">
       <text
@@ -12,10 +20,15 @@
         bindtap="onPlanStyleChange"
       >{{item.label}}（{{item.desc}}）</text>
     </view>
-    <view wx:if="{{strategyMeta}}" class="sub-text strategy-meta">
+    <view wx:if="{{strategyMeta && strategyMeta.bands && !artSportsMode}}" class="sub-text strategy-meta">
       位次区间：冲 {{strategyMeta.bands.chong[0]}}~{{strategyMeta.bands.chong[1]}}，
       稳 {{strategyMeta.bands.wen[0]}}~{{strategyMeta.bands.wen[1]}}，
       保 {{strategyMeta.bands.bao[0]}}~{{strategyMeta.bands.bao[1]}}
+    </view>
+    <view wx:if="{{strategyMeta && artSportsMode}}" class="sub-text strategy-meta">
+      {{strategyMeta.parallel_layout || '平行志愿按序号：前段冲、中段稳、后段保'}}
+      <text wx:if="{{strategyMeta.message || strategyMeta.rank_notice}}"> · {{strategyMeta.message || strategyMeta.rank_notice}}</text>
+      <text wx:if="{{strategyMeta.formula_label}}"> · {{strategyMeta.formula_label}}</text>
     </view>
     <view class="button-row">
       <button class="primary-btn" bindtap="generatePlan">智能生成</button>
@@ -30,7 +43,7 @@
     <view class="tag-row personality-tags">
       <text wx:for="{{personality.majorTypes}}" wx:key="*this" class="tag active">{{item}}</text>
     </view>
-    <view class="warn-box">推荐会优先提示与你性格匹配的专业方向，但最终仍需结合位次、选科和招生计划综合判断。</view>
+    <view class="warn-box">{{artSportsMode ? '艺体志愿以综合分对标为主，性格测评可作为专业方向参考。' : '推荐会优先提示与你性格匹配的专业方向，但最终仍需结合位次、选科和招生计划综合判断。'}}</view>
   </view>
 
   <view wx:if="{{aiExplain}}" class="card ai-explain-card">
@@ -50,7 +63,7 @@
       <text>冲 {{riskResult.chong}}</text>
       <text>稳 {{riskResult.wen}}</text>
       <text>保 {{riskResult.bao}}</text>
-      <text>垫 {{riskResult.dian}}</text>
+      <text wx:if="{{!artSportsMode}}">垫 {{riskResult.dian}}</text>
     </view>
     <view wx:for="{{riskResult.warnings}}" wx:key="*this" class="warn-box warning-item">{{item}}</view>
   </view>
@@ -58,14 +71,19 @@
   <view wx:for="{{plan}}" wx:key="id" class="card volunteer-card">
     <view class="volunteer-head">
       <view>
+        <text wx:if="{{artSportsMode}}" class="sort-badge">志愿{{item.sortOrder || index + 1}}</text>
         <text class="gradient gradient-{{item.gradientClass}}">{{item.gradientType}}</text>
         <text class="school-name">{{item.schoolName}}</text>
       </view>
       <text class="{{item.riskLevel === '高' ? 'risk-high' : item.riskLevel === '中' ? 'risk-mid' : 'risk-low'}}">{{item.riskLevel}}风险</text>
     </view>
-    <view class="sub-text">{{item.city}} · {{item.schoolType}} · {{item.duration}} · {{item.tuition}}元/年</view>
-    <view class="major-line">专业：{{item.majorName}}（{{item.majorCode}}）</view>
-    <view wx:if="{{item.admissionProbability}}" class="sub-text">录取概率参考：{{item.admissionProbability}}</view>
+    <view class="sub-text">{{item.city || '—'}} · {{item.schoolType || '—'}} · {{item.duration || '—'}} · {{item.tuition || '—'}}元/年</view>
+    <view class="major-line">专业：{{item.majorName}}<text wx:if="{{item.majorCode}}">（{{item.majorCode}}）</text></view>
+    <view wx:if="{{artSportsMode && (item.refMinComposite || item.ref_min_composite || item.minComposite2025)}}" class="sub-text">
+      2025年河南录取最低综合分：{{item.minComposite2025 || item.refMinComposite || item.ref_min_composite}}
+      <text wx:if="{{item.scoreDiff || item.score_diff}}"> · 分差 {{item.scoreDiff || item.score_diff}}</text>
+    </view>
+    <view wx:if="{{item.admissionProbability}}" class="sub-text">录取参考：{{item.admissionProbability}}</view>
     <view wx:if="{{item.personalityMatched}}" class="match-badge">与性格测评推荐专业大类匹配：{{item.majorType}}</view>
     <view class="adjust-row">
       <view>
@@ -76,6 +94,10 @@
     </view>
     <view class="warn-box">{{item.riskReason}}</view>
     <button class="danger-btn remove-btn" data-index="{{index}}" bindtap="removePlanItem">移除该志愿</button>
+  </view>
+
+  <view wx:if="{{!plan.length}}" class="card muted-card">
+    <view class="sub-text">{{artSportsMode ? '请先完善艺体档案并点击「智能生成」；艺术类由大模型采集2025录取线并匹配64个平行志愿。' : '完善档案并完成测评后，可智能生成冲稳保志愿方案。'}}</view>
   </view>
 
   <view wx:if="{{pdfFileName}}" class="sub-text" style="padding:0 24rpx 12rpx">PDF 文件名：{{pdfFileName}}</view>

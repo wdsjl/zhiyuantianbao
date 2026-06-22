@@ -202,3 +202,54 @@
   color: #101828;
   margin-bottom: 10rpx;
 }
+
+.henan-zone-card {
+  margin-bottom: 24rpx;
+  background: linear-gradient(135deg, #f8f5ff, #f6fffb);
+  border: 2rpx solid #e4e7ec;
+}
+
+.henan-zone-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16rpx;
+  margin: 20rpx 0;
+}
+
+.henan-zone-item {
+  border-radius: 20rpx;
+  padding: 24rpx;
+  min-height: 120rpx;
+}
+
+.art-zone-item {
+  background: linear-gradient(135deg, #6b4ce6, #9b7cf7);
+  color: #ffffff;
+}
+
+.sports-zone-item {
+  background: linear-gradient(135deg, #0d9488, #2dd4bf);
+  color: #ffffff;
+}
+
+.henan-zone-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  margin-bottom: 8rpx;
+}
+
+.henan-zone-item .sub-text {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 22rpx;
+}
+
+.henan-zone-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.henan-zone-btn {
+  flex: 1;
+  margin: 0;
+  font-size: 24rpx;
+}

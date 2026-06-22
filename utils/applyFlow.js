@@ -1,4 +1,5 @@
 const { migrateLegacyResult } = require('./personality');
+const { isArtSportsActive } = require('./henanArtSports');
 
 const STEPS = [
   { key: 'profile', title: '完善档案', desc: '填写分数、位次、选科和批次' },
@@ -8,23 +9,40 @@ const STEPS = [
   { key: 'volunteer', title: '填报志愿', desc: '智能推荐并生成冲稳保方案' }
 ];
 
+const ART_SPORTS_STEPS = [
+  { key: 'profile', title: '完善艺体档案', desc: '填写文化课、专业统考分与双过线信息' },
+  { key: 'artSportsPool', title: '综合分对标', desc: '按历年最低综合分检索冲稳保院校' },
+  { key: 'personality', title: '霍兰德测评', desc: '完成 30 题职业兴趣测评（可选）' },
+  { key: 'volunteer', title: '填报志愿', desc: '按综合分生成64个「专业+院校」平行志愿方案' }
+];
+
 const ROUTES = {
   profile: '/pages/profile/profile',
   personality: '/pages/personality/personality',
   preferences: '/pages/student-report/student-report',
   report: '/pages/student-report/student-report',
-  volunteer: '/pages/volunteer/volunteer'
+  volunteer: '/pages/volunteer/volunteer',
+  artSportsPool: '/pages/eligible-pool/eligible-pool'
 };
 
 function isProfileComplete(profile) {
-  return Boolean(
+  const base = Boolean(
     profile &&
     profile.province &&
     profile.subjectCombination &&
     profile.score &&
-    profile.rank &&
     profile.targetBatch
   );
+  if (!base) return false;
+  if (isArtSportsActive(profile)) {
+    return Boolean(profile.professionalScore || profile.professional_score);
+  }
+  return Boolean(profile.rank);
+}
+
+function isArtSportsPoolDone() {
+  const summary = wx.getStorageSync('eligiblePoolSummary') || {};
+  return Number(summary.total || 0) > 0;
 }
 
 function isPersonalityComplete() {
@@ -54,14 +72,23 @@ function isVolunteerGenerated() {
 }
 
 function getFlowStatus(profile) {
-  const checks = {
-    profile: isProfileComplete(profile),
-    personality: isPersonalityComplete(),
-    preferences: isPreferencesFilled(),
-    report: isReportGenerated(),
-    volunteer: isVolunteerGenerated()
-  };
-  const steps = STEPS.map((step, index) => ({
+  const artSports = isArtSportsActive(profile);
+  const stepDefs = artSports ? ART_SPORTS_STEPS : STEPS;
+  const checks = artSports
+    ? {
+      profile: isProfileComplete(profile),
+      artSportsPool: isArtSportsPoolDone(),
+      personality: isPersonalityComplete(),
+      volunteer: isVolunteerGenerated()
+    }
+    : {
+      profile: isProfileComplete(profile),
+      personality: isPersonalityComplete(),
+      preferences: isPreferencesFilled(),
+      report: isReportGenerated(),
+      volunteer: isVolunteerGenerated()
+    };
+  const steps = stepDefs.map((step, index) => ({
     ...step,
     index: index + 1,
     done: checks[step.key],
@@ -83,8 +110,12 @@ function getFlowStatus(profile) {
 function navigateToStep(stepKey) {
   const route = ROUTES[stepKey];
   if (!route) return;
-  if (stepKey === 'volunteer') {
-    wx.switchTab({ url: route });
+  if (stepKey === 'volunteer' || stepKey === 'artSportsPool') {
+    if (stepKey === 'volunteer') {
+      wx.switchTab({ url: route });
+      return;
+    }
+    wx.navigateTo({ url: route });
     return;
   }
   wx.navigateTo({ url: route });

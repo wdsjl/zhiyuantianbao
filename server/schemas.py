@@ -51,8 +51,29 @@ class ProfileSaveRequest(BaseModel):
     exam_type: Optional[str] = '普通类'
     subject_combination: str
     score: int
-    rank: int
+    rank: int = 0
     target_batch: str
+    professional_score: Optional[float] = None
+    art_sports_formula_id: Optional[int] = None
+    waive_art_sports_batch: Optional[bool] = False
+    culture_cutoff: Optional[int] = None
+    pro_cutoff: Optional[int] = None
+
+
+class HenanArtSportsCalculateRequest(BaseModel):
+    category: str
+    culture_score: Optional[float] = None
+    score: Optional[int] = None
+    professional_score: float = 0
+    formula_id: Optional[int] = None
+    batch_level: str = '本科'
+    culture_cutoff: Optional[float] = None
+    pro_cutoff: Optional[float] = None
+    waive_art_sports_batch: bool = False
+
+
+class HenanArtSportsMatchRequest(HenanArtSportsCalculateRequest):
+    pass
 
 
 class RecommendRequest(BaseModel):
@@ -67,7 +88,22 @@ class RecommendRequest(BaseModel):
     only_public: Optional[bool] = None
     accept_adjustment: bool = True
     plan_style: str = 'balanced'
-    volunteer_count: int = 9
+    volunteer_count: int = 0
+    preferences: Optional[dict] = None
+    personality_major_types: list[str] = Field(default_factory=list)
+    exam_type: Optional[str] = '普通类'
+    professional_score: Optional[float] = None
+    art_sports_formula_id: Optional[int] = None
+    waive_art_sports_batch: bool = False
+    culture_cutoff: Optional[float] = None
+    pro_cutoff: Optional[float] = None
+
+
+class EligiblePoolRequest(RecommendRequest):
+    gradient: str = ''
+    keyword: str = ''
+    page: int = 1
+    page_size: int = 50
 
 
 class RiskInspectRequest(BaseModel):

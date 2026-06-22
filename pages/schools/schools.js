@@ -20,6 +20,12 @@ Page({
   onLoad() {
     this.fetchSchools();
   },
+  onShow() {
+    if (this._loaded) {
+      this.fetchSchools();
+    }
+    this._loaded = true;
+  },
   formatSchools(list) {
     return list.map((school) => {
       const tags = [];
@@ -34,16 +40,20 @@ Page({
         code: school.school_code,
         type: school.is_public ? '公办' : '民办',
         tags,
-        majorsText: '点击查看招生专业与历年分数',
+        majorsText: school.postgraduate_rate ? `保研率 ${school.postgraduate_rate} · 点击查看招生专业` : '点击查看招生专业与历年分数',
         subject: school.education_level || '本科',
         minRank: '--',
         tuition: '--',
-        duration: school.city || ''
+        duration: school.city || '',
+        has_regulation: !!(school.has_regulation || school.regulation_url)
       };
     });
   },
   onKeywordInput(event) {
     this.setData({ keyword: event.detail.value });
+  },
+  onKeywordConfirm() {
+    this.fetchSchools();
   },
   toggleFilter() {
     this.setData({ showFilter: !this.data.showFilter });
@@ -74,7 +84,7 @@ Page({
     const data = {
       keyword: this.data.keyword,
       city,
-      limit: 50,
+      limit: 200,
       offset: 0
     };
     const isPublic = this.getPublicParam();
@@ -99,8 +109,11 @@ Page({
   },
   applyClientFilters(list) {
     const { selected } = this.data;
+    const normCity = (value) => (value || '').replace(/市$/, '');
     return list.filter((school) => {
-      const cityHit = !selected.cities.length || selected.cities.includes(school.city);
+      const cityHit = !selected.cities.length || selected.cities.some(
+        (city) => normCity(city) === normCity(school.city) || school.city === city || school.city === `${city}市`
+      );
       const typeHit = !selected.schoolTypes.length || selected.schoolTypes.includes(school.type);
       const tagHit = !selected.tags.length || school.tags.some((tag) => selected.tags.includes(tag));
       return cityHit && typeHit && tagHit;
