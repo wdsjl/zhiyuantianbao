@@ -7,12 +7,23 @@ from openpyxl import load_workbook
 
 from db import get_connection, row_to_dict
 
-REQUIRED_HEADERS = ['年份', '省份', '批次', '院校代码', '院校名称', '专业代码', '专业名称']
+REQUIRED_ALIASES: dict[str, list[str]] = {
+    'year': ['年份'],
+    'province': ['省份', '生源地'],
+    'batch': ['批次'],
+    'school_code': ['院校代码'],
+    'school_name': ['院校名称'],
+    'major_code': ['专业代码'],
+    'major_name': ['专业名称', '专业全称'],
+}
 
 HEADER_MAP = {
     '年份': 'year',
     '省份': 'province',
+    '生源地': 'province',
     '批次': 'batch',
+    '科类': 'exam_subject_type',
+    '批次备注': 'batch_remark',
     '院校代码': 'school_code',
     '院校名称': 'school_name',
     '院校所在省': 'school_province',
@@ -25,22 +36,32 @@ HEADER_MAP = {
     '是否公办': 'is_public',
     '专业代码': 'major_code',
     '专业名称': 'major_name',
+    '专业全称': 'major_name',
     '专业门类': 'major_category',
     '专业类型': 'major_type',
     '学历层次': 'degree_type',
     '学制': 'duration',
     '选科要求': 'subject_requirement',
     '招生人数': 'enrollment_count',
+    '计划人数': 'enrollment_count',
+    '录取人数': 'enrollment_count',
+    '专业录取人数': 'enrollment_count',
     '学费': 'tuition',
     '校区': 'campus',
     '特殊说明': 'special_notes',
     '最低分': 'min_score',
     '最低位次': 'min_rank',
+    '专业组最低分': 'min_score',
+    '专业组最低位次': 'min_rank',
+    '专业最低分': 'min_score',
+    '专业最低位次': 'min_rank',
     '平均分': 'avg_score',
     '平均位次': 'avg_rank',
     '最高分': 'max_score',
     '最高位次': 'max_rank',
     '保研率': 'postgraduate_rate',
+    '院校保研率': 'postgraduate_rate',
+    '推免率': 'postgraduate_rate',
     '官网': 'website',
     '学校官网': 'website',
     '院校官网': 'website',
@@ -65,11 +86,44 @@ def resolve_import_header(cn_key: str) -> str | None:
         return HEADER_MAP[key]
     if '招生章程' in key:
         return 'regulation_url'
-    if '保研率' in key:
+    if '保研率' in key or '推免率' in key:
         return 'postgraduate_rate'
     if key in ('官网', '学校官网', '院校官网', '官方网站'):
         return 'website'
+    if '专业全称' == key:
+        return 'major_name'
+    if '生源地' == key:
+        return 'province'
+    if '专业组最低分' in key or key.endswith('最低分'):
+        return 'min_score'
+    if '专业组最低位次' in key or key.endswith('最低位次'):
+        return 'min_rank'
     return None
+
+
+def find_header_row_index(rows: list[tuple[Any, ...]]) -> int:
+    for idx, row in enumerate(rows[:25]):
+        labels = [str(cell).strip() if cell is not None else '' for cell in row]
+        if '院校名称' in labels and any(label in labels for label in ('生源地', '省份')):
+            return idx
+    return 0
+
+
+def cell_import_value(cell: Any, header: str) -> Any:
+    if cell is None:
+        return None
+    field = resolve_import_header(header)
+    hyperlink = getattr(cell, 'hyperlink', None)
+    if field == 'regulation_url' and hyperlink and getattr(hyperlink, 'target', None):
+        target = str(hyperlink.target).strip()
+        if target:
+            return target
+    value = getattr(cell, 'value', cell)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip()
+    return value
 
 
 def normalize_bool(value: Any, default: int = 0) -> int:
@@ -133,28 +187,45 @@ def normalize_row(raw: dict[str, Any]) -> dict[str, Any]:
     row.setdefault('major_type', '')
     row.setdefault('degree_type', '本科')
     row.setdefault('duration', '')
+    if not row.get('province'):
+        row['province'] = row.get('school_province') or '河南'
+    if row.get('province'):
+        row['province'] = str(row['province']).replace('省', '').strip()
+    if not row.get('school_province'):
+        row['school_province'] = row.get('province')
     return row
 
 
 def validate_headers(headers: list[str]) -> None:
-    missing = [header for header in REQUIRED_HEADERS if header not in headers]
-    if missing:
-        raise ValueError(f'缺少必填字段：{", ".join(missing)}')
+    header_set = {str(header).strip() for header in headers if header}
+    missing_labels: list[str] = []
+    for field, aliases in REQUIRED_ALIASES.items():
+        if not any(alias in header_set for alias in aliases):
+            missing_labels.append(' / '.join(aliases))
+    if missing_labels:
+        raise ValueError(f'缺少必填字段：{", ".join(missing_labels)}')
 
 
 def parse_xlsx(content: bytes) -> list[dict[str, Any]]:
-    workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    workbook = load_workbook(io.BytesIO(content), read_only=False, data_only=False)
     worksheet = workbook.active
-    rows = list(worksheet.iter_rows(values_only=True))
-    if not rows:
+    matrix = list(worksheet.iter_rows(values_only=False))
+    if not matrix:
         return []
-    headers = [str(cell).strip() if cell is not None else '' for cell in rows[0]]
+    plain_rows = [tuple(cell.value for cell in row) for row in matrix]
+    header_idx = find_header_row_index(plain_rows)
+    header_cells = matrix[header_idx]
+    headers = [str(cell.value).strip() if cell.value is not None else '' for cell in header_cells]
     validate_headers(headers)
     result = []
-    for values in rows[1:]:
-        if not any(values):
+    for row_cells in matrix[header_idx + 1:]:
+        if not any(cell.value is not None and str(cell.value).strip() != '' for cell in row_cells):
             continue
-        raw = {headers[index]: values[index] if index < len(values) else None for index in range(len(headers))}
+        raw = {
+            headers[index]: cell_import_value(row_cells[index], headers[index])
+            for index in range(min(len(headers), len(row_cells)))
+            if headers[index]
+        }
         result.append(normalize_row(raw))
     return result
 
@@ -301,6 +372,62 @@ def insert_import_log(connection, import_type: str, file_name: str, total_count:
         [import_type, file_name, total_count, success_count, fail_count, error_message]
     )
     return cursor.lastrowid
+
+
+def sync_school_profiles_from_expert_rows(filename: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """从专家版录取表（物理/历史.xlsx）按院校去重，仅同步保研率与招生章程链接。"""
+    from school_profile_service import school_profile_updates
+
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        code = str(row.get('school_code') or '').strip()
+        name = str(row.get('school_name') or '').strip()
+        key = code or name
+        if not key:
+            continue
+        profile = school_profile_updates(row)
+        if not profile:
+            continue
+        current = deduped.get(key)
+        if not current:
+            deduped[key] = {**row, **profile}
+            continue
+        merged = {**current}
+        for field, value in profile.items():
+            if value not in (None, '') and (not merged.get(field) or field == 'regulation_url'):
+                merged[field] = value
+        deduped[key] = merged
+
+    success_count = 0
+    errors: list[str] = []
+    with get_connection() as connection:
+        for index, row in enumerate(deduped.values(), start=1):
+            try:
+                import_school_profile_row(connection, row)
+                success_count += 1
+            except Exception as exc:
+                errors.append(f'院校 {row.get("school_name") or row.get("school_code")}: {exc}')
+        fail_count = len(errors)
+        error_message = '\n'.join(errors[:20]) if errors else None
+        log_id = insert_import_log(
+            connection,
+            'school_profiles_from_expert',
+            filename,
+            len(deduped),
+            success_count,
+            fail_count,
+            error_message,
+        )
+        connection.commit()
+    return {
+        'log_id': log_id,
+        'total_count': len(deduped),
+        'success_count': success_count,
+        'fail_count': len(errors),
+        'errors': errors[:20],
+        'schools_with_regulation': sum(1 for row in deduped.values() if row.get('regulation_url')),
+        'schools_with_postgraduate_rate': sum(1 for row in deduped.values() if row.get('postgraduate_rate')),
+    }
 
 
 def import_admission_rows(filename: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -482,19 +609,26 @@ def parse_school_profile_file(filename: str, content: bytes) -> list[dict[str, A
             raise ValueError('缺少必填字段：院校名称')
         return [normalize_school_profile_row(dict(row)) for row in reader]
     if suffix == '.xlsx':
-        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        workbook = load_workbook(io.BytesIO(content), read_only=False, data_only=False)
         worksheet = workbook.active
-        rows = list(worksheet.iter_rows(values_only=True))
-        if not rows:
+        matrix = list(worksheet.iter_rows(values_only=False))
+        if not matrix:
             return []
-        headers = [str(cell).strip() if cell is not None else '' for cell in rows[0]]
+        plain_rows = [tuple(cell.value for cell in row) for row in matrix]
+        header_idx = find_header_row_index(plain_rows)
+        header_cells = matrix[header_idx]
+        headers = [str(cell.value).strip() if cell.value is not None else '' for cell in header_cells]
         if '院校名称' not in headers:
             raise ValueError('缺少必填字段：院校名称')
         result = []
-        for values in rows[1:]:
-            if not any(values):
+        for row_cells in matrix[header_idx + 1:]:
+            if not any(cell.value is not None and str(cell.value).strip() != '' for cell in row_cells):
                 continue
-            raw = {headers[index]: values[index] if index < len(values) else None for index in range(len(headers))}
+            raw = {
+                headers[index]: cell_import_value(row_cells[index], headers[index])
+                for index in range(min(len(headers), len(row_cells)))
+                if headers[index]
+            }
             result.append(normalize_school_profile_row(raw))
         return result
     raise ValueError('仅支持 .xlsx 或 .csv 文件')

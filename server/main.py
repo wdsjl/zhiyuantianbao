@@ -342,6 +342,24 @@ async def admin_import_school_profiles_submit(file: UploadFile = File(...)):
         return admin_import(f'院校扩展信息导入失败：{exc}')
 
 
+@app.post('/admin/import/sync-expert-school-profiles')
+async def admin_sync_expert_school_profiles_submit(file: UploadFile = File(...)):
+    """从河南专家版表格（物理.xlsx/历史.xlsx）仅同步保研率与招生章程，不重复导入录取数据。"""
+    from import_service import parse_import_file, sync_school_profiles_from_expert_rows
+
+    content = await file.read()
+    try:
+        rows = parse_import_file(file.filename or 'upload', content)
+        result = sync_school_profiles_from_expert_rows(file.filename or 'upload', rows)
+        message = (
+            f"专家版院校信息同步完成：院校 {result['total_count']} 所，成功 {result['success_count']} 所；"
+            f"含招生章程 {result.get('schools_with_regulation', 0)} 所，含保研率 {result.get('schools_with_postgraduate_rate', 0)} 所"
+        )
+        return admin_import(message)
+    except ValueError as exc:
+        return admin_import(f'专家版院校信息同步失败：{exc}')
+
+
 @app.get('/admin/art-sports-admissions')
 def admin_art_sports_admissions_page(keyword: str = '', category: str = '', page: int = 1, message: str = ''):
     return admin_art_sports_admissions(keyword, category, page, message)

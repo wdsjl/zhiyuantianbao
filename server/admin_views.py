@@ -459,7 +459,7 @@ def admin_import(message: str = ''):
       <div class="card">
         <h2>导入普通类历年录取数据</h2>
         {message_html}
-        <p class="muted">支持 `.xlsx` 和 `.csv`。请使用模板字段：年份、省份、批次、院校代码、院校名称、专业代码、专业名称等。<strong>艺考/体育批次数据也可通过此处导入</strong>，艺体冲稳保将优先读取录取库中对应批次的最低分（作为综合分参考）。</p>
+        <p class="muted">支持 `.xlsx` 和 `.csv`。兼容<strong>河南专家版</strong>字段：生源地、专业全称、专业组最低分/位次、保研率、2025招生章程（含超链接）。请使用模板字段或专家版原表。</p>
         <form action="/admin/import" method="post" enctype="multipart/form-data">
           <div class="toolbar">
             <input type="file" name="file" accept=".xlsx,.csv" required />
@@ -487,6 +487,16 @@ def admin_import(message: str = ''):
           <div class="toolbar">
             <input type="file" name="file" accept=".xlsx,.csv" required />
             <button type="submit">上传院校扩展信息</button>
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>从专家版表格同步院校信息（推荐）</h2>
+        <p class="muted">适用于已上传的 <strong>物理.xlsx / 历史.xlsx</strong>（河南高考志愿填报大数据专家版）。系统会自动识别「生源地」「专业全称」等列，并从「保研率」「2025招生章程」列提取章程超链接，<strong>仅更新院校保研率与招生章程</strong>，不会重复导入6万条录取数据。请分别上传物理、历史两个文件各一次。</p>
+        <form action="/admin/import/sync-expert-school-profiles" method="post" enctype="multipart/form-data">
+          <div class="toolbar">
+            <input type="file" name="file" accept=".xlsx,.csv" required />
+            <button type="submit">同步专家版院校章程/保研率</button>
           </div>
         </form>
       </div>
