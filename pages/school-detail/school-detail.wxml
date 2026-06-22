@@ -11,9 +11,10 @@
     <view wx:if="{{school.postgraduate_rate}}" class="sub-text highlight-line">保研率：{{school.postgraduate_rate}}</view>
     <view wx:if="{{school.website}}" class="sub-text">官网：{{school.website}}</view>
     <view wx:if="{{school.regulation_url}}" class="regulation-row">
-      <button class="primary-btn regulation-btn" bindtap="openRegulation">查看{{school.regulation_year || 2026}}年招生章程</button>
+      <button class="primary-btn regulation-btn" bindtap="openRegulation">打开{{school.regulation_year || 2026}}年招生章程</button>
       <button class="secondary-btn copy-btn" bindtap="copyRegulationLink">复制链接</button>
     </view>
+    <view wx:if="{{school.regulation_url}}" class="sub-text regulation-hint">章程来自阳光高考官网，小程序内将复制链接，请在手机浏览器中打开查看。</view>
   </view>
 
   <view class="card">

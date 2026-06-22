@@ -1,6 +1,7 @@
 const { request } = require('../../utils/request');
 const { loadActiveProfileSync } = require('../../utils/profileHelper');
 const { requirePermission } = require('../../utils/membership');
+const { openExternalRegulation, copyRegulationLink } = require('../../utils/regulationLink');
 
 Page({
   data: {
@@ -63,23 +64,12 @@ Page({
   openRegulation() {
     const school = this.data.school;
     const url = school && (school.regulation_url || school.regulationUrl);
-    if (!url) {
-      wx.showToast({ title: '暂无招生章程链接', icon: 'none' });
-      return;
-    }
-    wx.navigateTo({ url: `/pages/webview/webview?url=${encodeURIComponent(url)}` });
+    openExternalRegulation(url);
   },
   copyRegulationLink() {
     const school = this.data.school;
     const url = school && (school.regulation_url || school.regulationUrl);
-    if (!url) {
-      wx.showToast({ title: '暂无招生章程链接', icon: 'none' });
-      return;
-    }
-    wx.setClipboardData({
-      data: url,
-      success: () => wx.showToast({ title: '链接已复制', icon: 'success' })
-    });
+    copyRegulationLink(url);
   },
   addMajorToPlan(event) {
     const plan = event.currentTarget.dataset.plan;
