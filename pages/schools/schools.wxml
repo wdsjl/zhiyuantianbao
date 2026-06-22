@@ -53,6 +53,7 @@
       <view>
         <view class="school-name">{{item.name}}</view>
         <view class="sub-text">{{item.city}} · {{item.type}} · {{item.subject}}</view>
+        <view wx:if="{{item.has_regulation || item.regulation_url}}" class="regulation-tag">有招生章程</view>
       </view>
       <text class="rank">位次 {{item.minRank}}</text>
     </view>

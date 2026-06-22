@@ -328,6 +328,20 @@ async def admin_import_art_sports_submit(file: UploadFile = File(...)):
         return admin_import(f'艺体导入失败：{exc}')
 
 
+@app.post('/admin/import/school-profiles')
+async def admin_import_school_profiles_submit(file: UploadFile = File(...)):
+    from import_service import import_school_profile_rows, parse_school_profile_file
+
+    content = await file.read()
+    try:
+        rows = parse_school_profile_file(file.filename or 'upload', content)
+        result = import_school_profile_rows(file.filename or 'upload', rows)
+        message = f"院校扩展信息导入完成：共 {result['total_count']} 条，成功 {result['success_count']} 条，失败 {result['fail_count']} 条"
+        return admin_import(message)
+    except ValueError as exc:
+        return admin_import(f'院校扩展信息导入失败：{exc}')
+
+
 @app.get('/admin/art-sports-admissions')
 def admin_art_sports_admissions_page(keyword: str = '', category: str = '', page: int = 1, message: str = ''):
     return admin_art_sports_admissions(keyword, category, page, message)
@@ -1589,6 +1603,9 @@ def list_schools(
     limit: int = 50,
     offset: int = 0
 ):
+    from school_profile_service import ensure_school_profile_columns
+
+    ensure_school_profile_columns()
     sql = 'SELECT * FROM schools WHERE 1=1'
     params = []
     if keyword:
@@ -1623,11 +1640,17 @@ def list_schools(
 
     with get_connection() as connection:
         rows = connection.execute(sql, params).fetchall()
-    return {'list': rows_to_dicts(rows)}
+    items = rows_to_dicts(rows)
+    for item in items:
+        item['has_regulation'] = bool(item.get('regulation_url'))
+    return {'list': items}
 
 
 @app.get('/api/schools/{school_id}')
 def get_school(school_id: int):
+    from school_profile_service import enrich_school_profile, ensure_school_profile_columns
+
+    ensure_school_profile_columns()
     with get_connection() as connection:
         school = row_to_dict(connection.execute('SELECT * FROM schools WHERE school_id = ?', [school_id]).fetchone())
         if not school:
@@ -1642,6 +1665,7 @@ def get_school(school_id: int):
             ''',
             [school_id]
         ).fetchall())
+    school = enrich_school_profile(school)
     return {'school': school, 'plans': plans}
 
 

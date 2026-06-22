@@ -35,16 +35,21 @@ def get_school(school_id: int) -> dict[str, Any] | None:
 
 
 def save_school(data: dict[str, Any], school_id: int | None = None) -> int:
+    from school_profile_service import ensure_school_profile_columns
+
+    ensure_school_profile_columns()
     fields = [
         'school_code', 'school_name', 'province', 'city', 'school_type', 'education_level',
-        'is_985', 'is_211', 'is_double_first_class', 'is_public', 'authority', 'website'
+        'is_985', 'is_211', 'is_double_first_class', 'is_public', 'authority', 'website',
+        'postgraduate_rate', 'regulation_url', 'regulation_year'
     ]
     values = [
         data['school_code'], data['school_name'], data.get('province'), data.get('city'),
         data.get('school_type'), data.get('education_level'),
         1 if data.get('is_985') else 0, 1 if data.get('is_211') else 0,
         1 if data.get('is_double_first_class') else 0, 1 if data.get('is_public', True) else 0,
-        data.get('authority'), data.get('website')
+        data.get('authority'), data.get('website'),
+        data.get('postgraduate_rate'), data.get('regulation_url'), data.get('regulation_year'),
     ]
     with get_connection() as connection:
         if school_id:

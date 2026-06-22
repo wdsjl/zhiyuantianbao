@@ -60,6 +60,27 @@ Page({
         this.setData({ loading: false });
       });
   },
+  openRegulation() {
+    const school = this.data.school;
+    const url = school && (school.regulation_url || school.regulationUrl);
+    if (!url) {
+      wx.showToast({ title: '暂无招生章程链接', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({ url: `/pages/webview/webview?url=${encodeURIComponent(url)}` });
+  },
+  copyRegulationLink() {
+    const school = this.data.school;
+    const url = school && (school.regulation_url || school.regulationUrl);
+    if (!url) {
+      wx.showToast({ title: '暂无招生章程链接', icon: 'none' });
+      return;
+    }
+    wx.setClipboardData({
+      data: url,
+      success: () => wx.showToast({ title: '链接已复制', icon: 'success' })
+    });
+  },
   addMajorToPlan(event) {
     const plan = event.currentTarget.dataset.plan;
     const profile = loadActiveProfileSync();

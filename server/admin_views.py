@@ -480,6 +480,16 @@ def admin_import(message: str = ''):
         </form>
         <p class="muted">模板文件位置：<code>database/art_sports_admissions_import_template.csv</code></p>
       </div>
+      <div class="card">
+        <h2>导入院校保研率 / 招生章程链接</h2>
+        <p class="muted">适用于按院校一行的表格（如含「保研率」「2025招生章程」列）。必填：院校名称；可选：院校代码、城市、官网。列名含「招生章程」即识别为章程链接（表头写2025时按2026年展示）。</p>
+        <form action="/admin/import/school-profiles" method="post" enctype="multipart/form-data">
+          <div class="toolbar">
+            <input type="file" name="file" accept=".xlsx,.csv" required />
+            <button type="submit">上传院校扩展信息</button>
+          </div>
+        </form>
+      </div>
     '''
     return render_page('数据导入', body)
 

@@ -39,14 +39,37 @@ HEADER_MAP = {
     '平均分': 'avg_score',
     '平均位次': 'avg_rank',
     '最高分': 'max_score',
-    '最高位次': 'max_rank'
+    '最高位次': 'max_rank',
+    '保研率': 'postgraduate_rate',
+    '官网': 'website',
+    '学校官网': 'website',
+    '院校官网': 'website',
+    '2025招生章程': 'regulation_url',
+    '2026招生章程': 'regulation_url',
+    '招生章程': 'regulation_url',
+    '招生章程链接': 'regulation_url',
 }
 
 INT_FIELDS = {
     'year', 'is_985', 'is_211', 'is_double_first_class', 'is_public',
     'enrollment_count', 'tuition', 'min_score', 'min_rank', 'avg_score',
-    'avg_rank', 'max_score', 'max_rank'
+    'avg_rank', 'max_score', 'max_rank', 'regulation_year'
 }
+
+
+def resolve_import_header(cn_key: str) -> str | None:
+    key = str(cn_key or '').strip()
+    if not key:
+        return None
+    if key in HEADER_MAP:
+        return HEADER_MAP[key]
+    if '招生章程' in key:
+        return 'regulation_url'
+    if '保研率' in key:
+        return 'postgraduate_rate'
+    if key in ('官网', '学校官网', '院校官网', '官方网站'):
+        return 'website'
+    return None
 
 
 def normalize_bool(value: Any, default: int = 0) -> int:
@@ -70,16 +93,26 @@ def to_int(value: Any, default: int | None = None) -> int | None:
 
 
 def normalize_row(raw: dict[str, Any]) -> dict[str, Any]:
+    from school_profile_service import infer_regulation_year, normalize_postgraduate_rate
+
     row = {}
+    regulation_year = None
     for cn_key, value in raw.items():
         if cn_key is None:
             continue
-        key = HEADER_MAP.get(str(cn_key).strip())
+        key = resolve_import_header(cn_key)
         if not key:
             continue
+        if key == 'regulation_url':
+            regulation_year = infer_regulation_year(cn_key)
         if isinstance(value, str):
             value = value.strip()
         row[key] = value
+
+    if row.get('regulation_url') and regulation_year:
+        row['regulation_year'] = regulation_year
+    if row.get('postgraduate_rate'):
+        row['postgraduate_rate'] = normalize_postgraduate_rate(row['postgraduate_rate'])
 
     for field in INT_FIELDS:
         if field in row:
@@ -144,31 +177,48 @@ def parse_import_file(filename: str, content: bytes) -> list[dict[str, Any]]:
 
 
 def get_or_create_school(connection, row: dict[str, Any]) -> int:
+    from school_profile_service import ensure_school_profile_columns, school_profile_updates
+
+    ensure_school_profile_columns()
+    profile = school_profile_updates(row)
     school = row_to_dict(connection.execute('SELECT school_id FROM schools WHERE school_code = ?', [row['school_code']]).fetchone())
     if school:
+        set_parts = [
+            'school_name = ?', 'province = ?', 'city = ?', 'school_type = ?', 'education_level = ?',
+            'is_985 = ?', 'is_211 = ?', 'is_double_first_class = ?', 'is_public = ?',
+        ]
+        values = [
+            row['school_name'], row.get('school_province'), row.get('city'), row.get('school_type'),
+            row.get('education_level'), row.get('is_985'), row.get('is_211'), row.get('is_double_first_class'),
+            row.get('is_public'),
+        ]
+        for field, value in profile.items():
+            set_parts.append(f'{field} = ?')
+            values.append(value)
+        values.append(school['school_id'])
         connection.execute(
-            '''
-            UPDATE schools SET school_name = ?, province = ?, city = ?, school_type = ?, education_level = ?,
-              is_985 = ?, is_211 = ?, is_double_first_class = ?, is_public = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE school_id = ?
-            ''',
-            [
-                row['school_name'], row.get('school_province'), row.get('city'), row.get('school_type'),
-                row.get('education_level'), row.get('is_985'), row.get('is_211'), row.get('is_double_first_class'),
-                row.get('is_public'), school['school_id']
-            ]
+            f"UPDATE schools SET {', '.join(set_parts)}, updated_at = CURRENT_TIMESTAMP WHERE school_id = ?",
+            values,
         )
         return school['school_id']
 
+    columns = [
+        'school_code', 'school_name', 'province', 'city', 'school_type', 'education_level',
+        'is_985', 'is_211', 'is_double_first_class', 'is_public',
+    ]
+    values = [
+        row['school_code'], row['school_name'], row.get('school_province'), row.get('city'), row.get('school_type'),
+        row.get('education_level'), row.get('is_985'), row.get('is_211'), row.get('is_double_first_class'), row.get('is_public'),
+    ]
+    for field in ('postgraduate_rate', 'regulation_url', 'regulation_year', 'website'):
+        if profile.get(field) not in (None, ''):
+            columns.append(field)
+            values.append(profile[field])
+
+    placeholders = ', '.join(['?'] * len(columns))
     cursor = connection.execute(
-        '''
-        INSERT INTO schools (school_code, school_name, province, city, school_type, education_level, is_985, is_211, is_double_first_class, is_public)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''',
-        [
-            row['school_code'], row['school_name'], row.get('school_province'), row.get('city'), row.get('school_type'),
-            row.get('education_level'), row.get('is_985'), row.get('is_211'), row.get('is_double_first_class'), row.get('is_public')
-        ]
+        f'INSERT INTO schools ({", ".join(columns)}) VALUES ({placeholders})',
+        values,
     )
     return cursor.lastrowid
 
@@ -357,6 +407,122 @@ def normalize_art_sports_row(raw: dict[str, Any]) -> dict[str, Any]:
                 row[field] = None
     row['city'] = str(row.get('city') or '').strip()
     return row
+
+
+def import_school_profile_row(connection, row: dict[str, Any]) -> int:
+    from school_profile_service import ensure_school_profile_columns, school_profile_updates
+
+    ensure_school_profile_columns()
+    school_code = str(row.get('school_code') or '').strip()
+    school_name = str(row.get('school_name') or '').strip()
+    if not school_code and not school_name:
+        raise ValueError('缺少院校代码或院校名称')
+    profile = school_profile_updates(row)
+    existing = None
+    if school_code:
+        existing = row_to_dict(connection.execute(
+            'SELECT school_id FROM schools WHERE school_code = ?', [school_code]
+        ).fetchone())
+    if not existing and school_name:
+        existing = row_to_dict(connection.execute(
+            'SELECT school_id FROM schools WHERE school_name = ? LIMIT 1', [school_name]
+        ).fetchone())
+    if existing:
+        if profile:
+            set_parts = [f'{field} = ?' for field in profile]
+            connection.execute(
+                f"UPDATE schools SET {', '.join(set_parts)}, updated_at = CURRENT_TIMESTAMP WHERE school_id = ?",
+                list(profile.values()) + [existing['school_id']],
+            )
+        return int(existing['school_id'])
+
+    code = school_code or f'SP{abs(hash(school_name)) % 100000:05d}'
+    columns = ['school_code', 'school_name']
+    values = [code, school_name or code]
+    for field, value in profile.items():
+        columns.append(field)
+        values.append(value)
+    cursor = connection.execute(
+        f'INSERT INTO schools ({", ".join(columns)}) VALUES ({", ".join(["?"] * len(columns))})',
+        values,
+    )
+    return int(cursor.lastrowid)
+
+
+def normalize_school_profile_row(raw: dict[str, Any]) -> dict[str, Any]:
+    from school_profile_service import infer_regulation_year, normalize_postgraduate_rate
+
+    row: dict[str, Any] = {}
+    regulation_year = None
+    for cn_key, value in raw.items():
+        if cn_key is None:
+            continue
+        key = resolve_import_header(cn_key)
+        if not key:
+            continue
+        if key == 'regulation_url':
+            regulation_year = infer_regulation_year(cn_key)
+        if isinstance(value, str):
+            value = value.strip()
+        row[key] = value
+    if row.get('regulation_url') and regulation_year:
+        row['regulation_year'] = regulation_year
+    if row.get('postgraduate_rate'):
+        row['postgraduate_rate'] = normalize_postgraduate_rate(row['postgraduate_rate'])
+    return row
+
+
+def parse_school_profile_file(filename: str, content: bytes) -> list[dict[str, Any]]:
+    suffix = Path(filename).suffix.lower()
+    if suffix == '.csv':
+        text = content.decode('utf-8-sig')
+        reader = csv.DictReader(io.StringIO(text))
+        headers = [str(h).strip() for h in (reader.fieldnames or [])]
+        if '院校名称' not in headers:
+            raise ValueError('缺少必填字段：院校名称')
+        return [normalize_school_profile_row(dict(row)) for row in reader]
+    if suffix == '.xlsx':
+        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        worksheet = workbook.active
+        rows = list(worksheet.iter_rows(values_only=True))
+        if not rows:
+            return []
+        headers = [str(cell).strip() if cell is not None else '' for cell in rows[0]]
+        if '院校名称' not in headers:
+            raise ValueError('缺少必填字段：院校名称')
+        result = []
+        for values in rows[1:]:
+            if not any(values):
+                continue
+            raw = {headers[index]: values[index] if index < len(values) else None for index in range(len(headers))}
+            result.append(normalize_school_profile_row(raw))
+        return result
+    raise ValueError('仅支持 .xlsx 或 .csv 文件')
+
+
+def import_school_profile_rows(filename: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    success_count = 0
+    errors: list[str] = []
+    with get_connection() as connection:
+        for index, row in enumerate(rows, start=2):
+            try:
+                if not row.get('school_name') and not row.get('school_code'):
+                    raise ValueError(f'第 {index} 行缺少院校名称或院校代码')
+                import_school_profile_row(connection, row)
+                success_count += 1
+            except Exception as exc:
+                errors.append(str(exc))
+        fail_count = len(errors)
+        error_message = '\n'.join(errors[:20]) if errors else None
+        log_id = insert_import_log(connection, 'school_profiles', filename, len(rows), success_count, fail_count, error_message)
+        connection.commit()
+    return {
+        'log_id': log_id,
+        'total_count': len(rows),
+        'success_count': success_count,
+        'fail_count': fail_count,
+        'errors': errors[:20],
+    }
 
 
 def import_art_sports_rows(filename: str, rows: list[dict[str, Any]]) -> dict[str, Any]:

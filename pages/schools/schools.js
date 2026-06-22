@@ -40,11 +40,12 @@ Page({
         code: school.school_code,
         type: school.is_public ? '公办' : '民办',
         tags,
-        majorsText: '点击查看招生专业与历年分数',
+        majorsText: school.postgraduate_rate ? `保研率 ${school.postgraduate_rate} · 点击查看招生专业` : '点击查看招生专业与历年分数',
         subject: school.education_level || '本科',
         minRank: '--',
         tuition: '--',
-        duration: school.city || ''
+        duration: school.city || '',
+        has_regulation: !!(school.has_regulation || school.regulation_url)
       };
     });
   },
