@@ -57,7 +57,7 @@ class ArtLlmVolunteerTests(unittest.TestCase):
             connection.execute('DELETE FROM art_llm_admission_cache WHERE province = ? AND batch = ?', ['河南', '艺术本科批'])
             connection.commit()
         rows = collect_art_2025_admissions_via_llm('艺术本科批', 5, '文化50%+专业50%')
-        self.assertGreaterEqual(len(rows), 20)
+        self.assertGreaterEqual(len(rows), 128)
         cached = collect_art_2025_admissions_via_llm('艺术本科批', 5, '文化50%+专业50%')
         self.assertEqual(len(cached), len(rows))
         mock_chat.assert_called_once()
@@ -114,6 +114,31 @@ class ArtLlmVolunteerTests(unittest.TestCase):
         self.assertEqual(result['generation']['generation_mode'], 'llm')
         self.assertEqual(len(result['items']), 64)
         self.assertEqual(result['strategy']['data_source'], 'llm_art_2025')
+
+    @patch('art_llm_volunteer_service.chat_completion', side_effect=RuntimeError('skip llm plan'))
+    def test_expand_art_sports_admissions_reaches_minimum(self, _mock_chat) -> None:
+        from henan_art_sports_service import expand_art_sports_admissions, VOLUNTEER_SLOTS
+        rows = expand_art_sports_admissions(
+            [{'school_name': '测试大学', 'major_name': '美术学', 'min_composite_2025': 500, 'city': '郑州'}],
+            category='艺术类',
+            batch_level='本科',
+            formula_id=5,
+            composite_score=520,
+            minimum=128,
+        )
+        self.assertGreaterEqual(len(rows), 128)
+        selected = generate_art_volunteer_plan_via_llm(
+            batch='艺术本科批',
+            composite_score=520,
+            culture_score=480,
+            professional_score=240,
+            formula_id=5,
+            formula_label='文化50%+专业50%',
+            plan_style='balanced',
+            admissions=rows[:5],
+            category='艺术类',
+        )
+        self.assertEqual(len(selected), VOLUNTEER_SLOTS)
 
     @patch('art_llm_volunteer_service.is_llm_available', return_value=False)
     def test_try_build_returns_error_when_llm_disabled(self, _mock_available) -> None:

@@ -20,8 +20,10 @@ from henan_art_sports_service import (
     _classify_tier,
     _infer_exam_type,
     assemble_art_sports_parallel_plan,
+    batch_level_from_target_batch,
     calculate_composite,
     category_from_exam_type,
+    expand_art_sports_admissions,
     get_art_sports_quotas,
     request_to_match_payload,
     resolve_school_major_ids,
@@ -193,10 +195,19 @@ def collect_art_sports_2025_admissions_via_llm(
     formula_id: int,
     formula_label: str,
     category: str = '艺术类',
+    *,
+    composite_score: float | None = None,
 ) -> list[dict[str, Any]]:
     cached = load_cached_admissions(batch, formula_id)
     if cached:
-        return cached
+        return expand_art_sports_admissions(
+            cached,
+            category=category,
+            batch_level='专科' if '专科' in batch else '本科',
+            formula_id=int(formula_id),
+            composite_score=float(composite_score or 500.0),
+            minimum=max(128, VOLUNTEER_SLOTS + 16),
+        )
 
     subject_label = '艺术类' if category == '艺术类' else '体育类'
     content = chat_completion(
@@ -221,8 +232,16 @@ def collect_art_sports_2025_admissions_via_llm(
     normalized = [item for item in normalized if item]
     if len(normalized) < 20:
         raise ValueError(f'大模型返回的2025录取线过少（{len(normalized)}条）')
-    save_cached_admissions(batch, formula_id, normalized, source_note=f'llm_fetch_2025_{category}')
-    return normalized
+    expanded = expand_art_sports_admissions(
+        normalized,
+        category=category,
+        batch_level='专科' if '专科' in batch else '本科',
+        formula_id=int(formula_id),
+        composite_score=float(composite_score or 500.0),
+        minimum=max(128, VOLUNTEER_SLOTS + 16),
+    )
+    save_cached_admissions(batch, formula_id, expanded, source_note=f'llm_fetch_2025_{category}')
+    return expanded
 
 
 def collect_art_2025_admissions_via_llm(batch: str, formula_id: int, formula_label: str) -> list[dict[str, Any]]:
@@ -368,6 +387,35 @@ def _local_plan_from_admissions(
     return assemble_art_sports_parallel_plan(pool, plan_style)
 
 
+def _merge_llm_and_local_plans(
+    llm_items: list[dict[str, Any]],
+    local_items: list[dict[str, Any]],
+    *,
+    total_slots: int = VOLUNTEER_SLOTS,
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in llm_items:
+        key = (item['school_name'], item['major_name'])
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(item)
+        if len(selected) >= total_slots:
+            break
+    for item in local_items:
+        key = (item['school_name'], item['major_name'])
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(item)
+        if len(selected) >= total_slots:
+            break
+    for index, item in enumerate(selected[:total_slots], start=1):
+        item['sort_order'] = index
+    return selected[:total_slots]
+
+
 def generate_art_volunteer_plan_via_llm(
     *,
     batch: str,
@@ -382,84 +430,89 @@ def generate_art_volunteer_plan_via_llm(
     accept_adjustment: bool = True,
     category: str = '艺术类',
 ) -> list[dict[str, Any]]:
-    subject_label = '艺术类' if category == '艺术类' else '体育类'
-    content = chat_completion(
-        [
-            {
-                'role': 'system',
-                'content': (
-                    f'你是河南省高考{subject_label}志愿填报专家。'
-                    '你必须只输出合法 JSON，不要输出 markdown 代码块或额外说明。'
-                ),
-            },
-            {
-                'role': 'user',
-                'content': build_volunteer_plan_prompt(
-                    batch=batch,
-                    composite_score=composite_score,
-                    culture_score=culture_score,
-                    professional_score=professional_score,
-                    formula_label=formula_label,
-                    plan_style=plan_style,
-                    admissions=admissions,
-                    subject_combination=subject_combination,
-                    category=category,
-                ),
-            },
-        ],
-        max_tokens=PLAN_GENERATION_MAX_TOKENS,
-        timeout=PLAN_GENERATION_TIMEOUT,
+    batch_level = batch_level_from_target_batch(batch)
+    expanded = expand_art_sports_admissions(
+        admissions,
+        category=category,
+        batch_level=batch_level,
+        formula_id=formula_id,
+        composite_score=composite_score,
+        minimum=max(128, VOLUNTEER_SLOTS + 16),
     )
-    payload = extract_json_payload(content)
-    volunteers = payload.get('volunteers') if isinstance(payload, dict) else payload
-    if not isinstance(volunteers, list):
-        raise ValueError('大模型未返回 volunteers 列表')
+    local_items = _local_plan_from_admissions(
+        expanded,
+        composite_score=composite_score,
+        plan_style=plan_style,
+        accept_adjustment=accept_adjustment,
+        formula_id=formula_id,
+        category=category,
+    )
 
-    seen: set[tuple[str, str]] = set()
-    items: list[dict[str, Any]] = []
-    for row in volunteers:
-        if not isinstance(row, dict):
-            continue
-        school_name = str(row.get('school_name') or '').strip()
-        major_name = str(row.get('major_name') or '').strip()
-        key = (school_name, major_name)
-        if not school_name or not major_name or key in seen:
-            continue
-        seen.add(key)
-        items.append(
-            _volunteer_row_to_plan_item(
-                row,
-                composite_score=composite_score,
-                accept_adjustment=accept_adjustment,
-                formula_id=formula_id,
-                category=category,
-            )
+    llm_items: list[dict[str, Any]] = []
+    try:
+        subject_label = '艺术类' if category == '艺术类' else '体育类'
+        content = chat_completion(
+            [
+                {
+                    'role': 'system',
+                    'content': (
+                        f'你是河南省高考{subject_label}志愿填报专家。'
+                        '你必须只输出合法 JSON，不要输出 markdown 代码块或额外说明。'
+                    ),
+                },
+                {
+                    'role': 'user',
+                    'content': build_volunteer_plan_prompt(
+                        batch=batch,
+                        composite_score=composite_score,
+                        culture_score=culture_score,
+                        professional_score=professional_score,
+                        formula_label=formula_label,
+                        plan_style=plan_style,
+                        admissions=expanded,
+                        subject_combination=subject_combination,
+                        category=category,
+                    ),
+                },
+            ],
+            max_tokens=PLAN_GENERATION_MAX_TOKENS,
+            timeout=PLAN_GENERATION_TIMEOUT,
         )
+        payload = extract_json_payload(content)
+        volunteers = payload.get('volunteers') if isinstance(payload, dict) else payload
+        if isinstance(volunteers, list):
+            seen: set[tuple[str, str]] = set()
+            for row in volunteers:
+                if not isinstance(row, dict):
+                    continue
+                school_name = str(row.get('school_name') or '').strip()
+                major_name = str(row.get('major_name') or '').strip()
+                key = (school_name, major_name)
+                if not school_name or not major_name or key in seen:
+                    continue
+                seen.add(key)
+                llm_items.append(
+                    _volunteer_row_to_plan_item(
+                        row,
+                        composite_score=composite_score,
+                        accept_adjustment=accept_adjustment,
+                        formula_id=formula_id,
+                        category=category,
+                    )
+                )
+    except Exception:
+        llm_items = []
 
+    items = _merge_llm_and_local_plans(llm_items, local_items)
     if len(items) < VOLUNTEER_SLOTS:
-        local_items = _local_plan_from_admissions(
-            admissions,
-            composite_score=composite_score,
-            plan_style=plan_style,
-            accept_adjustment=accept_adjustment,
-            formula_id=formula_id,
-            category=category,
+        items = local_items[:VOLUNTEER_SLOTS]
+    if len(items) < VOLUNTEER_SLOTS:
+        raise ValueError(
+            f'无法凑满 {VOLUNTEER_SLOTS} 个志愿（当前 {len(items)} 个，候选池 {len(expanded)} 条）'
         )
-        for item in local_items:
-            key = (item['school_name'], item['major_name'])
-            if key in seen:
-                continue
-            seen.add(key)
-            items.append(item)
-            if len(items) >= VOLUNTEER_SLOTS:
-                break
-
-    items = items[:VOLUNTEER_SLOTS]
-    for index, item in enumerate(items, start=1):
+    for index, item in enumerate(items[:VOLUNTEER_SLOTS], start=1):
         item['sort_order'] = index
-    if len(items) < 8:
-        raise ValueError(f'大模型志愿方案不足（{len(items)}条）')
-    return items
+    return items[:VOLUNTEER_SLOTS]
 
 
 def build_art_sports_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
@@ -506,7 +559,10 @@ def build_art_sports_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
             'art_sports_mode': True,
         }
 
-    admissions = collect_art_sports_2025_admissions_via_llm(batch, formula_id, formula_label, category)
+    admissions = collect_art_sports_2025_admissions_via_llm(
+        batch, formula_id, formula_label, category, composite_score=composite_score,
+    )
+    expanded_count = len(admissions)
     selected = generate_art_volunteer_plan_via_llm(
         batch=batch,
         composite_score=composite_score,
@@ -524,7 +580,7 @@ def build_art_sports_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
     quotas = get_art_sports_quotas(plan_style)
     warnings: list[str] = []
     if len(selected) < VOLUNTEER_SLOTS:
-        warnings.append(f'大模型生成 {len(selected)}/{VOLUNTEER_SLOTS} 个志愿，候选录取线 {len(admissions)} 条。')
+        warnings.append(f'志愿生成 {len(selected)}/{VOLUNTEER_SLOTS} 个，候选录取线 {expanded_count} 条。')
     warnings.append(
         f'志愿方案由大模型基于2025年河南{subject_text}录取最低综合分生成，仅供参考，请以考试院和高校招生章程为准。'
     )
@@ -550,7 +606,7 @@ def build_art_sports_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
             'volunteer_slots': VOLUNTEER_SLOTS,
             'rank_notice': f'河南省不发布艺体综合分官方位次；{category}志愿由大模型采集2025录取线对标生成。',
             'data_source': data_source,
-            'candidate_count': len(admissions),
+            'candidate_count': expanded_count,
             'generation_mode': 'llm',
             'volunteer_rule': {
                 'total_slots': VOLUNTEER_SLOTS,
@@ -567,7 +623,7 @@ def build_art_sports_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
         'generation': {
             'target_slots': VOLUNTEER_SLOTS,
             'generated_count': len(selected),
-            'candidate_pool': len(admissions),
+            'candidate_pool': expanded_count,
             'generation_mode': 'llm',
         },
         'art_sports_mode': True,

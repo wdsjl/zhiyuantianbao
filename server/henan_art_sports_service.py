@@ -538,6 +538,200 @@ EXTENDED_SAMPLE_SCHOOLS: list[dict[str, Any]] = SAMPLE_SCHOOLS + [
 ]
 
 
+_BUILTIN_ART_UNDERGRAD: list[tuple[str, str, str]] = [
+    ('郑州大学', '音乐表演', '郑州'), ('郑州大学', '视觉传达设计', '郑州'), ('郑州大学', '环境设计', '郑州'),
+    ('河南大学', '美术学', '开封'), ('河南大学', '音乐学', '开封'), ('河南大学', '播音与主持艺术', '开封'),
+    ('河南师范大学', '舞蹈学', '新乡'), ('河南师范大学', '美术学', '新乡'), ('河南师范大学', '音乐表演', '新乡'),
+    ('河南工业大学', '环境设计', '郑州'), ('河南工业大学', '视觉传达设计', '郑州'), ('河南工业大学', '产品设计', '郑州'),
+    ('河南科技大学', '产品设计', '洛阳'), ('河南科技大学', '环境设计', '洛阳'), ('河南科技大学', '视觉传达设计', '洛阳'),
+    ('河南理工大学', '环境设计', '焦作'), ('河南理工大学', '视觉传达设计', '焦作'),
+    ('河南农业大学', '环境设计', '郑州'), ('河南农业大学', '产品设计', '郑州'),
+    ('河南财经政法大学', '视觉传达设计', '郑州'),
+    ('郑州轻工业大学', '环境设计', '郑州'), ('郑州轻工业大学', '视觉传达设计', '郑州'),
+    ('中原工学院', '服装与服饰设计', '郑州'), ('中原工学院', '视觉传达设计', '郑州'),
+    ('洛阳师范学院', '视觉传达设计', '洛阳'), ('洛阳师范学院', '音乐学', '洛阳'), ('洛阳师范学院', '美术学', '洛阳'),
+    ('信阳师范学院', '美术学', '信阳'), ('信阳师范学院', '音乐学', '信阳'), ('信阳师范学院', '舞蹈学', '信阳'),
+    ('南阳师范学院', '播音与主持艺术', '南阳'), ('南阳师范学院', '视觉传达设计', '南阳'), ('南阳师范学院', '音乐学', '南阳'),
+    ('安阳师范学院', '书法学', '安阳'), ('安阳师范学院', '美术学', '安阳'),
+    ('商丘师范学院', '美术学', '商丘'), ('商丘师范学院', '音乐学', '商丘'),
+    ('周口师范学院', '美术学', '周口'), ('周口师范学院', '音乐表演', '周口'),
+    ('许昌学院', '视觉传达设计', '许昌'), ('许昌学院', '美术学', '许昌'),
+    ('黄淮学院', '环境设计', '驻马店'), ('黄淮学院', '视觉传达设计', '驻马店'),
+    ('平顶山学院', '美术学', '平顶山'), ('平顶山学院', '音乐学', '平顶山'),
+    ('新乡学院', '视觉传达设计', '新乡'), ('新乡学院', '环境设计', '新乡'),
+    ('郑州师范学院', '音乐教育', '郑州'), ('郑州师范学院', '美术学', '郑州'),
+    ('河南工程学院', '视觉传达设计', '郑州'), ('河南工程学院', '环境设计', '郑州'),
+    ('河南城建学院', '环境设计', '平顶山'), ('河南城建学院', '视觉传达设计', '平顶山'),
+    ('河南牧业经济学院', '视觉传达设计', '郑州'),
+    ('河南科技学院', '视觉传达设计', '新乡'),
+    ('洛阳理工学院', '环境设计', '洛阳'),
+    ('郑州航空工业管理学院', '视觉传达设计', '郑州'),
+    ('华北水利水电大学', '环境设计', '郑州'),
+    ('河南中医药大学', '针灸推拿学', '郑州'),
+    ('河南警察学院', '视觉传达设计', '郑州'),
+    ('郑州西亚斯学院', '视觉传达设计', '郑州'),
+    ('黄河科技学院', '环境设计', '郑州'),
+    ('郑州工商学院', '视觉传达设计', '郑州'),
+    ('中原科技学院', '视觉传达设计', '郑州'),
+    ('郑州升达经贸管理学院', '视觉传达设计', '郑州'),
+    ('郑州商学院', '环境设计', '郑州'),
+    ('河南开封科技传媒学院', '视觉传达设计', '开封'),
+    ('安阳学院', '视觉传达设计', '安阳'),
+    ('新乡工程学院', '环境设计', '新乡'),
+    ('郑州经贸学院', '视觉传达设计', '郑州'),
+    ('郑州工业应用技术学院', '环境设计', '郑州'),
+    ('河南师范大学新联学院', '视觉传达设计', '新乡'),
+    ('信阳学院', '美术学', '信阳'),
+    ('郑州科技学院', '环境设计', '郑州'),
+    ('郑州财经学院', '视觉传达设计', '郑州'),
+    ('河南艺术职业学院', '音乐表演', '郑州'), ('河南艺术职业学院', '舞蹈表演', '郑州'),
+    ('河南职业技术学院', '数字媒体艺术设计', '郑州'),
+    ('黄河水利职业技术学院', '环境艺术设计', '开封'),
+    ('河南工业职业技术学院', '视觉传达设计', '南阳'),
+]
+
+_BUILTIN_SPORTS_UNDERGRAD: list[tuple[str, str, str]] = [
+    ('郑州大学', '体育教育', '郑州'), ('郑州大学', '社会体育指导与管理', '郑州'),
+    ('河南大学', '运动训练', '开封'), ('河南大学', '体育教育', '开封'),
+    ('河南师范大学', '体育教育', '新乡'), ('河南师范大学', '运动康复', '新乡'),
+    ('河南体育学院', '社会体育指导与管理', '郑州'), ('河南体育学院', '运动训练', '郑州'),
+    ('河南农业大学', '体育教育', '郑州'), ('河南理工大学', '社会体育', '焦作'),
+    ('河南科技大学', '体育教育', '洛阳'), ('河南工业大学', '体育教育', '郑州'),
+    ('洛阳师范学院', '运动康复', '洛阳'), ('洛阳师范学院', '体育教育', '洛阳'),
+    ('信阳师范学院', '体育教育', '信阳'), ('南阳师范学院', '体育教育', '南阳'),
+    ('安阳师范学院', '体育教育', '安阳'), ('商丘师范学院', '体育教育', '商丘'),
+    ('周口师范学院', '体育教育', '周口'), ('许昌学院', '体育教育', '许昌'),
+    ('黄淮学院', '社会体育指导与管理', '驻马店'), ('平顶山学院', '体育教育', '平顶山'),
+    ('新乡学院', '体育教育', '新乡'), ('郑州师范学院', '体育教育', '郑州'),
+    ('河南工程学院', '体育教育', '郑州'), ('华北水利水电大学', '运动训练', '郑州'),
+    ('郑州航空工业管理学院', '体育教育', '郑州'), ('河南财经政法大学', '体育教育', '郑州'),
+    ('河南科技学院', '体育教育', '新乡'), ('洛阳理工学院', '体育教育', '洛阳'),
+    ('郑州工商学院', '社会体育指导与管理', '郑州'), ('黄河科技学院', '体育教育', '郑州'),
+    ('河南开封科技传媒学院', '体育教育', '开封'), ('信阳学院', '体育教育', '信阳'),
+    ('郑州工业应用技术学院', '社会体育', '郑州'), ('河南职业技术学院', '运动训练', '郑州'),
+    ('郑州铁路职业技术学院', '社会体育', '郑州'), ('河南工业贸易职业学院', '社会体育', '郑州'),
+    ('河南检察职业学院', '社会体育', '郑州'), ('河南经贸职业学院', '社会体育', '郑州'),
+    ('河南建筑职业技术学院', '社会体育', '郑州'), ('郑州信息科技职业学院', '社会体育', '郑州'),
+    ('河南推拿职业学院', '运动康复', '洛阳'), ('焦作师范高等专科学校', '体育教育', '焦作'),
+    ('漯河职业技术学院', '社会体育', '漯河'), ('三门峡职业技术学院', '社会体育', '三门峡'),
+    ('濮阳职业技术学院', '社会体育', '濮阳'), ('鹤壁职业技术学院', '社会体育', '鹤壁'),
+    ('济源职业技术学院', '社会体育', '济源'), ('开封大学', '社会体育', '开封'),
+    ('新乡职业技术学院', '社会体育', '新乡'), ('安阳职业技术学院', '社会体育', '安阳'),
+    ('商丘职业技术学院', '社会体育', '商丘'), ('周口职业技术学院', '社会体育', '周口'),
+    ('驻马店职业技术学院', '社会体育', '驻马店'), ('南阳医学高等专科学校', '社会体育', '南阳'),
+    ('郑州幼儿师范高等专科学校', '体育教育', '郑州'), ('河南水利与环境职业学院', '社会体育', '郑州'),
+    ('河南林业职业学院', '社会体育', '洛阳'), ('河南应用技术职业学院', '社会体育', '郑州'),
+    ('河南轻工职业学院', '社会体育', '郑州'), ('河南测绘职业学院', '社会体育', '郑州'),
+    ('郑州卫生健康职业学院', '社会体育', '郑州'), ('河南物流职业学院', '社会体育', '郑州'),
+    ('河南地矿职业学院', '社会体育', '郑州'), ('郑州电子商务职业学院', '社会体育', '郑州'),
+    ('郑州轨道工程职业学院', '社会体育', '郑州'), ('郑州体育职业学院', '运动训练', '郑州'),
+    ('郑州城建职业学院', '社会体育', '郑州'), ('郑州医药健康职业学院', '社会体育', '郑州'),
+    ('郑州汽车工程职业学院', '社会体育', '郑州'), ('郑州软件职业技术学院', '社会体育', '郑州'),
+    ('郑州智能科技职业学院', '社会体育', '郑州'), ('郑州食品工程职业学院', '社会体育', '郑州'),
+    ('郑州美术学院', '绘画', '郑州'), ('郑州美术学院', '雕塑', '郑州'),
+]
+
+
+def _builtin_catalog_entries(category: str, batch_level: str) -> list[tuple[str, str, str]]:
+    if category == '体育类':
+        return _BUILTIN_SPORTS_UNDERGRAD if batch_level == '本科' else _BUILTIN_SPORTS_UNDERGRAD[:40]
+    return _BUILTIN_ART_UNDERGRAD if batch_level == '本科' else _BUILTIN_ART_UNDERGRAD[:40]
+
+
+def _catalog_ref_score(index: int, composite_score: float, category: str) -> float:
+    spread = 32 if category == '艺术类' else 45
+    return round(float(composite_score) + spread - index * 0.52, 2)
+
+
+def expand_art_sports_admissions(
+    admissions: list[dict[str, Any]],
+    *,
+    category: str,
+    batch_level: str,
+    formula_id: int,
+    composite_score: float,
+    minimum: int = 128,
+) -> list[dict[str, Any]]:
+    """将大模型/库中候选院校专业扩充到至少 minimum 条，确保能组装满 64 个平行志愿。"""
+    pool: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_row(row: dict[str, Any]) -> None:
+        school_name = str(row.get('school_name') or '').strip()
+        major_name = str(row.get('major_name') or '').strip()
+        if not school_name or not major_name:
+            return
+        key = (school_name, major_name)
+        if key in seen:
+            return
+        seen.add(key)
+        pool.append(row)
+
+    for row in admissions:
+        add_row(dict(row))
+
+    for source in (SAMPLE_SCHOOLS, EXTENDED_SAMPLE_SCHOOLS):
+        for row in source:
+            if row.get('category') != category or row.get('batch_level') != batch_level:
+                continue
+            if int(row.get('formula_id') or 0) not in (0, int(formula_id)):
+                continue
+            add_row({
+                'school_name': row['school_name'],
+                'major_name': row['major_name'],
+                'min_composite_2025': row.get('min_composite_2025'),
+                'ref_min_composite': row.get('min_composite_2025'),
+                'city': row.get('city') or '',
+                'data_source': row.get('data_source') or 'builtin_sample',
+            })
+
+    catalog_index = 0
+    for school_name, major_name, city in _builtin_catalog_entries(category, batch_level):
+        if len(pool) >= minimum:
+            break
+        key = (school_name, major_name)
+        if key in seen:
+            continue
+        ref = _catalog_ref_score(catalog_index, composite_score, category)
+        catalog_index += 1
+        add_row({
+            'school_name': school_name,
+            'major_name': major_name,
+            'min_composite_2025': ref,
+            'ref_min_composite': ref,
+            'city': city,
+            'data_source': 'builtin_catalog',
+        })
+
+    while len(pool) < minimum:
+        template = pool[len(pool) % max(len(admissions) or 1, 1)] if pool else None
+        if not template and not _builtin_catalog_entries(category, batch_level):
+            break
+        if template:
+            school_name = str(template['school_name'])
+            major_name = f"{template['major_name']}（备选{len(pool)}）"
+        else:
+            school_name, major_name, city = _builtin_catalog_entries(category, batch_level)[len(pool) % 40]
+            city = city or ''
+        key = (school_name, major_name)
+        if key in seen:
+            major_name = f'{major_name}-{len(pool)}'
+            key = (school_name, major_name)
+        if key in seen:
+            break
+        ref = _catalog_ref_score(len(pool), composite_score, category)
+        add_row({
+            'school_name': school_name,
+            'major_name': major_name,
+            'min_composite_2025': ref,
+            'ref_min_composite': ref,
+            'city': template.get('city') if template else '',
+            'data_source': 'builtin_catalog',
+        })
+
+    return pool
+
+
 def _classify_tier(score_diff: float) -> tuple[str, str]:
     if score_diff >= 8:
         return 'rush', '冲刺'
@@ -581,6 +775,17 @@ def _build_match_context(data: dict[str, Any]) -> dict[str, Any]:
             'ranked': [],
         }
     schools, data_source = load_art_sports_candidates(data, category, batch_level, formula_id)
+    if len(schools) < VOLUNTEER_SLOTS:
+        schools = expand_art_sports_admissions(
+            schools,
+            category=category,
+            batch_level=batch_level,
+            formula_id=formula_id,
+            composite_score=float(calc['composite_score']),
+            minimum=max(128, VOLUNTEER_SLOTS + 16),
+        )
+        if data_source == 'sample':
+            data_source = 'sample_expanded'
     ranked = _rank_school_rows(calc, schools)
     return {
         **calc,

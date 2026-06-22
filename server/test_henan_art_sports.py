@@ -129,6 +129,22 @@ class HenanArtSportsTests(unittest.TestCase):
             self.assertGreaterEqual(rank, prev)
             prev = rank
 
+    def test_fallback_pool_generates_64(self) -> None:
+        from unittest.mock import patch
+        from henan_art_sports_service import build_art_sports_recommendation
+        with patch('art_llm_volunteer_service.is_llm_available', return_value=False):
+            result = build_art_sports_recommendation({
+                'province': '河南',
+                'exam_type': '艺术类',
+                'score': 500,
+                'professional_score': 240,
+                'batch': '艺术本科批',
+                'art_sports_formula_id': 5,
+                'culture_cutoff': 350,
+                'pro_cutoff': 180,
+            })
+        self.assertEqual(len(result['items']), 64)
+
     def test_assemble_art_sports_parallel_plan_order(self) -> None:
         from henan_art_sports_service import assemble_art_sports_parallel_plan
         items = []
