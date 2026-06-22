@@ -4,11 +4,14 @@ function requestVirtualPayment(paymentData) {
       reject({ errMsg: '当前微信版本不支持虚拟支付', message: '请升级微信客户端后重试' });
       return;
     }
+    const signData = typeof paymentData.signData === 'string'
+      ? paymentData.signData
+      : JSON.stringify(paymentData.signData || {});
     wx.requestVirtualPayment({
       mode: paymentData.mode || 'short_series_goods',
-      signData: paymentData.signData,
-      paySig: paymentData.paySig,
-      signature: paymentData.signature,
+      signData,
+      paySig: String(paymentData.paySig || ''),
+      signature: String(paymentData.signature || ''),
       success: resolve,
       fail: reject
     });

@@ -1,3 +1,53 @@
+.track-banner {
+  margin-bottom: 20rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  background: linear-gradient(135deg, #eef5ff, #f6fffb);
+  color: #1677ff;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.art-sports-card {
+  margin: 8rpx 0 24rpx;
+  padding: 24rpx;
+  background: #f8fbff;
+  border: 2rpx solid #d6e8ff;
+  border-radius: 20rpx;
+  box-shadow: none;
+}
+
+.art-sports-hint {
+  color: #b54708;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  font-size: 26rpx;
+  color: #344054;
+  margin: 12rpx 0;
+}
+
+.checkbox-label {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.waive-row {
+  margin-top: 8rpx;
+}
+
+.zone-link-row {
+  margin-top: 16rpx;
+}
+
+.zone-link-btn {
+  width: 100%;
+  margin: 0;
+}
+
 .role-row {
   margin-bottom: 18rpx;
 }
@@ -19,4 +69,29 @@
 
 .picker-placeholder {
   color: #98a2b3;
+}
+
+.formula-field {
+  margin-bottom: 8rpx;
+}
+
+.picker-formula {
+  height: auto;
+  min-height: 72rpx;
+  line-height: 1.5;
+  padding: 20rpx 24rpx;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.formula-hint {
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: #475467;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.formula-desc {
+  margin-top: 12rpx;
 }

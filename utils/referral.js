@@ -2,6 +2,23 @@ function normalizeInviteCode(code) {
   return String(code || '').trim().toUpperCase();
 }
 
+function isValidInviteCode(code) {
+  const normalized = normalizeInviteCode(code);
+  return /^[A-Z0-9]{4,20}$/.test(normalized);
+}
+
+function cleanupInvalidInviteCode() {
+  try {
+    const raw = wx.getStorageSync('pendingInviteCode');
+    if (!raw) return;
+    if (!isValidInviteCode(raw)) {
+      wx.removeStorageSync('pendingInviteCode');
+    }
+  } catch (error) {
+    // 开发者工具偶发 storage 失败时忽略
+  }
+}
+
 function captureInviteFromLaunch(options) {
   options = options || {};
   let code = '';
@@ -17,7 +34,11 @@ function captureInviteFromLaunch(options) {
   }
   code = normalizeInviteCode(code);
   if (code) {
-    wx.setStorageSync('pendingInviteCode', code);
+    try {
+      wx.setStorageSync('pendingInviteCode', code);
+    } catch (error) {
+      // 开发者工具偶发 storage 失败时忽略，不影响主流程
+    }
   }
 }
 
@@ -31,6 +52,8 @@ function clearPendingInviteCode() {
 
 module.exports = {
   normalizeInviteCode,
+  isValidInviteCode,
+  cleanupInvalidInviteCode,
   captureInviteFromLaunch,
   getPendingInviteCode,
   clearPendingInviteCode

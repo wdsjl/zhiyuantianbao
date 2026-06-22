@@ -1,17 +1,18 @@
 from urllib.parse import quote
+from pathlib import Path
 
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
-from fastapi.responses import Response, RedirectResponse, JSONResponse
+from fastapi.responses import Response, RedirectResponse, JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from db import get_connection, rows_to_dicts, row_to_dict
 from schemas import (
-    RecommendRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
+    RecommendRequest, EligiblePoolRequest, RiskInspectRequest, DraftCreateRequest, ProfileSaveRequest, LoginRequest,
     ParentBindRequest, DraftUpdateRequest, PlanExplainRequest, OpenRequestCreate, PaymentCreateRequest,
     ReferralAgentRegisterRequest, ReferralBindRequest, ReferralWithdrawRequest,
     PersonalityAssessmentRequest, CareerReportRequest, StudentReportRequest, ReportPdfExportRequest,
-    BeanConsumeReportRequest,
+    HenanArtSportsCalculateRequest, HenanArtSportsMatchRequest,
 )
 from student_report_service import (
     ensure_student_report_tables, save_student_report, get_latest_student_report, build_student_report_prompt,
@@ -24,10 +25,13 @@ from services import get_gradient_type, get_risk_level, get_risk_reason, inspect
 from rank_strategy_service import (
     assemble_recommendation_plan, detect_segment, estimate_rank_from_score, AI_STRATEGY_PROMPT,
 )
+from recommend_pool_service import query_eligible_pool
+from recommend_service import list_province_admission_batches
 from import_service import parse_import_file, import_admission_rows
 from admin_views import (
     admin_home, admin_import, admin_logs, admin_schools, admin_majors, admin_admissions,
     admin_students, admin_data_sources, admin_llm_settings, admin_membership_plans,
+    admin_art_sports_admissions,
     admin_membership_users, admin_membership_usage, admin_payments,
     admin_enrollment_plans, admin_province_rules, admin_login, admin_account, admin_crawler,
     admin_referrals, admin_referral_withdrawals,
@@ -51,7 +55,7 @@ from data_fetch_service import create_source, fetch_source, list_sources, list_t
 from auth_service import login_or_create_user, is_temp_openid, get_wechat_login_status
 from pdf_service import (
     append_ai_generated_notice, build_draft_pdf, build_text_report_pdf,
-    build_student_pdf_filename, pdf_content_disposition,
+    build_student_pdf_filename, pdf_content_disposition, pdf_header_filename,
 )
 from membership_service import ensure_membership_tables, save_plan, save_plan_permission, grant_membership, revoke_membership, get_user_entitlements, list_plans, check_permission, consume_permission, reset_permission_usage, delete_permission_usage, adjust_permission_usage, export_permission_usage_csv, expire_overdue_memberships
 from payment_service import ensure_payment_tables, create_manual_order, create_open_request, create_order_from_request, cancel_open_request, list_user_open_requests, list_user_orders, get_support_contact, save_support_contact, export_orders_csv, export_open_requests_csv, refund_order
@@ -60,8 +64,52 @@ from referral_service import (
     ensure_referral_tables, register_agent, get_agent_dashboard, bind_invitee,
     poster_image_base64, get_binding_for_user, save_referral_settings, update_agent_commission_rate,
 )
+try:
+    from province_rules_service import (
+        ensure_province_rules_seeded, normalize_volunteer_override, resolve_volunteer_slots,
+    )
+except ImportError:
+    def ensure_province_rules_seeded() -> None:
+        pass
+
+    def normalize_volunteer_override(count: int | None) -> int | None:
+        value = int(count or 0)
+        if value <= 0 or value == 9:
+            return None
+        return value
+
+    def resolve_volunteer_slots(
+        province: str,
+        batch: str,
+        year: int = 2025,
+        override_count: int | None = None,
+    ) -> dict:
+        override_count = normalize_volunteer_override(override_count)
+        if override_count is not None and int(override_count) > 0:
+            return {'total_slots': int(override_count), 'rule': {}, 'source': 'override'}
+        province_text = (province or '').replace('省', '').replace('市', '')
+        batch_text = batch or ''
+        if province_text == '河南' and ('艺术' in batch_text or '体育' in batch_text):
+            total = 64
+        elif province_text == '河南' and ('本科' in batch_text or not batch_text):
+            total = 48
+        elif province_text in ('山东', '河北', '重庆', '贵州', '青海') and '本科' in batch_text:
+            total = 96
+        elif province_text == '辽宁' and '本科' in batch_text:
+            total = 112
+        elif province_text == '浙江' and '一段' in batch_text:
+            total = 80
+        else:
+            total = 45
+        return {
+            'total_slots': total,
+            'rule': {'matched': False, 'batch': batch, 'school_count': total},
+            'source': 'fallback',
+        }
 
 app = FastAPI(title='智愿填报 API', version='0.1.0')
+PUBLIC_ROOT = Path(__file__).resolve().parent.parent / 'public'
+PUBLIC_ROOT.mkdir(parents=True, exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -107,13 +155,27 @@ ensure_bean_tables()
 ensure_referral_tables()
 from referral_p1 import ensure_referral_p1_tables
 ensure_referral_p1_tables()
+ensure_province_rules_seeded()
 sync_plan_catalog()
 expire_overdue_memberships()
+from henan_art_sports_service import ensure_student_art_sports_columns
+ensure_student_art_sports_columns()
 
 
 @app.get('/health')
 def health():
     return {'status': 'ok'}
+
+
+@app.get('/{verify_name}.txt', include_in_schema=False)
+def serve_domain_verify_file(verify_name: str):
+    """微信公众平台域名验证文件，放在项目 public/ 目录根下。"""
+    if not verify_name or any(char in verify_name for char in '/\\. '):
+        raise HTTPException(status_code=404, detail='Not Found')
+    file_path = PUBLIC_ROOT / f'{verify_name}.txt'
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail='Not Found')
+    return PlainTextResponse(file_path.read_text(encoding='utf-8'))
 
 
 @app.get('/admin/login')
@@ -266,6 +328,79 @@ async def admin_import_submit(file: UploadFile = File(...)):
         return admin_import(f'导入失败：{exc}')
 
 
+@app.post('/admin/import/art-sports')
+async def admin_import_art_sports_submit(file: UploadFile = File(...)):
+    from import_service import import_art_sports_rows, parse_art_sports_file
+
+    content = await file.read()
+    try:
+        rows = parse_art_sports_file(file.filename or 'upload', content)
+        result = import_art_sports_rows(file.filename or 'upload', rows)
+        message = f"艺体数据导入完成：共 {result['total_count']} 条，成功 {result['success_count']} 条，失败 {result['fail_count']} 条"
+        return admin_import(message)
+    except ValueError as exc:
+        return admin_import(f'艺体导入失败：{exc}')
+
+
+@app.post('/admin/import/school-profiles')
+async def admin_import_school_profiles_submit(file: UploadFile = File(...)):
+    from import_service import import_school_profile_rows, parse_school_profile_file
+
+    content = await file.read()
+    try:
+        rows = parse_school_profile_file(file.filename or 'upload', content)
+        result = import_school_profile_rows(file.filename or 'upload', rows)
+        message = f"院校扩展信息导入完成：共 {result['total_count']} 条，成功 {result['success_count']} 条，失败 {result['fail_count']} 条"
+        return admin_import(message)
+    except ValueError as exc:
+        return admin_import(f'院校扩展信息导入失败：{exc}')
+
+
+@app.post('/admin/import/sync-expert-school-profiles')
+async def admin_sync_expert_school_profiles_submit(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
+    """从河南专家版表格（物理.xlsx/历史.xlsx）仅同步保研率与招生章程，后台执行避免 504。"""
+    from import_service import run_sync_expert_school_profiles
+
+    content = await file.read()
+    filename = file.filename or 'upload.xlsx'
+
+    def job() -> None:
+        try:
+            run_sync_expert_school_profiles(filename, content)
+        except Exception as exc:
+            try:
+                from import_service import insert_import_log
+                with get_connection() as connection:
+                    insert_import_log(
+                        connection,
+                        'school_profiles_from_expert',
+                        filename,
+                        0,
+                        0,
+                        1,
+                        str(exc),
+                    )
+                    connection.commit()
+            except Exception:
+                pass
+
+    background_tasks.add_task(job)
+    message = (
+        f'已提交专家版院校信息同步任务：{filename}。'
+        '系统正在后台解析并更新保研率/招生章程，约 1～3 分钟完成，请稍后到「导入日志」查看结果。'
+        '同步期间后台登录与其它操作不受影响。'
+    )
+    return admin_import(message)
+
+
+@app.get('/admin/art-sports-admissions')
+def admin_art_sports_admissions_page(keyword: str = '', category: str = '', page: int = 1, message: str = ''):
+    return admin_art_sports_admissions(keyword, category, page, message)
+
+
 @app.get('/admin/import/logs')
 def admin_import_logs_page(log_id: int | None = None, message: str = ''):
     return admin_logs(log_id, message)
@@ -370,14 +505,21 @@ def admin_students_page(keyword: str = '', page: int = 1, edit_id: int | None = 
 def admin_student_update(
     student_id: int, name: str = Form(...), phone: str = Form(''), province: str = Form(...),
     city: str = Form(''), school_name: str = Form(''), grade: str = Form(''), class_name: str = Form(''),
-    exam_year: str = Form(...), subject_combination: str = Form(...), score: str = Form(...),
-    rank: str = Form(...), target_batch: str = Form(...)
+    exam_year: str = Form(...), exam_type: str = Form('普通类'), subject_combination: str = Form(...),
+    score: str = Form(...), rank: str = Form('0'), target_batch: str = Form(...),
+    professional_score: str = Form(''), art_sports_formula_id: str = Form(''),
+    waive_art_sports_batch: str = Form(''), culture_cutoff: str = Form(''), pro_cutoff: str = Form('')
 ):
     try:
         save_student(student_id, {
             'name': name, 'phone': phone, 'province': province, 'city': city, 'school_name': school_name,
-            'grade': grade, 'class_name': class_name, 'exam_year': exam_year,
-            'subject_combination': subject_combination, 'score': score, 'rank': rank, 'target_batch': target_batch
+            'grade': grade, 'class_name': class_name, 'exam_year': exam_year, 'exam_type': exam_type,
+            'subject_combination': subject_combination, 'score': score, 'rank': rank or '0', 'target_batch': target_batch,
+            'professional_score': professional_score or None,
+            'art_sports_formula_id': art_sports_formula_id or None,
+            'waive_art_sports_batch': waive_art_sports_batch in ('1', 'true', 'on', 'yes'),
+            'culture_cutoff': culture_cutoff or None,
+            'pro_cutoff': pro_cutoff or None,
         })
         return RedirectResponse('/admin/students?message=学生档案已更新', status_code=303)
     except Exception as exc:
@@ -642,6 +784,21 @@ def admin_payment_request_cancel(request_id: int = Form(...)):
     return RedirectResponse('/admin/payments?message=开通申请已取消', status_code=303)
 
 
+@app.post('/admin/payments/{order_id}/repair-deliver')
+def admin_payment_repair_deliver(order_id: int):
+    from db import get_connection, row_to_dict
+    from wechat_virtual_pay_service import repair_virtual_order
+    try:
+        with get_connection() as connection:
+            order = row_to_dict(connection.execute('SELECT * FROM payment_orders WHERE order_id = ?', [order_id]).fetchone())
+        if not order:
+            raise ValueError('订单不存在')
+        repair_virtual_order(str(order['order_no']))
+        return RedirectResponse('/admin/payments?message=补发货成功，会员已同步开通', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/payments?message=补发货失败：{exc}', status_code=303)
+
+
 @app.post('/admin/payments/{order_id}/refund')
 def admin_payment_refund(order_id: int, remark: str = Form('')):
     try:
@@ -708,6 +865,10 @@ def api_wechat_pay_status():
 
 @app.post('/api/payments/wechat/create')
 def api_wechat_pay_create(payload: PaymentCreateRequest):
+    import logging
+    import sqlite3
+
+    logger = logging.getLogger('zhiyuan.payment')
     try:
         return create_wechat_payment(
             payload.user_id,
@@ -717,6 +878,12 @@ def api_wechat_pay_create(payload: PaymentCreateRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except sqlite3.Error as exc:
+        logger.exception('payment create db error user_id=%s plan=%s', payload.user_id, payload.plan_code)
+        raise HTTPException(status_code=400, detail='创建支付订单失败，请稍后重试') from exc
+    except Exception as exc:
+        logger.exception('payment create failed user_id=%s plan=%s', payload.user_id, payload.plan_code)
+        raise HTTPException(status_code=500, detail='支付服务异常，请稍后重试') from exc
 
 
 @app.get('/api/payments/wechat/orders/{order_no}')
@@ -737,9 +904,22 @@ async def api_wechat_pay_notify(request: Request):
         return JSONResponse({'code': 'FAIL', 'message': str(exc)}, status_code=500)
 
 
-@app.post('/api/payments/virtual/deliver-notify')
+@app.api_route('/api/payments/virtual/deliver-notify', methods=['GET', 'POST'])
 async def api_virtual_deliver_notify(request: Request):
+    from wechat_msg_push_service import get_wechat_msg_token, verify_wechat_server_signature
     from wechat_virtual_pay_service import handle_virtual_deliver_notify
+
+    if request.method == 'GET':
+        signature = request.query_params.get('signature', '')
+        timestamp = request.query_params.get('timestamp', '')
+        nonce = request.query_params.get('nonce', '')
+        echostr = request.query_params.get('echostr', '')
+        if not get_wechat_msg_token():
+            raise HTTPException(status_code=500, detail='未配置 WECHAT_MSG_TOKEN')
+        if not verify_wechat_server_signature(signature, timestamp, nonce):
+            raise HTTPException(status_code=403, detail='signature invalid')
+        return Response(content=echostr, media_type='text/plain')
+
     body = await request.body()
     try:
         result = handle_virtual_deliver_notify(body.decode('utf-8'))
@@ -793,31 +973,7 @@ def api_membership_permission_check(permission_code: str, user_id: int | None = 
 
 @app.get('/api/membership/entitlements')
 def api_membership_entitlements(user_id: int | None = None):
-    entitlements = get_user_entitlements(user_id)
-    if user_id:
-        from bean_service import get_bean_balance
-        entitlements['beans'] = get_bean_balance(user_id)
-    return entitlements
-
-
-@app.get('/api/membership/beans')
-def api_membership_beans(user_id: int):
-    from bean_service import get_bean_balance, PLAN_BEAN_GRANT, REPORT_BEAN_COST
-    balance = get_bean_balance(user_id)
-    return {
-        **balance,
-        'plan_grants': PLAN_BEAN_GRANT,
-        'non_refundable_notice': '星鼎豆充值后不支持退款，已消费的星鼎豆不退还。',
-    }
-
-
-@app.post('/api/membership/beans/consume-report')
-def api_membership_consume_report_beans(payload: BeanConsumeReportRequest):
-    from bean_service import consume_report_beans
-    try:
-        return consume_report_beans(payload.user_id, payload.report_title)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return get_user_entitlements(user_id)
 
 
 @app.get('/admin/admissions')
@@ -1188,12 +1344,18 @@ def api_referral_dashboard(user_id: int = Query(...)):
 def api_referral_poster(user_id: int = Query(...)):
     try:
         agent = register_agent(user_id)
-        image_base64 = poster_image_base64(agent['invite_code'])
+        image_base64 = poster_image_base64(agent['invite_code'], agent.get('display_name') or '')
+        from poster_service import POSTER_HEIGHT, POSTER_WIDTH, poster_metadata
+        meta = poster_metadata()
         return {
             'invite_code': agent['invite_code'],
             'display_name': agent.get('display_name'),
             'commission_rate': agent.get('commission_rate'),
             'image_base64': image_base64,
+            'width': POSTER_WIDTH,
+            'height': POSTER_HEIGHT,
+            'composed': True,
+            'template_exists': meta.get('template_exists'),
             'share_path': f'pages/home/home?invite={agent["invite_code"]}',
         }
     except ValueError as exc:
@@ -1269,12 +1431,16 @@ def api_referral_trace(keyword: str = Query(...)):
 
 @app.get('/api/profile')
 def get_profile(openid: str = '', phone: str = ''):
+    from henan_art_sports_service import ensure_student_art_sports_columns
+    ensure_student_art_sports_columns()
     if not openid and not phone:
         raise HTTPException(status_code=400, detail='openid 和 phone 至少提供一个')
     sql = '''
     SELECT u.user_id, u.openid, u.phone, u.role, u.name, s.student_id, s.province, s.city,
            s.school_name, s.grade, s.class_name, s.exam_year, s.exam_type,
-           s.subject_combination, s.score, s.rank, s.target_batch
+           s.subject_combination, s.score, s.rank, s.target_batch,
+           s.professional_score, s.art_sports_formula_id, s.waive_art_sports_batch,
+           s.culture_cutoff, s.pro_cutoff
     FROM users u
     LEFT JOIN students s ON s.user_id = u.user_id
     WHERE 1=1
@@ -1296,6 +1462,8 @@ def get_profile(openid: str = '', phone: str = ''):
 
 @app.post('/api/profile')
 def save_profile(request: ProfileSaveRequest):
+    from henan_art_sports_service import ensure_student_art_sports_columns
+    ensure_student_art_sports_columns()
     openid = request.openid or f'local_{request.phone or request.name or "student"}'
     role = 'student' if request.role in ['学生', 'student'] else 'parent' if request.role in ['家长', 'parent'] else request.role
     with get_connection() as connection:
@@ -1337,7 +1505,12 @@ def save_profile(request: ProfileSaveRequest):
         values = [
             request.name, request.province, request.city, request.school_name, request.grade, request.class_name,
             request.exam_year, request.exam_type, request.subject_combination, request.score, request.rank,
-            request.target_batch
+            request.target_batch,
+            request.professional_score,
+            request.art_sports_formula_id,
+            1 if request.waive_art_sports_batch else 0,
+            request.culture_cutoff,
+            request.pro_cutoff,
         ]
         if student:
             if student.get('name') and request.name and student.get('name') != request.name:
@@ -1347,7 +1520,8 @@ def save_profile(request: ProfileSaveRequest):
                 '''
                 UPDATE students SET name = ?, province = ?, city = ?, school_name = ?, grade = ?, class_name = ?,
                   exam_year = ?, exam_type = ?, subject_combination = ?, score = ?, rank = ?, target_batch = ?,
-                  updated_at = CURRENT_TIMESTAMP
+                  professional_score = ?, art_sports_formula_id = ?, waive_art_sports_batch = ?,
+                  culture_cutoff = ?, pro_cutoff = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE student_id = ?
                 ''',
                 values + [student_id]
@@ -1357,8 +1531,9 @@ def save_profile(request: ProfileSaveRequest):
                 '''
                 INSERT INTO students (
                   user_id, name, province, city, school_name, grade, class_name, exam_year, exam_type,
-                  subject_combination, score, rank, target_batch
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  subject_combination, score, rank, target_batch,
+                  professional_score, art_sports_formula_id, waive_art_sports_batch, culture_cutoff, pro_cutoff
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 [user_id] + values
             )
@@ -1423,11 +1598,15 @@ def bind_parent_student(request: ParentBindRequest):
 
 @app.get('/api/parent-bind')
 def list_parent_binds(parent_user_id: int):
+    from henan_art_sports_service import ensure_student_art_sports_columns
+    ensure_student_art_sports_columns()
     with get_connection() as connection:
         rows = connection.execute(
             '''
-            SELECT b.bind_id, b.bind_status, b.created_at, s.student_id, s.name, s.province, s.school_name, s.class_name,
-                   s.score, s.rank, s.target_batch
+            SELECT b.bind_id, b.bind_status, b.created_at, s.student_id, s.name, s.province, s.city, s.school_name, s.class_name,
+                   s.exam_type, s.subject_combination, s.score, s.rank, s.target_batch,
+                   s.professional_score, s.art_sports_formula_id, s.waive_art_sports_batch,
+                   s.culture_cutoff, s.pro_cutoff
             FROM parent_student_binds b
             JOIN students s ON s.student_id = b.student_id
             WHERE b.parent_user_id = ? AND b.bind_status = 'active'
@@ -1436,6 +1615,37 @@ def list_parent_binds(parent_user_id: int):
             [parent_user_id]
         ).fetchall()
     return {'list': rows_to_dicts(rows)}
+
+
+@app.get('/api/province-rules/resolve')
+def resolve_province_rules_api(province: str = '', batch: str = '', year: int = 2025):
+    ensure_province_rules_seeded()
+    resolved = resolve_volunteer_slots(province, batch, year)
+    rule = resolved.get('rule') or {}
+    return {
+        'total_slots': resolved['total_slots'],
+        'school_count': rule.get('school_count'),
+        'batch': rule.get('batch') or batch,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'matched': bool(rule.get('matched')),
+        'source': resolved.get('source') or rule.get('source'),
+        'rule_description': rule.get('rule_description') or '',
+    }
+
+
+@app.get('/api/province-rules/status')
+def province_rules_status():
+    from province_rules_service import count_province_rules_in_db
+    ensure_province_rules_seeded()
+    sample = resolve_volunteer_slots('河南', '本科批')
+    return {
+        **count_province_rules_in_db(),
+        'resolve_sample_henan': {
+            'total_slots': sample['total_slots'],
+            'matched': bool((sample.get('rule') or {}).get('matched')),
+            'source': sample.get('source'),
+        },
+    }
 
 
 @app.get('/api/schools')
@@ -1447,31 +1657,54 @@ def list_schools(
     limit: int = 50,
     offset: int = 0
 ):
+    from school_profile_service import ensure_school_profile_columns
+
+    ensure_school_profile_columns()
     sql = 'SELECT * FROM schools WHERE 1=1'
     params = []
     if keyword:
-        sql += ' AND (school_name LIKE ? OR school_code LIKE ? OR city LIKE ?)'
         like = f'%{keyword}%'
-        params.extend([like, like, like])
+        sql += ''' AND (
+            school_name LIKE ? OR school_code LIKE ? OR city LIKE ?
+            OR school_id IN (
+                SELECT DISTINCT ep.school_id
+                FROM enrollment_plans ep
+                JOIN majors m ON m.major_id = ep.major_id
+                WHERE m.major_name LIKE ? OR m.major_code LIKE ?
+            )
+        )'''
+        params.extend([like, like, like, like, like])
     if city:
-        sql += ' AND city = ?'
-        params.append(city)
+        city = city.strip()
+        city_short = city[:-1] if city.endswith('市') else city
+        city_long = city if city.endswith('市') else f'{city}市'
+        sql += ' AND (city = ? OR city = ? OR city LIKE ?)'
+        params.extend([city, city_long, f'%{city_short}%'])
     if is_public is not None:
         sql += ' AND is_public = ?'
         params.append(is_public)
     if is_double_first_class is not None:
-        sql += ' AND is_double_first_class = ?'
-        params.append(is_double_first_class)
+        if int(is_double_first_class) == 1:
+            sql += ' AND (is_double_first_class = 1 OR is_985 = 1 OR is_211 = 1)'
+        else:
+            sql += ' AND is_double_first_class = ? AND is_985 = 0 AND is_211 = 0'
+            params.append(is_double_first_class)
     sql += ' ORDER BY is_985 DESC, is_211 DESC, is_double_first_class DESC, school_id ASC LIMIT ? OFFSET ?'
     params.extend([limit, offset])
 
     with get_connection() as connection:
         rows = connection.execute(sql, params).fetchall()
-    return {'list': rows_to_dicts(rows)}
+    items = rows_to_dicts(rows)
+    for item in items:
+        item['has_regulation'] = bool(item.get('regulation_url'))
+    return {'list': items}
 
 
 @app.get('/api/schools/{school_id}')
 def get_school(school_id: int):
+    from school_profile_service import enrich_school_profile, ensure_school_profile_columns
+
+    ensure_school_profile_columns()
     with get_connection() as connection:
         school = row_to_dict(connection.execute('SELECT * FROM schools WHERE school_id = ?', [school_id]).fetchone())
         if not school:
@@ -1486,6 +1719,7 @@ def get_school(school_id: int):
             ''',
             [school_id]
         ).fetchall())
+    school = enrich_school_profile(school)
     return {'school': school, 'plans': plans}
 
 
@@ -1566,8 +1800,76 @@ def list_province_rules(province: str = '', year: int | None = None, batch: str 
     return {'list': rows_to_dicts(rows)}
 
 
+@app.get('/api/admission-data/batches')
+def api_admission_data_batches(province: str):
+    if not province.strip():
+        raise HTTPException(status_code=400, detail='请提供省份')
+    batches = list_province_admission_batches(province)
+    total = sum(int(item.get('school_major_count') or item.get('record_count') or 0) for item in batches)
+    return {
+        'province': province,
+        'batches': batches,
+        'total_school_major': total,
+    }
+
+
+@app.get('/api/henan-art-sports/meta')
+def api_henan_art_sports_meta():
+    from henan_art_sports_service import get_meta
+    return get_meta()
+
+
+@app.post('/api/henan-art-sports/calculate')
+def api_henan_art_sports_calculate(request: HenanArtSportsCalculateRequest):
+    from henan_art_sports_service import calculate_composite
+    try:
+        return calculate_composite(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/henan-art-sports/match')
+def api_henan_art_sports_match(request: HenanArtSportsMatchRequest):
+    from henan_art_sports_service import match_schools
+    try:
+        return match_schools(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/eligible-pool')
+def eligible_pool(request: EligiblePoolRequest):
+    try:
+        from henan_art_sports_service import is_art_sports_request, query_art_sports_eligible_pool
+        payload = request.model_dump()
+        if is_art_sports_request(payload):
+            return query_art_sports_eligible_pool(
+                payload,
+                gradient=request.gradient or '',
+                keyword=request.keyword or '',
+                page=request.page,
+                page_size=request.page_size,
+            )
+        return query_eligible_pool(
+            request,
+            gradient=request.gradient or '',
+            keyword=request.keyword or '',
+            page=request.page,
+            page_size=request.page_size,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post('/api/recommend')
 def recommend(request: RecommendRequest):
+    from henan_art_sports_service import is_art_sports_request, build_art_sports_recommendation
+    payload = request.model_dump()
+    if is_art_sports_request(payload):
+        try:
+            return build_art_sports_recommendation(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     sql = """
     SELECT ar.*, s.school_name, s.city, s.school_type, s.is_public, s.is_double_first_class,
            m.major_name, m.major_type, ep.tuition, ep.duration, ep.subject_requirement
@@ -1643,14 +1945,32 @@ def recommend(request: RecommendRequest):
     province_total_rank = total_row['total_rank'] if total_row and total_row['total_rank'] else None
     segment = detect_segment(user_rank, province_total_rank, request.batch)
 
+    slot_info = resolve_volunteer_slots(
+        request.province,
+        request.batch,
+        override_count=normalize_volunteer_override(request.volunteer_count),
+    )
+    total_slots = slot_info['total_slots']
+    rule = slot_info.get('rule') or {}
+
     selected_rows, strategy_meta = assemble_recommendation_plan(
         weighted_items,
         user_rank=user_rank,
         plan_style=request.plan_style or 'balanced',
         batch=request.batch,
         segment=segment,
-        total_slots=max(1, int(request.volunteer_count or 9)),
+        total_slots=max(1, total_slots),
     )
+    strategy_meta = strategy_meta or {}
+    strategy_meta['volunteer_rule'] = {
+        'total_slots': total_slots,
+        'school_count': rule.get('school_count'),
+        'batch': rule.get('batch') or request.batch,
+        'volunteer_mode': rule.get('volunteer_mode'),
+        'matched': bool(rule.get('matched')),
+        'source': slot_info.get('source'),
+        'rule_description': rule.get('rule_description') or '',
+    }
 
     items = []
     for index, row in enumerate(selected_rows, start=1):
@@ -1689,6 +2009,11 @@ def recommend(request: RecommendRequest):
         'risk': inspect_plan_risk(items),
         'strategy': strategy_meta,
         'algorithm': strategy_meta.get('algorithm'),
+        'generation': {
+            'target_slots': total_slots,
+            'generated_count': len(items),
+            'candidate_pool': len(weighted_items),
+        },
     }
 
 
@@ -1710,7 +2035,37 @@ def ai_plan_explain(request: PlanExplainRequest):
             f"风险：{item.get('risk_level') or item.get('riskLevel', '')}，"
             f"调剂：{'是' if item.get('is_adjustable', item.get('isAdjustable', True)) else '否'}"
         )
-    prompt = f'''
+    exam_type = profile.get('examType') or profile.get('exam_type') or '普通类'
+    art_sports = exam_type in ('艺术类', '体育类') and not profile.get('waiveArtSports') and not profile.get('waive_art_sports_batch')
+    if art_sports:
+        prompt = f'''
+请作为河南省高考艺体类志愿填报顾问，基于以下信息生成简洁、谨慎、可执行的志愿方案解读。
+要求：
+1. 不承诺录取，不使用“保证”“一定”等词。
+2. 分为：整体评价、综合分与公式说明、冲稳保结构、双过线提醒、下一步建议。
+3. 语言面向学生和家长，控制在 500 字以内。
+4. 强调：艺术本科批（统考专业）为64个「专业+院校」平行志愿，投档规则与往年一致；河南省无艺体综合分官方位次，对标的是院校历年最低综合分；最终以考试院和高校招生章程为准。
+
+学生信息：
+省份：{profile.get('province', '')}
+考试类别：{exam_type}
+批次：{profile.get('targetBatch', profile.get('batch', ''))}
+文化课分数：{profile.get('score', '')}
+专业统考分：{profile.get('professionalScore', profile.get('professional_score', ''))}
+公式编号：{profile.get('formulaId', profile.get('art_sports_formula_id', ''))}
+
+霍兰德职业兴趣测评（供专业适配参考）：
+{build_personality_ai_context(personality)}
+
+风险结果：
+综合风险：{risk.get('level', '未排查')}
+冲：{risk.get('chong', '')} 稳：{risk.get('wen', '')} 保：{risk.get('bao', '')}
+
+志愿样例：
+{chr(10).join(item_lines)}
+'''
+    else:
+        prompt = f'''
 请作为高考志愿填报顾问，基于以下信息生成一份简洁、谨慎、可执行的志愿方案解读。
 要求：
 1. 不承诺录取，不使用“保证”“一定”等词。
@@ -1836,7 +2191,7 @@ def _pdf_response(pdf: bytes, filename: str) -> Response:
         media_type='application/pdf',
         headers={
             'Content-Disposition': pdf_content_disposition(filename),
-            'X-Pdf-Filename': filename,
+            'X-Pdf-Filename': pdf_header_filename(filename),
         }
     )
 

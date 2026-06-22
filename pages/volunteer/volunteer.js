@@ -1,10 +1,12 @@
 const { request } = require('../../utils/request');
 const { fetchEntitlements, requirePermission } = require('../../utils/membership');
-const { loadActiveProfileSync, refreshActiveProfile } = require('../../utils/profileHelper');
+const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { preparePdfFromUrl, sharePdfToWeChat, buildStudentPdfFileName } = require('../../utils/pdfExport');
 const { getFlowStatus, goNextStep } = require('../../utils/applyFlow');
 const { getGradientClass } = require('../../utils/volunteer');
 const { formatAiContent } = require('../../utils/reportFormat');
+const { buildRecommendPayload } = require('../../utils/recommendPayload');
+const { isArtSportsActive, getExamType, resolveArtSportsTargetBatch } = require('../../utils/henanArtSports');
 
 function getLocalRiskLevel(gradientType, isAdjustable) {
   if (gradientType === '冲' && !isAdjustable) return '高';
@@ -47,7 +49,10 @@ function normalizePlan(items) {
     schoolType: item.school_type,
     isAdjustable: item.is_adjustable,
     riskLevel: item.risk_level,
-    riskReason: item.risk_reason
+    riskReason: item.risk_reason,
+    refMinComposite: item.ref_min_composite,
+    minComposite2025: item.min_composite_2025 || item.ref_min_composite,
+    scoreDiff: item.score_diff
   }));
 }
 
@@ -77,6 +82,12 @@ const PLAN_STYLE_OPTIONS = [
   { value: 'conservative', label: '保守稳上岸', desc: '冲1 稳5 保3' }
 ];
 
+const ART_SPORTS_PLAN_STYLE_OPTIONS = [
+  { value: 'balanced', label: '均衡方案', desc: '冲16 稳24 保24' },
+  { value: 'aggressive', label: '激进冲刺', desc: '冲24 稳24 保16' },
+  { value: 'conservative', label: '保守稳妥', desc: '冲12 稳20 保32' }
+];
+
 Page({
   data: {
     profile: {},
@@ -90,6 +101,9 @@ Page({
     planStyle: 'balanced',
     planStyleOptions: PLAN_STYLE_OPTIONS,
     strategyMeta: null,
+    provinceRule: null,
+    artSportsMode: false,
+    compositeScore: '',
     pdfReady: false,
     pdfFileName: ''
   },
@@ -97,10 +111,20 @@ Page({
     const savedStyle = wx.getStorageSync('volunteerPlanStyle') || 'balanced';
     this.setData({ planStyle: savedStyle });
     refreshActiveProfile().then((profile) => {
-      this.setData({ profile: profile || loadActiveProfileSync() });
+      const resolvedProfile = profile || loadActiveProfileSync();
+      const artSportsMode = isArtSportsActive(resolvedProfile);
+      this.setData({
+        profile: resolvedProfile,
+        artSportsMode,
+        planStyleOptions: artSportsMode ? ART_SPORTS_PLAN_STYLE_OPTIONS : PLAN_STYLE_OPTIONS
+      });
+      this.loadProvinceRule(resolvedProfile);
       this.consumePendingPlanAppend();
+      this.warnArtSportsProfileMismatch(resolvedProfile);
     });
     let personality = wx.getStorageSync('personalityResult') || null;
+    const profile = this.data.profile || loadActiveProfileSync();
+    const artSportsMode = isArtSportsActive(profile);
     if (personality) {
       const { migrateLegacyResult } = require('../../utils/personality');
       personality = migrateLegacyResult(personality);
@@ -108,8 +132,7 @@ Page({
       const aiCareerReport = studentAiReport || wx.getStorageSync('personalityAiCareerReport') || personality.aiCareerReport || '';
       if (aiCareerReport) personality = { ...personality, aiCareerReport };
     }
-    if (!personality) {
-      const profile = this.data.profile || loadActiveProfileSync();
+    if (!personality && !artSportsMode) {
       const flow = getFlowStatus(profile);
       wx.showModal({
         title: '请先完成前置流程',
@@ -122,7 +145,7 @@ Page({
       });
       return;
     }
-    this.setData({ personality });
+    this.setData({ personality: personality || {} });
     const currentPlan = wx.getStorageSync('currentPlan') || [];
     if (currentPlan.length) {
       const plan = currentPlan.map((item) => ({
@@ -132,6 +155,22 @@ Page({
       this.setData({ plan, aiExplain: formatAiContent(wx.getStorageSync('currentAiExplain') || '') });
     }
     fetchEntitlements();
+  },
+  warnArtSportsProfileMismatch(profile) {
+    if (!profile || !profile.province) return;
+    const proScore = profile.professionalScore || profile.professional_score;
+    const examType = getExamType(profile);
+    const batch = profile.targetBatch || '';
+    if (proScore && examType === '普通类' && !profile.waiveArtSports && !batch.match(/艺术|体育/)) {
+      wx.showModal({
+        title: '请切换为艺术类档案',
+        content: '您已填写专业统考分，但考试类别仍是「普通类」，当前只能生成48个普通本科志愿。要生成64个艺术平行志愿，请将考试类别改为「艺术类」，批次选「艺术本科批」。',
+        confirmText: '去修改',
+        success: (res) => {
+          if (res.confirm) wx.navigateTo({ url: '/pages/profile/profile?track=art' });
+        }
+      });
+    }
   },
   consumePendingPlanAppend() {
     const pending = wx.getStorageSync('pendingPlanAppend');
@@ -161,12 +200,64 @@ Page({
     wx.setStorageSync('currentPlan', plan);
     wx.removeStorageSync('currentAiExplain');
   },
+  loadProvinceRule(profile) {
+    const current = profile || this.data.profile || {};
+    if (!current.province) {
+      this.setData({ provinceRule: null });
+      return;
+    }
+    const artSportsMode = isArtSportsActive(current);
+    const batch = artSportsMode ? resolveArtSportsTargetBatch(current) : (current.targetBatch || '');
+    request({
+      url: '/api/province-rules/resolve',
+      data: {
+        province: current.province,
+        batch
+      }
+    })
+      .then((res) => {
+        this.setData({ provinceRule: res || null });
+      })
+      .catch(() => {
+        this.setData({ provinceRule: null });
+      });
+  },
   ensureProfile() {
-    const { profile } = this.data;
-    if (!profile.province || !profile.subjectCombination || !profile.score || !profile.rank || !profile.targetBatch) {
+    const { profile, artSportsMode } = this.data;
+    if (!profile.province || !profile.subjectCombination || !profile.score || !profile.targetBatch) {
       wx.showModal({
         title: '请先完善信息',
-        content: '智能生成志愿需要高考省份、选科组合、分数、位次和目标批次。',
+        content: artSportsMode
+          ? '智能生成志愿需要省份、选科、文化课分数、专业统考分和目标批次。'
+          : '智能生成志愿需要高考省份、选科组合、分数、位次和目标批次。',
+        confirmText: '去完善',
+        success: (res) => {
+          if (res.confirm) {
+            const track = profile.examType === '体育类' ? 'sports' : (profile.examType === '艺术类' ? 'art' : '');
+            wx.navigateTo({ url: track ? `/pages/profile/profile?track=${track}` : '/pages/profile/profile' });
+          }
+        }
+      });
+      return false;
+    }
+    if (artSportsMode && !(profile.professionalScore || profile.professional_score)) {
+      wx.showModal({
+        title: '请填写专业统考分',
+        content: '河南艺体考生须填写专业统考分，才能计算综合分并生成志愿方案。',
+        confirmText: '去完善',
+        success: (res) => {
+          if (res.confirm) {
+            const track = profile.examType === '体育类' ? 'sports' : 'art';
+            wx.navigateTo({ url: `/pages/profile/profile?track=${track}` });
+          }
+        }
+      });
+      return false;
+    }
+    if (!artSportsMode && !profile.rank) {
+      wx.showModal({
+        title: '请先完善信息',
+        content: '智能生成志愿需要全省位次。',
         confirmText: '去完善',
         success: (res) => {
           if (res.confirm) wx.navigateTo({ url: '/pages/profile/profile' });
@@ -195,19 +286,18 @@ Page({
   doGeneratePlan() {
     const profile = this.data.profile;
     this.setData({ loading: true });
+    const payload = buildRecommendPayload(profile, {
+      planStyle: this.data.planStyle || 'balanced',
+      personality: this.data.personality,
+      volunteerCount: 0
+    });
+    payload.major_types = (this.data.personality && this.data.personality.majorTypes) || [];
     request({
       url: '/api/recommend',
       method: 'POST',
       data: {
-        province: profile.province,
-        batch: profile.targetBatch,
-        score: Number(profile.score),
-        rank: Number(profile.rank),
-        subject_combination: profile.subjectCombination,
-        major_types: (this.data.personality && this.data.personality.majorTypes) || [],
-        accept_adjustment: true,
-        plan_style: this.data.planStyle || 'balanced',
-        volunteer_count: 9
+        ...payload,
+        volunteer_count: 0
       }
     })
       .then((res) => {
@@ -220,11 +310,26 @@ Page({
         }));
         const riskResult = normalizeRisk(res.risk || { level: '低', count: {}, warnings: [] });
         const riskClass = riskResult.level === '高' ? 'risk-high' : riskResult.level === '中' ? 'risk-mid' : 'risk-low';
-        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta: res.strategy || null });
+        const strategyMeta = res.strategy || null;
+        const provinceRule = (strategyMeta && strategyMeta.volunteer_rule) || this.data.provinceRule;
+        const compositeScore = (strategyMeta && strategyMeta.composite_score) || res.composite_score || '';
+        const targetCount = (res.generation && res.generation.target_slots)
+          || (provinceRule && (provinceRule.total_slots || provinceRule.school_count));
+        const toastTitle = (res.generation && res.generation.generation_mode === 'llm')
+          ? `AI已生成 ${plan.length}/${targetCount || 64} 个志愿`
+          : (targetCount ? `已生成 ${plan.length}/${targetCount} 个志愿` : `已生成 ${plan.length} 个志愿`);
+        this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule, compositeScore });
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
-        wx.showToast({ title: '已生成志愿方案', icon: 'success' });
+        wx.showToast({ title: toastTitle, icon: 'success' });
+        if (res.generation && res.generation.generated_count < res.generation.target_slots) {
+          wx.showModal({
+            title: '志愿数量提示',
+            content: `目标 ${res.generation.target_slots} 个志愿，当前生成 ${res.generation.generated_count} 个。候选数据 ${res.generation.candidate_pool} 条，可补充录取数据或放宽筛选。`,
+            showCancel: false
+          });
+        }
       })
       .catch(() => {
         wx.showToast({ title: '推荐接口连接失败', icon: 'none' });
@@ -284,13 +389,77 @@ Page({
   saveDraft() {
     requirePermission('draft_save', '志愿草稿保存', { consume: true }).then((allowed) => {
       if (!allowed) return;
-      this.doSaveDraft();
+      this.persistDraftToServer()
+        .then(() => wx.showToast({ title: '已保存草稿', icon: 'success' }))
+        .catch((error) => {
+          wx.showToast({ title: error.message || '保存草稿失败', icon: 'none' });
+        });
+    });
+  },
+  buildDraftPayload() {
+    const profile = this.data.profile;
+    const localDrafts = wx.getStorageSync('drafts') || [];
+    const currentDraftId = wx.getStorageSync('currentDraftId');
+    const draftName = wx.getStorageSync('currentDraftName') || `志愿方案${localDrafts.length + 1}`;
+    const items = this.data.plan.map(toApiItem);
+    return {
+      profile,
+      currentDraftId,
+      draftName,
+      localDrafts,
+      payload: {
+        student_id: Number(profile.studentId),
+        draft_name: draftName,
+        province: profile.province,
+        year: new Date().getFullYear(),
+        batch: profile.targetBatch,
+        score: Number(profile.score),
+        rank: Number(profile.rank),
+        risk_level: this.data.riskResult ? this.data.riskResult.level : '未排查',
+        ai_explain: this.data.aiExplain,
+        items
+      }
+    };
+  },
+  persistDraftToServer() {
+    if (!this.data.plan.length) {
+      return Promise.reject(new Error('请先生成志愿方案'));
+    }
+    const profile = this.data.profile;
+    const studentId = resolveStudentId(profile);
+    if (!studentId) {
+      return Promise.reject(new Error('请先保存学生档案'));
+    }
+    const { currentDraftId, draftName, localDrafts, payload } = this.buildDraftPayload();
+    payload.student_id = studentId;
+    return request({
+      url: currentDraftId && /^\d+$/.test(String(currentDraftId)) ? `/api/drafts/${currentDraftId}` : '/api/drafts',
+      method: currentDraftId && /^\d+$/.test(String(currentDraftId)) ? 'PUT' : 'POST',
+      data: payload
+    }).then((res) => {
+      const risk = this.data.riskResult || { level: '未排查', chong: 0, wen: 0, bao: 0, dian: 0 };
+      const savedId = res.draft_id || currentDraftId;
+      if (!currentDraftId || !/^\d+$/.test(String(currentDraftId))) {
+        localDrafts.unshift({
+          id: savedId,
+          name: draftName,
+          profile,
+          plan: this.data.plan,
+          risk,
+          aiExplain: this.data.aiExplain,
+          createdAt: new Date().toLocaleString()
+        });
+        wx.setStorageSync('drafts', localDrafts);
+      }
+      wx.setStorageSync('currentDraftId', savedId);
+      wx.setStorageSync('currentDraftName', draftName);
+      return savedId;
     });
   },
   doSaveDraft() {
     if (!this.data.plan.length) return;
     const profile = this.data.profile;
-    if (!profile.studentId) {
+    if (!resolveStudentId(profile)) {
       wx.showModal({
         title: '请先保存学生档案',
         content: '保存草稿需要先将学生档案写入数据库。',
@@ -301,42 +470,24 @@ Page({
       });
       return;
     }
-    const localDrafts = wx.getStorageSync('drafts') || [];
-    const currentDraftId = wx.getStorageSync('currentDraftId');
-    const draftName = wx.getStorageSync('currentDraftName') || `志愿方案${localDrafts.length + 1}`;
-    const items = this.data.plan.map(toApiItem);
-    const payload = {
-      student_id: Number(profile.studentId),
-      draft_name: draftName,
-      province: profile.province,
-      year: new Date().getFullYear(),
-      batch: profile.targetBatch,
-      score: Number(profile.score),
-      rank: Number(profile.rank),
-      risk_level: this.data.riskResult ? this.data.riskResult.level : '未排查',
-      ai_explain: this.data.aiExplain,
-      items
-    };
-    request({
-      url: currentDraftId ? `/api/drafts/${currentDraftId}` : '/api/drafts',
-      method: currentDraftId ? 'PUT' : 'POST',
-      data: payload
-    })
-      .then((res) => {
-        const risk = this.data.riskResult || { level: '未排查', chong: 0, wen: 0, bao: 0, dian: 0 };
-        const savedId = res.draft_id || currentDraftId || `D${Date.now()}`;
-        if (!currentDraftId) {
-          localDrafts.unshift({ id: savedId, name: draftName, profile, plan: this.data.plan, risk, aiExplain: this.data.aiExplain, createdAt: new Date().toLocaleString() });
-          wx.setStorageSync('drafts', localDrafts);
-        }
-        wx.setStorageSync('currentDraftId', savedId);
-        wx.setStorageSync('currentDraftName', draftName);
-        wx.showToast({ title: currentDraftId ? '草稿已更新' : '已保存草稿', icon: 'success' });
+    this.persistDraftToServer()
+      .then((savedId) => {
+        const currentDraftId = wx.getStorageSync('currentDraftId');
+        wx.showToast({ title: currentDraftId && String(savedId) === String(currentDraftId) ? '草稿已更新' : '已保存草稿', icon: 'success' });
       })
-      .catch(() => {
-        wx.showToast({ title: '后端保存失败，已保存在本地', icon: 'none' });
+      .catch((error) => {
+        wx.showToast({ title: error.message || '后端保存失败', icon: 'none' });
+        const { draftName, localDrafts } = this.buildDraftPayload();
         const risk = this.data.riskResult || { level: '未排查', chong: 0, wen: 0, bao: 0, dian: 0 };
-        localDrafts.unshift({ id: `D${Date.now()}`, name: draftName, profile, plan: this.data.plan, risk, aiExplain: this.data.aiExplain, createdAt: new Date().toLocaleString() });
+        localDrafts.unshift({
+          id: `D${Date.now()}`,
+          name: draftName,
+          profile,
+          plan: this.data.plan,
+          risk,
+          aiExplain: this.data.aiExplain,
+          createdAt: new Date().toLocaleString()
+        });
         wx.setStorageSync('drafts', localDrafts);
       });
   },
@@ -396,31 +547,28 @@ Page({
   },
   doGeneratePlanPdf() {
     const profile = this.data.profile;
-    const currentDraftId = wx.getStorageSync('currentDraftId');
     if (!this.data.plan.length) return;
-    if (!profile.studentId) {
+    const studentId = resolveStudentId(profile);
+    if (!studentId) {
       wx.showToast({ title: '请先保存学生档案', icon: 'none' });
       return;
     }
-    if (!currentDraftId) {
-      wx.showModal({
-        title: '请先保存草稿',
-        content: 'PDF 导出需要先保存草稿。',
-        confirmText: '知道了'
-      });
-      return;
-    }
-    const fileName = buildStudentPdfFileName(profile, '填报志愿');
-    const pdfUrl = `/api/drafts/${currentDraftId}/pdf?student_id=${profile.studentId}`;
-    preparePdfFromUrl(pdfUrl, { fileName })
-      .then(({ filePath, fileName: savedName }) => {
+    wx.showLoading({ title: '准备导出...', mask: true });
+    this.persistDraftToServer()
+      .then((draftId) => {
+        wx.hideLoading();
+        const pdfUrl = `/api/drafts/${draftId}/pdf?student_id=${studentId}`;
+        return preparePdfFromUrl(pdfUrl, { fileName: buildStudentPdfFileName(profile, '填报志愿') })
+          .then(({ filePath, fileName: savedName }) => ({ filePath, savedName, draftId }));
+      })
+      .then(({ filePath, savedName, draftId }) => {
         this._pdfFilePath = filePath;
         this._pdfFileName = savedName;
         this.setData({ pdfReady: true, pdfFileName: savedName });
         const records = wx.getStorageSync('exportRecords') || [];
         records.unshift({
           id: Date.now(),
-          draftId: currentDraftId,
+          draftId,
           time: new Date().toLocaleString(),
           count: this.data.plan.length,
           type: 'pdf'
@@ -429,6 +577,7 @@ Page({
         wx.showToast({ title: '已生成，请点②发送', icon: 'success' });
       })
       .catch((error) => {
+        wx.hideLoading();
         wx.showToast({ title: error.message || 'PDF 生成失败', icon: 'none' });
       });
   },

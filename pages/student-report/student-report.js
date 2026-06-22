@@ -7,7 +7,7 @@ const {
   buildStudentPdfFileName
 } = require('../../utils/pdfExport');
 const { formatReportContent } = require('../../utils/reportFormat');
-const { confirmReportBeanDeduction, consumeReportBeans } = require('../../utils/reportBean');
+const { confirmReportPermission } = require('../../utils/reportBean');
 const { loadActiveProfileSync, refreshActiveProfile, resolveStudentId } = require('../../utils/profileHelper');
 const { migrateLegacyResult } = require('../../utils/personality');
 
@@ -128,10 +128,30 @@ Page({
   },
   validateBeforeGenerate() {
     const { profile, personality } = this.data;
-    if (!profile.province || !profile.score || !profile.rank || !profile.subjectCombination || !profile.targetBatch) {
+    const { isArtSportsActive } = require('../../utils/henanArtSports');
+    const artSports = isArtSportsActive(profile);
+    if (!profile.province || !profile.score || !profile.subjectCombination || !profile.targetBatch) {
       wx.showModal({
         title: '请先完善档案',
-        content: '生成报告需要省份、分数、位次、选科和批次信息。',
+        content: '生成报告需要省份、分数、选科和批次信息。',
+        confirmText: '去完善',
+        success: (res) => { if (res.confirm) this.goProfile(); }
+      });
+      return false;
+    }
+    if (artSports && !(profile.professionalScore || profile.professional_score)) {
+      wx.showModal({
+        title: '请填写专业统考分',
+        content: '艺体考生生成报告需要专业统考分。',
+        confirmText: '去完善',
+        success: (res) => { if (res.confirm) this.goProfile(); }
+      });
+      return false;
+    }
+    if (!artSports && !profile.rank) {
+      wx.showModal({
+        title: '请先完善档案',
+        content: '生成报告需要全省位次。',
         confirmText: '去完善',
         success: (res) => { if (res.confirm) this.goProfile(); }
       });
@@ -150,18 +170,10 @@ Page({
   },
   generateReport() {
     if (!this.validateBeforeGenerate()) return;
-    confirmReportBeanDeduction('个性化填报报告').then((confirmed) => {
-      if (!confirmed) return;
-      consumeReportBeans('个性化填报报告')
-        .then(() => requirePermission('personality_deep', '个性化填报报告', { consume: false }))
-        .then((allowed) => {
-          if (!allowed) return;
-          this.doGenerateReport();
-        })
-        .catch((error) => {
-          wx.showToast({ title: error.message || '星鼎豆扣除失败', icon: 'none' });
-        });
-    });
+      confirmReportPermission('个性化填报报告', 'personality_deep').then((allowed) => {
+        if (!allowed) return;
+        this.doGenerateReport();
+      });
   },
   doGenerateReport() {
     const profile = this.data.profile;
@@ -224,7 +236,7 @@ Page({
   generateReportPdf() {
     const profile = this.canExportPdf();
     if (!profile) return;
-    requirePermission('personality_deep', '个性化填报报告', { consume: false }).then((allowed) => {
+    requirePermission('pdf_export', 'PDF 报告导出', { consume: false }).then((allowed) => {
       if (!allowed) return;
       const studentId = resolveStudentId(profile);
       const report = formatReportContent(this.data.report, profile);
@@ -265,7 +277,7 @@ Page({
       wx.showToast({ title: '请先保存学生档案', icon: 'none' });
       return;
     }
-    requirePermission('personality_deep', '个性化填报报告', { consume: false }).then((allowed) => {
+    requirePermission('pdf_export', 'PDF 报告导出', { consume: false }).then((allowed) => {
       if (!allowed) return;
       openPdfFromPost('/api/ai/student-report/pdf', {
         student_id: studentId,

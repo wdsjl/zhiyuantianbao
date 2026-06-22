@@ -3,7 +3,7 @@ from urllib.parse import urlencode
 
 from fastapi.responses import HTMLResponse
 
-from db import get_connection, rows_to_dicts
+from db import get_connection, rows_to_dicts, row_to_dict
 from data_fetch_service import list_sources, list_tasks, list_records, list_brochures
 from llm_settings_service import get_llm_settings, mask_api_key
 from membership_service import list_plans, list_permissions, get_plan_permission_map, search_users, list_permission_usage, list_expiring_members
@@ -74,6 +74,7 @@ def render_page(title: str, body: str) -> HTMLResponse:
       <nav>
         <a href="/admin">首页</a>
         <a href="/admin/import">数据导入</a>
+        <a href="/admin/art-sports-admissions">艺体录取数据</a>
         <a href="/admin/crawler">数据采集</a>
         <a href="/admin/import/logs">导入日志</a>
         <a href="/admin/schools">院校数据</a>
@@ -456,9 +457,10 @@ def admin_import(message: str = ''):
     message_html = f'<p class="success">{escape(message)}</p>' if message else ''
     body = f'''
       <div class="card">
-        <h2>导入历年录取数据</h2>
+        <h2>导入普通类历年录取数据</h2>
         {message_html}
-        <p class="muted">支持 `.xlsx` 和 `.csv`。请使用模板字段：年份、省份、批次、院校代码、院校名称、专业代码、专业名称等。</p>
+        <p class="danger"><strong>注意：</strong>物理.xlsx / 历史.xlsx 各约 6 万行，全量导入需数分钟且会阻塞后台。若录取数据<strong>已导入过</strong>，请勿重复上传；仅需更新保研率/招生章程时，请使用下方「同步专家版院校章程/保研率」。</p>
+        <p class="muted">支持 `.xlsx` 和 `.csv`。兼容<strong>河南专家版</strong>字段：生源地、专业全称、专业组最低分/位次、保研率、2025招生章程（含超链接）。请使用模板字段或专家版原表。</p>
         <form action="/admin/import" method="post" enctype="multipart/form-data">
           <div class="toolbar">
             <input type="file" name="file" accept=".xlsx,.csv" required />
@@ -467,6 +469,38 @@ def admin_import(message: str = ''):
           </div>
         </form>
         <p class="muted">模板文件位置：<code>database/admission_import_template.csv</code></p>
+      </div>
+      <div class="card">
+        <h2>导入河南艺体历年最低综合分（可选补充）</h2>
+        <p class="muted">若已在上方「普通类录取数据」中导入艺考/体育批次，艺体专区会自动使用录取库，无需重复上传。本入口用于补充专项综合分或录取库未覆盖的院校专业。支持 `.xlsx` 和 `.csv`；必填：省份、类别、批次层次、院校名称、专业名称、公式编号；可选：最低综合分2025/2024/2023、城市。</p>
+        <form action="/admin/import/art-sports" method="post" enctype="multipart/form-data">
+          <div class="toolbar">
+            <input type="file" name="file" accept=".xlsx,.csv" required />
+            <button type="submit">上传艺体数据</button>
+          </div>
+        </form>
+        <p class="muted">模板文件位置：<code>database/art_sports_admissions_import_template.csv</code></p>
+      </div>
+      <div class="card">
+        <h2>导入院校保研率 / 招生章程链接</h2>
+        <p class="muted">适用于按院校一行的表格（如含「保研率」「2025招生章程」列）。必填：院校名称；可选：院校代码、城市、官网。列名含「招生章程」即识别为章程链接（表头写2025时按2026年展示）。</p>
+        <form action="/admin/import/school-profiles" method="post" enctype="multipart/form-data">
+          <div class="toolbar">
+            <input type="file" name="file" accept=".xlsx,.csv" required />
+            <button type="submit">上传院校扩展信息</button>
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>从专家版表格同步院校信息（推荐）</h2>
+        <p class="muted">适用于已上传的 <strong>物理.xlsx / 历史.xlsx</strong>（河南高考志愿填报大数据专家版）。系统会快速扫描「保研率」「2025招生章程」列（含超链接），<strong>仅更新院校保研率与招生章程</strong>，不会重复导入 6 万条录取数据。请分别上传物理、历史两个文件各一次。</p>
+        <p class="danger">提交后立即返回，任务在后台执行。完成后请到 <a href="/admin/import/logs">导入日志</a> 查看类型 <code>school_profiles_from_expert</code> 的记录。若网页仍超时，可在服务器运行 <code>scripts/sync-expert-profiles.ps1</code>。</p>
+        <form action="/admin/import/sync-expert-school-profiles" method="post" enctype="multipart/form-data">
+          <div class="toolbar">
+            <input type="file" name="file" accept=".xlsx,.csv" required />
+            <button type="submit">同步专家版院校章程/保研率</button>
+          </div>
+        </form>
       </div>
     '''
     return render_page('数据导入', body)
@@ -826,10 +860,16 @@ def admin_students(keyword: str = '', page: int = 1, edit_id: int | None = None,
                 <input name="grade" value="{escape(str(edit.get("grade", "")))}" placeholder="年级" />
                 <input name="class_name" value="{escape(str(edit.get("class_name", "")))}" placeholder="班级" />
                 <input name="exam_year" value="{escape(str(edit.get("exam_year", "")))}" placeholder="高考年份" required />
+                <input name="exam_type" value="{escape(str(edit.get("exam_type", "普通类")))}" placeholder="考试类别" />
                 <input name="subject_combination" value="{escape(str(edit.get("subject_combination", "")))}" placeholder="选科" required />
                 <input name="score" value="{escape(str(edit.get("score", "")))}" placeholder="分数" required />
-                <input name="rank" value="{escape(str(edit.get("rank", "")))}" placeholder="位次" required />
+                <input name="rank" value="{escape(str(edit.get("rank", "")))}" placeholder="位次（艺体可填0）" />
                 <input name="target_batch" value="{escape(str(edit.get("target_batch", "")))}" placeholder="目标批次" required />
+                <input name="professional_score" value="{escape(str(edit.get("professional_score", "") or ""))}" placeholder="专业统考分" />
+                <input name="art_sports_formula_id" value="{escape(str(edit.get("art_sports_formula_id", "") or ""))}" placeholder="公式编号1-5" />
+                <input name="culture_cutoff" value="{escape(str(edit.get("culture_cutoff", "") or ""))}" placeholder="文化课控制线" />
+                <input name="pro_cutoff" value="{escape(str(edit.get("pro_cutoff", "") or ""))}" placeholder="专业合格线" />
+                <label><input type="checkbox" name="waive_art_sports_batch" value="1" {'checked' if edit.get('waive_art_sports_batch') else ''} /> 放弃艺体批次</label>
                 <button type="submit">保存修改</button>
                 <a class="button btn-muted" href="/admin/students?keyword={escape(keyword)}&page={page}">取消</a>
               </div>
@@ -841,8 +881,8 @@ def admin_students(keyword: str = '', page: int = 1, edit_id: int | None = None,
         rows_html += f'''
           <tr>
             <td>{row.get("student_id", "")}</td><td>{escape(str(row.get("phone", "")))}</td>
-            <td>{escape(str(row.get("name", "")))}</td><td>{escape(str(row.get("school_name", "")))}</td>
-            <td>{escape(str(row.get("class_name", "")))}</td><td>{row.get("score", "")}</td><td>{row.get("rank", "")}</td>
+            <td>{escape(str(row.get("name", "")))}</td><td>{escape(str(row.get("exam_type", "")))}</td>
+            <td>{row.get("score", "")}</td><td>{row.get("professional_score", "")}</td><td>{row.get("rank", "")}</td>
             <td>{escape(str(row.get("target_batch", "")))}</td>
             <td><a class="button btn-sm" href="/admin/students?edit_id={row.get("student_id")}&keyword={escape(keyword)}&page={page}">编辑</a></td>
           </tr>
@@ -859,11 +899,74 @@ def admin_students(keyword: str = '', page: int = 1, edit_id: int | None = None,
           <button type="submit">搜索</button>
           <a class="button" href="/admin/students/export?keyword={escape(keyword)}">导出 CSV</a>
         </form>
-        <table><thead><tr><th>学生ID</th><th>手机号</th><th>姓名</th><th>学校</th><th>班级</th><th>分数</th><th>位次</th><th>批次</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
+        <table><thead><tr><th>学生ID</th><th>手机号</th><th>姓名</th><th>类别</th><th>分数</th><th>专业分</th><th>位次</th><th>批次</th><th>操作</th></tr></thead><tbody>{rows_html}</tbody></table>
         {pagination_html('/admin/students', page, total, {'keyword': keyword})}
       </div>
     """
     return render_page('学生档案', body)
+
+
+def admin_art_sports_admissions(keyword: str = '', category: str = '', page: int = 1, message: str = ''):
+    from henan_art_sports_service import ensure_art_sports_admissions_table
+
+    ensure_art_sports_admissions_table()
+    page_size = 30
+    offset = max(0, (page - 1) * page_size)
+    sql = 'SELECT * FROM art_sports_admissions WHERE 1=1'
+    count_sql = 'SELECT COUNT(*) AS count FROM art_sports_admissions WHERE 1=1'
+    params = []
+    if keyword:
+        sql += ' AND (school_name LIKE ? OR major_name LIKE ?)'
+        count_sql += ' AND (school_name LIKE ? OR major_name LIKE ?)'
+        like = f'%{keyword}%'
+        params.extend([like, like])
+    if category:
+        sql += ' AND category = ?'
+        count_sql += ' AND category = ?'
+        params.append(category)
+    sql += ' ORDER BY min_composite_2025 DESC LIMIT ? OFFSET ?'
+    with get_connection() as connection:
+        total = row_to_dict(connection.execute(count_sql, params).fetchone())['count']
+        rows = rows_to_dicts(connection.execute(sql, params + [page_size, offset]).fetchall())
+    message_html = f'<p class="success">{escape(message)}</p>' if message else ''
+    rows_html = ''
+    for row in rows:
+        rows_html += f'''
+          <tr>
+            <td>{row.get('admission_id', '')}</td>
+            <td>{escape(str(row.get('category', '')))}</td>
+            <td>{escape(str(row.get('batch_level', '')))}</td>
+            <td>{escape(str(row.get('school_name', '')))}</td>
+            <td>{escape(str(row.get('major_name', '')))}</td>
+            <td>{row.get('formula_id', '')}</td>
+            <td>{row.get('min_composite_2025', '')}</td>
+            <td>{row.get('min_composite_2024', '')}</td>
+            <td>{row.get('min_composite_2023', '')}</td>
+            <td>{escape(str(row.get('city', '')))}</td>
+          </tr>
+        '''
+    if not rows_html:
+        rows_html = '<tr><td colspan="10" class="muted">暂无专项数据；若已导入艺考/体育批次录取数据，小程序将自动使用录取库</td></tr>'
+    body = f'''
+      <div class="card">
+        <h2>河南艺体录取数据（历年最低综合分）</h2>
+        {message_html}
+        <p class="muted">艺体冲稳保优先使用「录取数据导入」中的艺考/体育批次；本库为可选补充。河南省不发布官方综合分位次，请维护各院校对应公式的历年最低综合分。</p>
+        <form class="toolbar" method="get">
+          <input name="keyword" value="{escape(keyword)}" placeholder="院校 / 专业" />
+          <select name="category">
+            <option value="">全部类别</option>
+            <option value="艺术类" {'selected' if category == '艺术类' else ''}>艺术类</option>
+            <option value="体育类" {'selected' if category == '体育类' else ''}>体育类</option>
+          </select>
+          <button type="submit">筛选</button>
+          <a class="button" href="/admin/import">去导入</a>
+        </form>
+        <table><thead><tr><th>ID</th><th>类别</th><th>批次</th><th>院校</th><th>专业</th><th>公式</th><th>2025</th><th>2024</th><th>2023</th><th>城市</th></tr></thead><tbody>{rows_html}</tbody></table>
+        {pagination_html('/admin/art-sports-admissions', page, total, {'keyword': keyword, 'category': category})}
+      </div>
+    '''
+    return render_page('艺体录取数据', body)
 
 
 
@@ -1292,6 +1395,7 @@ def admin_payments(keyword: str = '', message: str = ''):
             <td>{escape(str(order.get('paid_at') or ''))}</td>
             <td>{escape(str(order.get('remark') or ''))}</td>
             <td>
+              {f'<form method="post" action="/admin/payments/{order.get("order_id")}/repair-deliver" style="display:inline" onsubmit="return confirm(\'确认补发货并同步会员？\')"><button type="submit" class="btn-sm">补发货</button></form>' if order.get('pay_method') == 'virtual_pay' else ''}
               {f'<form method="post" action="/admin/payments/{order.get("order_id")}/refund" style="display:inline" onsubmit="return confirm(\'确认退款？\')"><button type="submit" class="btn-sm btn-danger">退款</button></form>' if order.get('pay_status') == 'paid' else ''}
             </td>
           </tr>
