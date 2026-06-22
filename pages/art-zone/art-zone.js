@@ -30,10 +30,13 @@ Page({
     formulaHints: [],
     result: null,
     matchResult: null,
-    loading: false
+    loading: false,
+    dataSourceStats: null,
+    hasRealData: false
   },
   onLoad() {
     this.loadMeta();
+    this.loadDataSourceStats();
     const profile = wx.getStorageSync('studentProfile') || {};
     const patch = {};
     if (profile.score) patch['form.cultureScore'] = String(profile.score);
@@ -50,6 +53,17 @@ Page({
       patch['form.formulaId'] = Number(profile.formulaId || profile.art_sports_formula_id) || 5;
     }
     if (Object.keys(patch).length) this.setData(patch);
+  },
+  loadDataSourceStats() {
+    request({ url: '/api/art-admissions/stats' })
+      .then((stats) => {
+        const hasRealData = stats && stats.total_records > 0;
+        this.setData({
+          dataSourceStats: stats,
+          hasRealData
+        });
+      })
+      .catch(() => {});
   },
   loadMeta() {
     request({ url: '/api/henan-art-sports/meta' })

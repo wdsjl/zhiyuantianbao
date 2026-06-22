@@ -5,6 +5,21 @@
     <view class="warn-box">艺体报名二选一；须双过线才可投档本科；无官方综合分位次，请用历年最低综合分对标。</view>
   </view>
 
+  <view class="card" wx:if="{{dataSourceStats}}" style="border-left:4px solid {{hasRealData ? '#12b76a' : '#f59e0b'}}">
+    <view class="section-title">{{hasRealData ? '✅ 已采集真实录取数据' : '⚠️ 暂无真实录取数据'}}</view>
+    <view class="sub-text" wx:if="{{hasRealData}}">
+      当前数据库已存储 <strong>{{dataSourceStats.total_records}}</strong> 条河南艺术/体育类院校专业录取综合分
+      <block wx:if="{{dataSourceStats.year_coverage}}">
+        （2025: {{dataSourceStats.year_coverage.has_2025}} 条，2024: {{dataSourceStats.year_coverage.has_2024}} 条，2023: {{dataSourceStats.year_coverage.has_2023}} 条）
+      </block>
+      。志愿生成将基于<strong>真实采集数据</strong>进行匹配。
+    </view>
+    <view class="sub-text" wx:else>
+      数据库中暂无艺术类真实录取数据，志愿生成将回退到大模型估算（准确性有限）。
+      请联系管理员在后台「数据采集」页面点击「采集艺术/体育数据」获取真实录取分数。
+    </view>
+  </view>
+
   <view class="card" wx:if="{{meta}}">
     <view class="section-title">核心规则</view>
     <view class="rule-item">① 报考互斥：艺术类 / 体育类二选一</view>

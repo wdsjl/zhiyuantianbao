@@ -311,6 +311,50 @@ def admin_crawler_schools(background_tasks: BackgroundTasks, school_limit: int =
         return RedirectResponse(f'/admin/crawler?message={quote(f"同步失败：{exc}")}', status_code=303)
 
 
+# ── 艺术类/体育类数据采集 ──────────────────────────────
+
+@app.post('/admin/crawler/art-sports')
+def admin_crawler_art_sports(
+    background_tasks: BackgroundTasks,
+    province: str = Form('河南'),
+    years: str = Form('2025,2024,2023'),
+    school_limit: str = Form('0'),
+    use_llm: str = Form('1'),
+):
+    try:
+        from art_crawler_service import _background_art_crawl
+
+        year_list = [int(y.strip()) for y in years.split(',') if y.strip()]
+        limit = None if school_limit == '0' else int(school_limit)
+        enrich = use_llm == '1'
+
+        background_tasks.add_task(_background_art_crawl, province, year_list, limit, enrich)
+        year_text = '、'.join(str(y) for y in sorted(year_list, reverse=True))
+        limit_text = '全量' if limit is None else f'{limit} 所'
+        llm_text = '（含 LLM 增强）' if enrich else ''
+        message = f'{province} 艺术/体育类录取数据采集已启动：{year_text}，{limit_text}{llm_text}'
+        return RedirectResponse(f'/admin/crawler?message={quote(message)}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/crawler?message={quote(f"艺术类采集启动失败：{exc}")}', status_code=303)
+
+
+@app.get('/api/art-admissions/stats')
+def api_art_admissions_stats():
+    """查询艺术类录取数据统计（前端可用）。"""
+    from art_crawler_service import get_art_admission_stats
+    return get_art_admission_stats()
+
+
+@app.post('/admin/crawler/art-sports/clear')
+def admin_crawler_art_sports_clear(province: str = Form('河南')):
+    try:
+        from art_crawler_service import clear_art_sports_admissions
+        count = clear_art_sports_admissions(province)
+        return RedirectResponse(f'/admin/crawler?message={quote(f"已清空 {province} 的 {count} 条艺术/体育录取数据")}', status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f'/admin/crawler?message={quote(f"清空失败：{exc}")}', status_code=303)
+
+
 @app.get('/admin/import')
 def admin_import_page():
     return admin_import()

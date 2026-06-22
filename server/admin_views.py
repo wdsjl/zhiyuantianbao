@@ -443,6 +443,32 @@ def admin_crawler(message: str = '', crawl_id: int | None = None):
         </form>
       </div>
       <div class="card">
+        <h2>🎨 艺术类 / 体育类录取数据采集（河南）</h2>
+        <p class="muted">
+          数据来源：<strong>掌上高考 static-data.gaokao.cn</strong> 艺术类批次（type=25）。
+          采集的是各院校在河南艺术/体育批次的<strong>最低综合分</strong>（非文化课分，无官方位次），
+          直接用于艺体专区「智能生成」64 个平行志愿。
+        </p>
+        <form method="post" action="/admin/crawler/art-sports">
+          <div class="toolbar">
+            <select name="province">
+              <option value="河南">河南</option>
+            </select>
+            <input name="years" type="text" value="2025,2024,2023" placeholder="年份，逗号分隔" style="min-width:160px" />
+            <input name="school_limit" type="number" value="0" min="0" max="3000" placeholder="院校数，0=全量" style="min-width:140px" />
+            <select name="use_llm">
+              <option value="1">启用 LLM 增强（推荐）</option>
+              <option value="0">仅 API 原始数据</option>
+            </select>
+            <button type="submit">采集艺术/体育数据</button>
+          </div>
+        </form>
+        <form method="post" action="/admin/crawler/art-sports/clear" style="margin-top:8px" onsubmit="return confirm('确定要清空所有艺术/体育录取数据吗？此操作不可恢复。')">
+          <input type="hidden" name="province" value="河南" />
+          <button type="submit" class="btn-muted" style="color:#d92d20">清空艺术/体育数据</button>
+        </form>
+      </div>
+      <div class="card">
         <h2>采集日志</h2>
         <table>
           <thead><tr><th>ID</th><th>省份</th><th>年份</th><th>院校进度</th><th>记录数</th><th>成功</th><th>失败</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>

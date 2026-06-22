@@ -166,11 +166,59 @@ def build_admission_fetch_prompt(batch: str, formula_id: int, formula_label: str
 {{"admissions":[{{"school_name":"郑州大学","major_name":"音乐表演","min_composite_2025":512.5,"city":"郑州"}}]}}'''
 
 
+def load_admissions_from_db(batch: str, formula_id: int) -> list[dict[str, Any]] | None:
+    """从 art_sports_admissions 表加载爬虫采集的真实录取数据。"""
+    from henan_art_sports_service import ensure_art_sports_admissions_table
+
+    ensure_art_sports_admissions_table()
+    batch_level = '专科' if '专科' in str(batch) else '本科'
+
+    with get_connection() as connection:
+        rows = connection.execute(
+            '''
+            SELECT * FROM art_sports_admissions
+            WHERE province = ? AND batch_level = ? AND formula_id = ?
+              AND min_composite_2025 IS NOT NULL
+            ORDER BY min_composite_2025 DESC
+            ''',
+            [PROVINCE, batch_level, int(formula_id)],
+        ).fetchall()
+
+    if not rows or len(rows) < 20:
+        return None
+
+    from db import rows_to_dicts
+    result: list[dict[str, Any]] = []
+    for row in rows_to_dicts(rows):
+        result.append({
+            'school_name': str(row.get('school_name') or '').strip(),
+            'major_name': str(row.get('major_name') or '').strip(),
+            'min_composite_2025': float(row['min_composite_2025']) if row.get('min_composite_2025') else 0.0,
+            'ref_min_composite': float(row['min_composite_2025']) if row.get('min_composite_2025') else 0.0,
+            'city': str(row.get('city') or '').strip(),
+            'data_source': 'art_crawler_db',
+        })
+    return result
+
+
 def collect_art_2025_admissions_via_llm(batch: str, formula_id: int, formula_label: str) -> list[dict[str, Any]]:
+    # ① 优先使用数据库中的真实爬虫数据（art_sports_admissions 表）
+    db_admissions = load_admissions_from_db(batch, formula_id)
+    if db_admissions:
+        # 同步缓存到 LLM cache 表，避免后续重复查询
+        save_cached_admissions(batch, formula_id, db_admissions, source_note='art_crawler_db')
+        return db_admissions
+
+    # ② 检查 LLM 缓存（7天有效期）
     cached = load_cached_admissions(batch, formula_id)
     if cached:
         return cached
 
+    # ③ LLM 不可用时直接报错（不再凭空生成不可靠数据）
+    if not is_llm_available():
+        raise ValueError('大模型未启用且数据库中无艺术类录取数据，请先在后台采集艺术类数据')
+
+    # ④ 最后兜底：LLM 生成（标记为不可靠来源）
     content = chat_completion(
         [
             {
@@ -192,7 +240,10 @@ def collect_art_2025_admissions_via_llm(batch: str, formula_id: int, formula_lab
     normalized = [item for item in normalized if item]
     if len(normalized) < 20:
         raise ValueError(f'大模型返回的2025录取线过少（{len(normalized)}条）')
-    save_cached_admissions(batch, formula_id, normalized, source_note='llm_fetch_2025')
+    # 标记为 LLM 生成（非真实采集）
+    for item in normalized:
+        item['data_source'] = 'llm_generated'
+    save_cached_admissions(batch, formula_id, normalized, source_note='llm_generated_fallback')
     return normalized
 
 
@@ -247,6 +298,7 @@ def _volunteer_row_to_plan_item(
     accept_adjustment: bool,
     formula_id: int,
     category: str,
+    data_source: str = 'llm_art_2025',
 ) -> dict[str, Any]:
     school_name = str(row.get('school_name') or '').strip()
     major_name = str(row.get('major_name') or '').strip()
@@ -293,7 +345,7 @@ def _volunteer_row_to_plan_item(
         'score_diff': diff,
         'formula_id': formula_id,
         'art_sports_mode': True,
-        'data_source': 'llm_art_2025',
+        'data_source': data_source,
     }
 
 
@@ -305,6 +357,7 @@ def _local_plan_from_admissions(
     accept_adjustment: bool,
     formula_id: int,
     category: str,
+    data_source: str = 'llm_art_2025',
 ) -> list[dict[str, Any]]:
     ranked: list[dict[str, Any]] = []
     for school in admissions:
@@ -326,6 +379,7 @@ def _local_plan_from_admissions(
             accept_adjustment=accept_adjustment,
             formula_id=formula_id,
             category=category,
+            data_source=data_source,
         )
         for item in ranked
     ]
@@ -345,6 +399,7 @@ def generate_art_volunteer_plan_via_llm(
     subject_combination: str = '',
     accept_adjustment: bool = True,
     category: str = '艺术类',
+    data_source: str = 'llm_art_2025',
 ) -> list[dict[str, Any]]:
     content = chat_completion(
         [
@@ -394,6 +449,7 @@ def generate_art_volunteer_plan_via_llm(
                 accept_adjustment=accept_adjustment,
                 formula_id=formula_id,
                 category=category,
+                data_source=data_source,
             )
         )
 
@@ -405,6 +461,7 @@ def generate_art_volunteer_plan_via_llm(
             accept_adjustment=accept_adjustment,
             formula_id=formula_id,
             category=category,
+            data_source=data_source,
         )
         for item in local_items:
             key = (item['school_name'], item['major_name'])
@@ -424,9 +481,6 @@ def generate_art_volunteer_plan_via_llm(
 
 
 def build_art_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
-    if not is_llm_available():
-        raise ValueError('大模型未启用，无法生成艺术类志愿')
-
     payload = request_to_match_payload(data)
     calc = calculate_composite({**payload, 'category': payload['category']})
     if calc.get('use_normal_track'):
@@ -462,26 +516,67 @@ def build_art_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
             'art_sports_mode': True,
         }
 
-    admissions = collect_art_2025_admissions_via_llm(batch, formula_id, formula_label)
-    selected = generate_art_volunteer_plan_via_llm(
-        batch=batch,
-        composite_score=composite_score,
-        culture_score=culture_score,
-        professional_score=professional_score,
-        formula_id=formula_id,
-        formula_label=formula_label,
-        plan_style=plan_style,
-        admissions=admissions,
-        subject_combination=subject_combination,
-        accept_adjustment=accept_adjustment,
-        category=payload['category'],
-    )
+    # 尝试获取录取数据（优先 DB 真实数据）
+    admissions: list[dict[str, Any]] = []
+    data_source_tag = 'llm_art_2025'
+    generation_mode = 'llm'
+
+    try:
+        admissions = collect_art_2025_admissions_via_llm(batch, formula_id, formula_label)
+    except ValueError:
+        admissions = []
+
+    primary_source = admissions[0].get('data_source', 'llm_generated') if admissions else 'unknown'
+    is_real_data = primary_source == 'art_crawler_db'
+
+    if is_real_data:
+        # 有真实 DB 数据：直接本地匹配生成，无需 LLM
+        data_source_tag = 'art_crawler_db'
+        generation_mode = 'local_db_match'
+        selected = _local_plan_from_admissions(
+            admissions,
+            composite_score=composite_score,
+            plan_style=plan_style,
+            accept_adjustment=accept_adjustment,
+            formula_id=formula_id,
+            category=payload['category'],
+            data_source=data_source_tag,
+        )
+    elif is_llm_available():
+        # LLM 可用：走 LLM 生成路径
+        selected = generate_art_volunteer_plan_via_llm(
+            batch=batch,
+            composite_score=composite_score,
+            culture_score=culture_score,
+            professional_score=professional_score,
+            formula_id=formula_id,
+            formula_label=formula_label,
+            plan_style=plan_style,
+            admissions=admissions,
+            subject_combination=subject_combination,
+            accept_adjustment=accept_adjustment,
+            category=payload['category'],
+            data_source=data_source_tag,
+        )
+    else:
+        raise ValueError('大模型未启用且数据库中无艺术类录取数据，请先在后台采集艺术类数据')
 
     quotas = get_art_sports_quotas(plan_style)
     warnings: list[str] = []
     if len(selected) < VOLUNTEER_SLOTS:
         warnings.append(f'大模型生成 {len(selected)}/{VOLUNTEER_SLOTS} 个志愿，候选录取线 {len(admissions)} 条。')
-    warnings.append('志愿方案由大模型基于2025年河南艺术录取线生成，仅供参考，请以考试院和高校招生章程为准。')
+
+    if is_real_data:
+        source_label = '数据来源于掌上高考官方API采集的2025年河南艺术类院校录取最低综合分'
+        rank_notice = '河南省不发布艺体综合分官方位次；已使用官方API采集的真实录取最低综合分对标生成志愿。'
+        message = f'已从招生API采集 {len(admissions)} 条2025年河南艺术录取最低综合分，并按考生综合分匹配生成64个平行志愿（真实数据，非官方位次）。'
+    else:
+        source_label = '大模型生成的2025年河南艺术录取最低综合分参考线（非真实采集数据）'
+        rank_notice = '河南省不发布艺体综合分官方位次；⚠️ 当前使用大模型生成的录取线（非真实采集），建议在后台采集真实数据。'
+        message = '大模型已生成2025年河南艺术录取最低综合分参考线（⚠️ 非真实数据），并按考生综合分匹配生成64个平行志愿。'
+        warnings.append('当前录取线数据为大模型生成（非真实采集），建议管理员在后台使用「采集艺术类数据」功能获取真实录取分数。')
+
+    warnings.append('志愿方案仅供参考，请以河南省教育考试院和高校招生章程为准。')
 
     return {
         'items': selected,
@@ -500,29 +595,30 @@ def build_art_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
             'formula_label': formula_label,
             'dual_line': calc['dual_line'],
             'eligible': True,
-            'message': '大模型已采集2025年河南艺术录取最低综合分，并按考生综合分匹配生成64个平行志愿（非官方位次）。',
+            'message': message,
             'volunteer_slots': VOLUNTEER_SLOTS,
-            'rank_notice': '河南省不发布艺体综合分官方位次；艺术类志愿由大模型采集2025录取线对标生成。',
-            'data_source': 'llm_art_2025',
+            'rank_notice': rank_notice,
+            'data_source': data_source_tag,
             'candidate_count': len(admissions),
-            'generation_mode': 'llm',
+            'generation_mode': generation_mode,
             'volunteer_rule': {
                 'total_slots': VOLUNTEER_SLOTS,
                 'school_count': VOLUNTEER_SLOTS,
                 'batch': batch,
                 'volunteer_mode': VOLUNTEER_MODE,
                 'matched': True,
-                'source': 'llm_art_2025',
+                'source': data_source_tag,
                 'rule_description': VOLUNTEER_RULE_DESCRIPTION,
             },
             'quotas': quotas,
             'parallel_layout': '平行志愿按志愿序号有序排布：前段冲、中段稳、后段保（大模型基于2025录取线匹配）。',
+            'source_label': source_label,
         },
         'generation': {
             'target_slots': VOLUNTEER_SLOTS,
             'generated_count': len(selected),
             'candidate_pool': len(admissions),
-            'generation_mode': 'llm',
+            'generation_mode': generation_mode,
         },
         'art_sports_mode': True,
     }
@@ -531,8 +627,7 @@ def build_art_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
 def try_build_art_llm_recommendation(data: dict[str, Any]) -> dict[str, Any] | None:
     if _infer_exam_type(data) != '艺术类':
         return None
-    if not is_llm_available():
-        return None
+    # 不再预先检查 is_llm_available()：DB 有真实数据时可本地匹配生成
     try:
         return build_art_llm_recommendation(data)
     except Exception:
