@@ -20,6 +20,9 @@ module.exports = {
       WECHAT_MCH_ID: '1621904940',
       WECHAT_VIRTUAL_PAY_OFFER_ID: '1450554502',
       WECHAT_VIRTUAL_PAY_ENV: '0',
+      WECHAT_VIRTUAL_PRODUCT_TRIAL: 'xdptk',
+      WECHAT_VIRTUAL_PRODUCT_PREMIUM: 'xdbjk',
+      WECHAT_VIRTUAL_GOODS_PRICE_PREMIUM: '29800',
       WECHAT_PAY_NOTIFY_URL: 'https://api.zntb.lhyun.net/api/payments/wechat/notify',
       WECHAT_PAY_PRIVATE_KEY_PATH: 'C:/zhiyuantianbao/server/certs/apiclient_key.pem',
       ...secrets

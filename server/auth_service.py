@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -52,11 +53,56 @@ def get_wechat_session(code: str) -> dict[str, Any] | None:
         'js_code': code,
         'grant_type': 'authorization_code'
     })
-    with urllib.request.urlopen(f'{WECHAT_SESSION_URL}?{query}', timeout=8) as response:
-        data = json.loads(response.read().decode('utf-8'))
+    try:
+        with urllib.request.urlopen(f'{WECHAT_SESSION_URL}?{query}', timeout=8) as response:
+            data = json.loads(response.read().decode('utf-8'))
+    except urllib.error.URLError as exc:
+        raise ValueError('微信登录服务暂时不可用，请稍后重试') from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError('微信登录响应异常，请稍后重试') from exc
     if data.get('errcode'):
         raise ValueError(data.get('errmsg', '微信登录失败'))
     return data
+
+
+def resolve_payment_openid(user_id: int, session: dict[str, Any]) -> str:
+    """支付前将临时 openid 升级为微信真实 openid。"""
+    session_openid = (session.get('openid') or '').strip()
+    if not session_openid or is_temp_openid(session_openid):
+        raise ValueError('请先使用微信登录后再支付')
+
+    unionid = session.get('unionid')
+    with get_connection() as connection:
+        user = row_to_dict(connection.execute(
+            'SELECT user_id, openid FROM users WHERE user_id = ?',
+            [user_id],
+        ).fetchone())
+        if not user:
+            raise ValueError('用户不存在')
+
+        db_openid = (user.get('openid') or '').strip()
+        if not is_temp_openid(db_openid):
+            if db_openid == session_openid:
+                return db_openid
+            raise ValueError('当前微信与账号绑定不一致，请重新登录后再支付')
+
+        conflict = row_to_dict(connection.execute(
+            'SELECT user_id FROM users WHERE openid = ? AND user_id != ?',
+            [session_openid, user_id],
+        ).fetchone())
+        if conflict:
+            raise ValueError('该微信已绑定其他账号，请使用原账号登录')
+
+        connection.execute(
+            '''
+            UPDATE users SET openid = ?, unionid = COALESCE(?, unionid),
+              updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+            ''',
+            [session_openid, unionid, user_id],
+        )
+        connection.commit()
+    return session_openid
 
 
 def login_or_create_user(
@@ -101,11 +147,15 @@ def login_or_create_user(
             )
             user_id = cursor.lastrowid
 
+        from henan_art_sports_service import ensure_student_art_sports_columns
+        ensure_student_art_sports_columns()
         profile = row_to_dict(connection.execute(
             '''
             SELECT u.user_id, u.openid, u.phone, u.role, u.name, s.student_id, s.province, s.city,
                    s.school_name, s.grade, s.class_name, s.exam_year, s.exam_type,
-                   s.subject_combination, s.score, s.rank, s.target_batch
+                   s.subject_combination, s.score, s.rank, s.target_batch,
+                   s.professional_score, s.art_sports_formula_id, s.waive_art_sports_batch,
+                   s.culture_cutoff, s.pro_cutoff
             FROM users u
             LEFT JOIN students s ON s.user_id = u.user_id
             WHERE u.user_id = ?

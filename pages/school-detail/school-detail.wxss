@@ -11,6 +11,32 @@
   margin-bottom: 16rpx;
 }
 
+.highlight-line {
+  color: #1677ff;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.regulation-row {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.regulation-btn {
+  flex: 1;
+}
+
+.copy-btn {
+  width: 180rpx;
+  flex-shrink: 0;
+}
+
+.regulation-hint {
+  margin-top: 12rpx;
+  color: #b54708;
+}
+
 .plan-card {
   margin-top: 8rpx;
 }

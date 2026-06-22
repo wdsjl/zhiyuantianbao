@@ -35,16 +35,21 @@ def get_school(school_id: int) -> dict[str, Any] | None:
 
 
 def save_school(data: dict[str, Any], school_id: int | None = None) -> int:
+    from school_profile_service import ensure_school_profile_columns
+
+    ensure_school_profile_columns()
     fields = [
         'school_code', 'school_name', 'province', 'city', 'school_type', 'education_level',
-        'is_985', 'is_211', 'is_double_first_class', 'is_public', 'authority', 'website'
+        'is_985', 'is_211', 'is_double_first_class', 'is_public', 'authority', 'website',
+        'postgraduate_rate', 'regulation_url', 'regulation_year'
     ]
     values = [
         data['school_code'], data['school_name'], data.get('province'), data.get('city'),
         data.get('school_type'), data.get('education_level'),
         1 if data.get('is_985') else 0, 1 if data.get('is_211') else 0,
         1 if data.get('is_double_first_class') else 0, 1 if data.get('is_public', True) else 0,
-        data.get('authority'), data.get('website')
+        data.get('authority'), data.get('website'),
+        data.get('postgraduate_rate'), data.get('regulation_url'), data.get('regulation_year'),
     ]
     with get_connection() as connection:
         if school_id:
@@ -267,7 +272,7 @@ def search_students(keyword: str = '', page: int = 1) -> tuple[list[dict[str, An
     sql = """
     SELECT s.student_id, u.user_id, u.openid, u.phone, u.role, s.name, s.province, s.city,
            s.school_name, s.grade, s.class_name, s.exam_year, s.exam_type, s.subject_combination,
-           s.score, s.rank, s.target_batch, s.updated_at
+           s.score, s.rank, s.target_batch, s.professional_score, s.updated_at
     FROM students s
     JOIN users u ON u.user_id = s.user_id
     WHERE 1=1
@@ -294,6 +299,9 @@ def get_student(student_id: int) -> dict[str, Any] | None:
 
 
 def save_student(student_id: int, data: dict[str, Any]) -> None:
+    from henan_art_sports_service import ensure_student_art_sports_columns
+
+    ensure_student_art_sports_columns()
     with get_connection() as connection:
         student = row_to_dict(connection.execute('SELECT user_id FROM students WHERE student_id = ?', [student_id]).fetchone())
         if not student:
@@ -301,12 +309,19 @@ def save_student(student_id: int, data: dict[str, Any]) -> None:
         connection.execute(
             '''UPDATE students SET name=?, province=?, city=?, school_name=?, grade=?, class_name=?,
                exam_year=?, exam_type=?, subject_combination=?, score=?, rank=?, target_batch=?,
-               updated_at=CURRENT_TIMESTAMP WHERE student_id=?''',
+               professional_score=?, art_sports_formula_id=?, waive_art_sports_batch=?,
+               culture_cutoff=?, pro_cutoff=?, updated_at=CURRENT_TIMESTAMP WHERE student_id=?''',
             [
                 data['name'], data['province'], data.get('city'), data.get('school_name'),
                 data.get('grade'), data.get('class_name'), int(data['exam_year']),
-                data.get('exam_type'), data['subject_combination'],
-                int(data['score']), int(data['rank']), data['target_batch'], student_id
+                data.get('exam_type') or '普通类', data['subject_combination'],
+                int(data['score']), int(data.get('rank') or 0), data['target_batch'],
+                float(data['professional_score']) if data.get('professional_score') not in (None, '') else None,
+                int(data['art_sports_formula_id']) if data.get('art_sports_formula_id') not in (None, '') else None,
+                1 if data.get('waive_art_sports_batch') else 0,
+                int(data['culture_cutoff']) if data.get('culture_cutoff') not in (None, '') else None,
+                int(data['pro_cutoff']) if data.get('pro_cutoff') not in (None, '') else None,
+                student_id,
             ]
         )
         if data.get('phone') is not None:
@@ -322,8 +337,9 @@ def export_students_csv(keyword: str = '') -> str:
     # export all matching - re-query without pagination limit
     sql = """
     SELECT s.student_id, u.user_id, u.phone, u.role, s.name, s.province, s.city,
-           s.school_name, s.grade, s.class_name, s.exam_year, s.subject_combination,
-           s.score, s.rank, s.target_batch, s.updated_at
+           s.school_name, s.grade, s.class_name, s.exam_year, s.exam_type, s.subject_combination,
+           s.score, s.rank, s.target_batch, s.professional_score, s.art_sports_formula_id,
+           s.waive_art_sports_batch, s.culture_cutoff, s.pro_cutoff, s.updated_at
     FROM students s JOIN users u ON u.user_id = s.user_id WHERE 1=1
     """
     params: list[Any] = []
@@ -336,14 +352,16 @@ def export_students_csv(keyword: str = '') -> str:
         rows = rows_to_dicts(connection.execute(sql, params).fetchall())
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['学生ID', '用户ID', '手机号', '角色', '姓名', '省份', '城市', '学校', '年级', '班级', '年份', '选科', '分数', '位次', '批次', '更新时间'])
+    writer.writerow(['学生ID', '用户ID', '手机号', '角色', '姓名', '省份', '城市', '学校', '年级', '班级', '年份', '考试类别', '选科', '分数', '位次', '批次', '专业分', '公式编号', '放弃艺体', '文化线', '专业线', '更新时间'])
     for row in rows:
         writer.writerow([
             row.get('student_id'), row.get('user_id'), row.get('phone'), row.get('role'),
             row.get('name'), row.get('province'), row.get('city'), row.get('school_name'),
-            row.get('grade'), row.get('class_name'), row.get('exam_year'),
+            row.get('grade'), row.get('class_name'), row.get('exam_year'), row.get('exam_type'),
             row.get('subject_combination'), row.get('score'), row.get('rank'),
-            row.get('target_batch'), row.get('updated_at')
+            row.get('target_batch'), row.get('professional_score'), row.get('art_sports_formula_id'),
+            row.get('waive_art_sports_batch'), row.get('culture_cutoff'), row.get('pro_cutoff'),
+            row.get('updated_at')
         ])
     return output.getvalue()
 

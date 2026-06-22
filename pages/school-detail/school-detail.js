@@ -1,6 +1,7 @@
 const { request } = require('../../utils/request');
 const { loadActiveProfileSync } = require('../../utils/profileHelper');
 const { requirePermission } = require('../../utils/membership');
+const { openExternalRegulation, copyRegulationLink } = require('../../utils/regulationLink');
 
 Page({
   data: {
@@ -59,6 +60,16 @@ Page({
       .finally(() => {
         this.setData({ loading: false });
       });
+  },
+  openRegulation() {
+    const school = this.data.school;
+    const url = school && (school.regulation_url || school.regulationUrl);
+    openExternalRegulation(url);
+  },
+  copyRegulationLink() {
+    const school = this.data.school;
+    const url = school && (school.regulation_url || school.regulationUrl);
+    copyRegulationLink(url);
   },
   addMajorToPlan(event) {
     const plan = event.currentTarget.dataset.plan;

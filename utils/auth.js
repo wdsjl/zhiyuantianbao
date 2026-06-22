@@ -1,5 +1,6 @@
 const { request } = require('./request');
 const { getPendingInviteCode, clearPendingInviteCode } = require('./referral');
+const { isArtSportsActive } = require('./henanArtSports');
 
 function isTempOpenid(openid) {
   return !openid || /^(dev_|local_|test_)/.test(openid);
@@ -24,7 +25,13 @@ function mergeLoginProfile(loginRes) {
     subjectCombination: serverProfile.subject_combination || oldProfile.subjectCombination,
     score: serverProfile.score || oldProfile.score,
     rank: serverProfile.rank || oldProfile.rank,
-    targetBatch: serverProfile.target_batch || oldProfile.targetBatch
+    targetBatch: serverProfile.target_batch || oldProfile.targetBatch,
+    examType: serverProfile.exam_type || oldProfile.examType || '普通类',
+    professionalScore: serverProfile.professional_score ?? oldProfile.professionalScore,
+    formulaId: serverProfile.art_sports_formula_id ?? oldProfile.formulaId,
+    waiveArtSports: !!(serverProfile.waive_art_sports_batch ?? oldProfile.waiveArtSports),
+    cultureCutoff: serverProfile.culture_cutoff ?? oldProfile.cultureCutoff,
+    proCutoff: serverProfile.pro_cutoff ?? oldProfile.proCutoff
   };
   wx.setStorageSync('studentProfile', profile);
   wx.setStorageSync('loginUser', {
@@ -36,7 +43,11 @@ function mergeLoginProfile(loginRes) {
 }
 
 function syncProfileToServer(profile, openid) {
-  if (!profile || !profile.province || !profile.score || !profile.rank) {
+  const artSports = isArtSportsActive(profile);
+  if (!profile || !profile.province || !profile.score) {
+    return Promise.resolve(null);
+  }
+  if (!artSports && !profile.rank) {
     return Promise.resolve(null);
   }
   return request({
@@ -50,11 +61,16 @@ function syncProfileToServer(profile, openid) {
       province: profile.province,
       city: profile.city,
       exam_year: new Date().getFullYear(),
-      exam_type: '普通类',
+      exam_type: profile.examType || profile.exam_type || '普通类',
       subject_combination: profile.subjectCombination,
       score: Number(profile.score),
-      rank: Number(profile.rank),
-      target_batch: profile.targetBatch
+      rank: Number(profile.rank || 0),
+      target_batch: profile.targetBatch,
+      professional_score: profile.professionalScore ? Number(profile.professionalScore) : null,
+      art_sports_formula_id: profile.formulaId ? Number(profile.formulaId) : null,
+      waive_art_sports_batch: !!profile.waiveArtSports,
+      culture_cutoff: profile.cultureCutoff ? Number(profile.cultureCutoff) : null,
+      pro_cutoff: profile.proCutoff ? Number(profile.proCutoff) : null
     }
   }).then((res) => {
     const updated = {

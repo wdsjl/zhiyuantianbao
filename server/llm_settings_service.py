@@ -91,7 +91,7 @@ def resolve_base_url(settings: dict) -> str:
     return PROVIDER_DEFAULT_BASE_URL.get(provider, '').rstrip('/')
 
 
-def chat_completion(messages: list[dict], max_tokens: int = 256) -> str:
+def chat_completion(messages: list[dict], max_tokens: int = 256, timeout: int = 20) -> str:
     settings = get_llm_settings()
     if not settings or not settings.get('is_enabled'):
         raise ValueError('大模型未启用')
@@ -120,7 +120,7 @@ def chat_completion(messages: list[dict], max_tokens: int = 256) -> str:
         method='POST'
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read().decode('utf-8'))
     except Exception as exc:
         raise ValueError(f'大模型连接失败：{exc}') from exc

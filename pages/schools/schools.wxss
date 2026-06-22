@@ -55,6 +55,16 @@
   margin-bottom: 18rpx;
 }
 
+.regulation-tag {
+  display: inline-block;
+  margin-top: 8rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  background: #eef5ff;
+  color: #1677ff;
+  font-size: 22rpx;
+}
+
 .add-btn {
   width: 240rpx;
   margin-left: auto;

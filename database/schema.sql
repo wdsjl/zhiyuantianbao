@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS schools (
   is_public INTEGER NOT NULL DEFAULT 1,
   authority TEXT,
   website TEXT,
+  postgraduate_rate TEXT,
+  regulation_url TEXT,
+  regulation_year INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

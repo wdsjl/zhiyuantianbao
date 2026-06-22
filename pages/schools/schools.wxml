@@ -1,6 +1,7 @@
 <view class="container">
   <view class="card search-card">
-    <input class="input" placeholder="搜索院校 / 专业 / 城市" value="{{keyword}}" bindinput="onKeywordInput" />
+    <input class="input" placeholder="搜索院校 / 专业 / 城市" value="{{keyword}}" bindinput="onKeywordInput" bindconfirm="onKeywordConfirm" confirm-type="search" />
+    <button class="secondary-btn filter-btn" bindtap="applyFilter">搜索</button>
     <button class="secondary-btn filter-btn" bindtap="toggleFilter">筛选</button>
   </view>
 
@@ -52,6 +53,7 @@
       <view>
         <view class="school-name">{{item.name}}</view>
         <view class="sub-text">{{item.city}} · {{item.type}} · {{item.subject}}</view>
+        <view wx:if="{{item.has_regulation || item.regulation_url}}" class="regulation-tag">有招生章程</view>
       </view>
       <text class="rank">位次 {{item.minRank}}</text>
     </view>
