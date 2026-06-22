@@ -639,8 +639,15 @@ def _builtin_catalog_entries(category: str, batch_level: str) -> list[tuple[str,
 
 
 def _catalog_ref_score(index: int, composite_score: float, category: str) -> float:
-    spread = 32 if category == '艺术类' else 45
-    return round(float(composite_score) + spread - index * 0.52, 2)
+    """按冲/稳/保三档分布参考综合分，围绕考生综合分上下浮动。"""
+    base = float(composite_score)
+    band = index % 3
+    step = index // 3
+    if band == 0:
+        return round(base - 12 - step * 0.42, 2)
+    if band == 1:
+        return round(base + ((step % 4) - 1.5) * 2.2, 2)
+    return round(base + 10 + step * 0.42, 2)
 
 
 def expand_art_sports_admissions(

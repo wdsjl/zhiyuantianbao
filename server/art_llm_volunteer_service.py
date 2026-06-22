@@ -576,6 +576,8 @@ def build_art_sports_llm_recommendation(data: dict[str, Any]) -> dict[str, Any]:
         accept_adjustment=accept_adjustment,
         category=category,
     )
+    if len(selected) < VOLUNTEER_SLOTS:
+        raise ValueError(f'志愿生成不足：{len(selected)}/{VOLUNTEER_SLOTS}，请重试或联系管理员检查后端版本')
 
     quotas = get_art_sports_quotas(plan_style)
     warnings: list[str] = []

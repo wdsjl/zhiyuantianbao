@@ -80,7 +80,8 @@ function toApiItem(item, index) {
   };
 }
 
-const PLAN_STYLE_OPTIONS = [
+const ART_SPORTS_TARGET_SLOTS = 64;
+const ART_SPORTS_PLAN_VERSION = 2;
   { value: 'balanced', label: '均衡方案', desc: '冲2 稳5 保2' },
   { value: 'aggressive', label: '激进冲院校', desc: '冲3 稳4 保2' },
   { value: 'conservative', label: '保守稳上岸', desc: '冲1 稳5 保3' }
@@ -150,15 +151,40 @@ Page({
       return;
     }
     this.setData({ personality: personality || {} });
-    const currentPlan = wx.getStorageSync('currentPlan') || [];
-    if (currentPlan.length) {
-      const plan = currentPlan.map((item) => ({
-        ...item,
-        gradientClass: item.gradientClass || getGradientClass(item.gradientType)
-      }));
-      this.setData({ plan, aiExplain: formatAiContent(wx.getStorageSync('currentAiExplain') || '') });
-    }
+    this.loadStoredPlan(artSportsMode);
     fetchEntitlements();
+  },
+  loadStoredPlan(artSportsMode) {
+    const storedVersion = wx.getStorageSync('artSportsPlanVersion') || 0;
+    const currentPlan = wx.getStorageSync('currentPlan') || [];
+    if (!currentPlan.length) {
+      return;
+    }
+    if (artSportsMode && (storedVersion < ART_SPORTS_PLAN_VERSION || currentPlan.length < ART_SPORTS_TARGET_SLOTS)) {
+      wx.removeStorageSync('currentPlan');
+      wx.removeStorageSync('currentRiskResult');
+      wx.removeStorageSync('currentAiExplain');
+      wx.removeStorageSync('currentDraftId');
+      this.setData({ plan: [], riskResult: null, aiExplain: '' });
+      wx.showModal({
+        title: '请重新生成志愿',
+        content: `检测到旧版志愿方案仅 ${currentPlan.length} 个，河南艺体本科批需 64 个平行志愿。请点击「智能生成」重新生成。`,
+        showCancel: false
+      });
+      return;
+    }
+    const plan = currentPlan.map((item) => ({
+      ...item,
+      gradientClass: item.gradientClass || getGradientClass(item.gradientType)
+    }));
+    const riskResult = wx.getStorageSync('currentRiskResult') || null;
+    const riskClass = riskResult && riskResult.level === '高' ? 'risk-high' : riskResult && riskResult.level === '中' ? 'risk-mid' : 'risk-low';
+    this.setData({
+      plan,
+      aiExplain: formatAiContent(wx.getStorageSync('currentAiExplain') || ''),
+      riskResult,
+      riskClass: riskResult ? riskClass : 'risk-low'
+    });
   },
   warnArtSportsProfileMismatch(profile) {
     if (!profile || !profile.province) return;
@@ -323,6 +349,9 @@ Page({
           ? `AI已生成 ${plan.length}/${targetCount || 64} 个志愿`
           : (targetCount ? `已生成 ${plan.length}/${targetCount} 个志愿` : `已生成 ${plan.length} 个志愿`);
         this.setData({ plan, riskResult, riskClass, aiExplain: '', strategyMeta, provinceRule, compositeScore });
+        if (this.data.artSportsMode && plan.length >= ART_SPORTS_TARGET_SLOTS) {
+          wx.setStorageSync('artSportsPlanVersion', ART_SPORTS_PLAN_VERSION);
+        }
         wx.setStorageSync('currentPlan', plan);
         wx.setStorageSync('currentRiskResult', riskResult);
         wx.removeStorageSync('currentAiExplain');
